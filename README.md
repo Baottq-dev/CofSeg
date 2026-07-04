@@ -1,4 +1,4 @@
-Hướng dẫn chạy **Phase 1** (SAM-only) từ đầu đến khi có số đo IoU/Boundary-F1/PQ.
+Hướng dẫn chạy 
 
 ## 0. Yêu cầu
 
