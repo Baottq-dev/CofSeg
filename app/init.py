@@ -1,0 +1,1 @@
+# Đánh dấu app/ là package để chạy `python -m app.gradio_app` từ thư mục gốc repo.

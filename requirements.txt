@@ -1,0 +1,20 @@
+# QUAN TRỌNG: cài bản GPU trước cho khớp CUDA của máy, rồi mới pip install -r:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+torch>=2.1
+torchvision>=0.16
+numpy
+scipy
+scikit-image
+opencv-python
+rasterio
+pycocotools
+pyyaml
+tqdm
+albumentations
+gradio>=4.0        # giao diện Phase 1 (app/)
+pillow
+fastapi            # annotator tự xây (app/server.py)
+uvicorn            # chạy server annotator
+# SAM2: cài từ https://github.com/facebookresearch/sam2
+#   pip install "git+https://github.com/facebookresearch/sam2.git"
+# (Phase 1 CHẈ cần SAM. detectron2 / stardist / coral-pytorch sẽ thêm ở phase sau.)

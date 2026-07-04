@@ -1,0 +1,153 @@
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+.eggs/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Distribution / packaging
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+pytest.ini
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# mypy / pyright / ruff
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyright/
+.ruff_cache/
+
+# ============================================================
+# YOLO / Ultralytics
+# ============================================================
+# Pretrained & trained model weights (large binary files)
+*.pt
+*.pth
+*.onnx
+*.engine
+*.tflite
+*.pb
+*.mlmodel
+*.torchscript
+
+# Training runs output (wandb, mlflow, tensorboard, etc.)
+runs/
+
+# Datasets (usually large; track with DVC or similar)
+datasets/
+data/iachim_dataset_export/
+
+*.zip
+*.tar
+*.gz
+
+# ============================================================
+# Deep Learning / ML
+# ============================================================
+# TensorBoard logs
+logs/
+tensorboard_logs/
+
+# Weights & Biases
+wandb/
+
+# MLflow
+mlruns/
+
+# ============================================================
+# OS & IDE
+# ============================================================
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# PyCharm / JetBrains
+.idea/
+*.iml
+
+# Vim / Emacs
+*.swp
+*.swo
+*~
+\#*\#
+
+# ============================================================
+# Misc
+# ============================================================
+# Backup folder
+backup/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.log
+
+# Secrets / credentials
+.env.*
+secrets.*
+*.key
+*.pem
+
+
+docs/
+predictions/
+weights/
+data/iachim_dataset_export/predictions/
