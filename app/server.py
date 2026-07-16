@@ -52,6 +52,15 @@ def _flower_label(ratio):
     return lvl, FLOWER_NAMES[lvl]
 
 
+def _as_level(cid):
+    # cid từ client -> mức hoa hợp lệ (0..3), hoặc None nếu không dùng được.
+    try:
+        lvl = int(cid)
+    except (TypeError, ValueError):
+        return None
+    return lvl if 0 <= lvl < len(FLOWER_NAMES) else None
+
+
 def _full_rel(name):
     # Đường dẫn ảnh tương đối so với BASE (gồm tên field) -> path/field/tên file.
     try:
@@ -73,22 +82,30 @@ def _json_path(name):
     return os.path.join(OUT_DIR, _full_rel(name).replace("/", "__") + ".json")
 
 
-def _flower_counts(img_bgr, poly, sat_max, val_min):
-    # Trả về (số pixel hoa, tổng pixel) trong 1 polygon (HSV).
-    h, w = img_bgr.shape[:2]
-    pts = np.round(np.array(poly, dtype=np.float64).reshape(-1, 2)).astype(np.int32)
-    mask = np.zeros((h, w), np.uint8)
-    cv2.fillPoly(mask, [pts], 1)
-    total = int(mask.sum())
-    if total == 0:
-        return 0, 0
-    blur = cv2.GaussianBlur(img_bgr, (3, 3), 0)
+def _flower_mask(img_bgr, sat_max, val_min):
+    # Mask pixel hoa (trắng/kem) cho CẢ ảnh: blur -> HSV -> ngưỡng S/V -> opening.
+    # Tính 1 lần mỗi ảnh rồi dùng lại cho mọi polygon.
+    blur = cv2.GaussianBlur(img_bgr, (3, 3), 0)            # khử nhiễu
     hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
     flower = ((hsv[:, :, 1] < sat_max) & (hsv[:, :, 2] > val_min)).astype(np.uint8)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    flower = cv2.morphologyEx(flower, cv2.MORPH_OPEN, kernel)
-    cnt = int(np.count_nonzero((flower > 0) & (mask > 0)))
-    return cnt, total
+    return cv2.morphologyEx(flower, cv2.MORPH_OPEN, kernel)   # morphological opening
+
+
+def _poly_mask(poly, h, w):
+    pts = np.round(np.array(poly, dtype=np.float64).reshape(-1, 2)).astype(np.int32)
+    mask = np.zeros((h, w), np.uint8)
+    cv2.fillPoly(mask, [pts], 1)
+    return mask
+
+
+def _flower_counts(fmask, poly):
+    # (số pixel hoa, tổng pixel) trong 1 polygon, theo mask hoa đã tính sẵn.
+    mask = _poly_mask(poly, fmask.shape[0], fmask.shape[1])
+    total = int(mask.sum())
+    if total == 0:
+        return 0, 0
+    return int(np.count_nonzero((fmask > 0) & (mask > 0))), total
 
 
 def _poly_area(poly):
@@ -236,6 +253,7 @@ class SaveReq(BaseModel):
     height: int
     polygons: list           # mỗi polygon = [x1, y1, x2, y2, ...]
     classes: list = []       # category_id cho từng polygon (song song polygons)
+    manual: list = []        # True = mức hoa do người gán tay -> HSV không ghi đè
     categories: list = []    # [{id, name, color}, ...] danh sách lớp của dự án
     confs: list = []         # confidence từng polygon (SAM/detector); mặc định 1.0
     sat_max: int = 50        # ngưỡng HSV S để tính % hoa lúc lưu
@@ -294,32 +312,17 @@ class FlowerReq(BaseModel):
     val_min: int = 180      # ngưỡng độ sáng: pixel hoa có V > val_min
 
 
-def _flower_ratio(img_bgr, poly, sat_max, val_min):
-    # Đếm % pixel hoa (trắng/kem) trong 1 polygon theo phương pháp HSV.
-    h, w = img_bgr.shape[:2]
-    pts = np.round(np.array(poly, dtype=np.float64).reshape(-1, 2)).astype(np.int32)
-    mask = np.zeros((h, w), np.uint8)
-    cv2.fillPoly(mask, [pts], 1)
-    area = int(mask.sum())
-    if area == 0:
-        return 0.0
-    blur = cv2.GaussianBlur(img_bgr, (3, 3), 0)            # khử nhiễu
-    hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
-    flower = ((hsv[:, :, 1] < sat_max) & (hsv[:, :, 2] > val_min)).astype(np.uint8)
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    flower = cv2.morphologyEx(flower, cv2.MORPH_OPEN, kernel)   # morphological opening
-    cnt = int(np.count_nonzero((flower > 0) & (mask > 0)))
-    return round(100.0 * cnt / area, 2)
-
-
 @app.post("/api/flower")
 def flower(req: FlowerReq):
     # Trả về % pixel hoa cho từng polygon -> phân lớp mật độ 0/1/2/3 ở client.
     img = cv2.imread(os.path.join(ROOT, req.name))
     if img is None:
         return {"ratios": []}
-    ratios = [_flower_ratio(img, p, req.sat_max, req.val_min)
-              for p in req.polygons]
+    fmask = _flower_mask(img, req.sat_max, req.val_min)
+    ratios = []
+    for p in req.polygons:
+        cnt, total = _flower_counts(fmask, p)
+        ratios.append(round(100.0 * cnt / total, 2) if total else 0.0)
     return {"ratios": ratios}
 
 
@@ -372,9 +375,10 @@ def load(name: str):
     # Trả về polygon đã lưu trước đó (nếu có) để khôi phục khi mở lại ảnh.
     fp = _json_path(name)
     if not os.path.exists(fp):
-        return {"polygons": [], "classes": [], "categories": []}
+        return {"polygons": [], "classes": [], "ratios": [], "manual": [],
+                "categories": []}
     data = json.load(open(fp, encoding="utf-8"))
-    polys, cls = [], []
+    polys, cls, ratios, manual = [], [], [], []
     if isinstance(data.get("polygons"), list):
         # Định dạng mới: polygons=[{points:[[x,y],...], flower_label}]
         for p in data["polygons"]:
@@ -383,14 +387,21 @@ def load(name: str):
             if len(flat) >= 6:
                 polys.append(flat)
                 cls.append(p.get("flower_label", 0))
+                r = p.get("flower_ratio")
+                # file lưu tỉ lệ 0-1, giao diện hiện %.
+                ratios.append(round(100.0 * r, 2)
+                              if isinstance(r, (int, float)) else None)
+                manual.append(p.get("label_source") == "manual")
     else:
         # Định dạng COCO cũ.
         for a in data.get("annotations", []):
             if a.get("segmentation"):
                 polys.append(a["segmentation"][0])
                 cls.append(a.get("category_id", 1))
-    return {"polygons": polys, "classes": cls,
-            "categories": data.get("categories", [])}
+                ratios.append(None)
+                manual.append(False)
+    return {"polygons": polys, "classes": cls, "ratios": ratios,
+            "manual": manual, "categories": data.get("categories", [])}
 
 
 @app.post("/api/save")
@@ -399,27 +410,36 @@ def save(req: SaveReq):
     os.makedirs(OUT_DIR, exist_ok=True)
     out = _json_path(req.name)
     rel = _full_rel(req.name)
-    polys, confs = [], []
+    polys, confs, cls, man = [], [], [], []
     for i, poly in enumerate(req.polygons):
         if len(poly) >= 6:
             polys.append(poly)
             confs.append(req.confs[i] if i < len(req.confs) else 1.0)
+            cls.append(req.classes[i] if i < len(req.classes) else None)
+            man.append(bool(req.manual[i]) if i < len(req.manual) else False)
     if not polys:
         # Không còn vùng nào -> xoá file cũ để ảnh không bị đánh dấu "đã nhãn".
         if os.path.exists(out):
             os.remove(out)
         return {"saved": None, "count": 0}
     img = cv2.imread(os.path.join(ROOT, req.name))
+    fmask = _flower_mask(img, req.sat_max, req.val_min) if img is not None else None
     stats = {nm: 0 for nm in FLOWER_NAMES}
     ratios, out_polys = [], []
-    for poly, conf in zip(polys, confs):
+    for poly, conf, cid, is_man in zip(polys, confs, cls, man):
         xs, ys = poly[0::2], poly[1::2]
-        if img is not None:
-            fpx, tpx = _flower_counts(img, poly, req.sat_max, req.val_min)
+        if fmask is not None:
+            fpx, tpx = _flower_counts(fmask, poly)
         else:
             fpx, tpx = 0, 0
         ratio = round(fpx / tpx, 4) if tpx else 0.0
-        lvl, lname = _flower_label(ratio)
+        # Nhãn người gán tay THẮNG HSV; chỉ suy từ ratio khi vùng đang ở chế độ auto.
+        lvl = _as_level(cid) if is_man else None
+        if lvl is None:
+            is_man = False
+            lvl, lname = _flower_label(ratio)
+        else:
+            lname = FLOWER_NAMES[lvl]
         stats[lname] += 1
         ratios.append(ratio)
         out_polys.append(dict(
@@ -428,7 +448,8 @@ def save(req: SaveReq):
             bbox=[round(float(min(xs)), 1), round(float(min(ys)), 1),
                   round(float(max(xs)), 1), round(float(max(ys)), 1)],
             flower_pixels=int(fpx), total_pixels=int(tpx),
-            flower_ratio=ratio, flower_label=lvl, flower_label_name=lname))
+            flower_ratio=ratio, flower_label=lvl, flower_label_name=lname,
+            label_source="manual" if is_man else "auto"))
     doc = dict(path=rel, field=_field_of(rel),
                img_w=req.width, img_h=req.height,
                n_canopy=len(out_polys), conf_thr=DEFAULT_CONF_THR,
