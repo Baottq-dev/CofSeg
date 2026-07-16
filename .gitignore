@@ -81,6 +81,7 @@ runs/
 # Datasets (usually large; track with DVC or similar)
 datasets/
 data/iachim_dataset_export/
+data/
 
 *.zip
 *.tar
