@@ -276,13 +276,17 @@ function renderClasses(){const box=$('classes');box.innerHTML='';
   row.onclick=()=>{activeCls=c.id;renderClasses();};
   row.appendChild(sw);row.appendChild(nm);row.appendChild(thr);row.appendChild(cnt);box.appendChild(row);});
  $('stCls').textContent=classes.length;}
-async function computeFlower(idxs){if(!current)return;idxs=idxs.filter(i=>inst[i]);if(!idxs.length)return;
+// force = người dùng chủ ý bấm ⚡ -> bỏ cờ tay và phân loại lại. Các lần gọi
+// ngầm (tạo vùng mới, nắn viền) luôn cập nhật % nhưng KHÔNG động vào nhãn tay.
+async function computeFlower(idxs,force){if(!current)return;idxs=idxs.filter(i=>inst[i]);if(!idxs.length)return;
  const who=current,polys=idxs.map(i=>inst[i].poly);
  try{const r=await(await fetch('/api/flower',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:who,polygons:polys,sat_max:satMax,val_min:valMin})})).json();
   if(current!==who)return;
-  (r.ratios||[]).forEach((rt,k)=>{const i=idxs[k];if(inst[i]){inst[i].pct=rt;inst[i].cls=densOf(rt);}});
+  (r.ratios||[]).forEach((rt,k)=>{const i=idxs[k];if(!inst[i])return;inst[i].pct=rt;
+   if(force)inst[i].manual=false;
+   if(!inst[i].manual)inst[i].cls=densOf(rt);});
   persist();renderRegions();renderClasses();draw();}catch(e){alert('Không đếm được hoa (đã khởi động lại server chưa?): '+e);}}
-function autoAll(){if(!inst.length){alert('Chưa có vùng nào để phân loại.');return;}pushHist();computeFlower(inst.map((_,i)=>i));}
+function autoAll(){if(!inst.length){alert('Chưa có vùng nào để phân loại.');return;}pushHist();computeFlower(inst.map((_,i)=>i),true);}
 $('addCls').onclick=autoAll;$('autoAll').onclick=autoAll;
 $('satMax').oninput=()=>{satMax=parseInt($('satMax').value)||50;};
 $('valMin').oninput=()=>{valMin=parseInt($('valMin').value)||180;};
@@ -293,14 +297,15 @@ function renderRegions(){const box=$('regions');box.innerHTML='';$('rcount').tex
   const head=document.createElement('div');head.className='rhead';
   const dot=document.createElement('span');dot.className='dot';dot.style.background=c.color;
   const idb=document.createElement('b');idb.textContent='#'+r.id;
-  const cn=document.createElement('span');cn.className='rcls';cn.textContent=c.name;
+  const cn=document.createElement('span');cn.className='rcls';cn.textContent=c.name+(r.manual?' ✋':'');
+  cn.title=r.manual?'Mức do bạn gán tay — HSV sẽ không ghi đè. Bấm ⚡ để phân loại lại tự động.':'Mức do HSV tự phân loại';
   const pc=document.createElement('span');pc.className='rpct';pc.textContent=(r.pct==null?'—':'🌸 '+r.pct.toFixed(1)+'%');pc.title='Tỉ lệ pixel hoa trong vùng';
   head.appendChild(dot);head.appendChild(idb);head.appendChild(cn);head.appendChild(pc);
   head.onclick=()=>{sel=i;setMode('select');renderRegions();draw();};
   const act=document.createElement('div');act.className='ract';
   const selc=document.createElement('select');selc.title='Gán mức mật độ thủ công';classes.forEach(cc=>{const o=document.createElement('option');o.value=cc.id;o.textContent=cc.name;if(cc.id===r.cls)o.selected=true;selc.appendChild(o);});
-  selc.onchange=()=>{pushHist();r.cls=parseInt(selc.value);persist();draw();renderRegions();};
-  const bF=document.createElement('button');bF.textContent='⚡';bF.title='Đếm hoa & tự phân loại vùng này';bF.onclick=()=>computeFlower([i]);
+  selc.onchange=()=>{pushHist();r.cls=parseInt(selc.value);r.manual=true;persist();draw();renderRegions();};
+  const bF=document.createElement('button');bF.textContent='⚡';bF.title='Đếm hoa & tự phân loại vùng này';bF.onclick=()=>computeFlower([i],true);
   const bV=document.createElement('button');bV.textContent=r.vis?'👁':'🚫';bV.title='Ẩn/hiện';bV.onclick=()=>{r.vis=!r.vis;draw();renderRegions();};
   const bD=document.createElement('button');bD.className='del';bD.textContent='🗑';bD.title='Xoá vùng';
   bD.onclick=()=>{pushHist();inst.splice(i,1);if(sel===i)sel=-1;else if(sel>i)sel--;persist();draw();renderRegions();};
@@ -376,7 +381,7 @@ function updateThumbActive(){document.querySelectorAll('#thumbs .thumb').forEach
 async function loadImgs(){imgs=await(await fetch('/api/images',{cache:'no-store'})).json();
  await loadLabeled();renderPTree();renderThumbs();renderStats();
  if(imgs.length)selectImg(imgs[0]);else{inst=[];current=null;draw();renderRegions();}}
-function cloneR(r){return {poly:r.poly.slice(),cls:r.cls,vis:r.vis,id:r.id,pct:(r.pct==null?null:r.pct)};}
+function cloneR(r){return {poly:r.poly.slice(),cls:r.cls,vis:r.vis,id:r.id,pct:(r.pct==null?null:r.pct),manual:!!r.manual};}
 function pickCls(id){return clsById(id)?id:activeCls;}
 function mergeCats(cats){if(!cats)return;let ch=false;cats.forEach(c=>{if(c&&c.id!=null&&!clsById(c.id)){classes.push({id:c.id,name:c.name||('Lớp '+c.id),color:c.color||'#888'});if(c.id>clsMax)clsMax=c.id;ch=true;}});if(ch){saveClasses();renderClasses();renderStats();}}
 async function selectImg(t){if(current&&ready&&dirty){flush();}if(current&&ready){store[current]=inst.map(cloneR);}
@@ -387,11 +392,11 @@ async function selectImg(t){if(current&&ready&&dirty){flush();}if(current&&ready
  if(store[t]){inst=store[t].map(cloneR);}
  else{let d=null;try{d=await(await fetch('/api/load/'+enc(t)+'?t='+Date.now(),{cache:'no-store'})).json();}catch(e){d=null;}
   if(tok!==selToken)return;
-  if(d){mergeCats(d.categories);inst=(d.polygons||[]).map((pp,k)=>({poly:pp.slice(),cls:pickCls(d.classes&&d.classes[k]),vis:true,id:rid++,pct:null}));}else inst=[];
+  if(d){mergeCats(d.categories);inst=(d.polygons||[]).map((pp,k)=>({poly:pp.slice(),cls:pickCls(d.classes&&d.classes[k]),vis:true,id:rid++,pct:(d.ratios&&d.ratios[k]!=null)?d.ratios[k]:null,manual:!!(d.manual&&d.manual[k])}));}else inst=[];
   store[t]=inst.map(cloneR);}
  if(tok!==selToken)return;
  ready=true;$('count').textContent=inst.length+' Vùng';renderRegions();draw();renderClasses();}
-function payload(){return JSON.stringify({name:current,width:img.width||0,height:img.height||0,polygons:inst.map(r=>r.poly),classes:inst.map(r=>r.cls),categories:classes});}
+function payload(){return JSON.stringify({name:current,width:img.width||0,height:img.height||0,polygons:inst.map(r=>r.poly),classes:inst.map(r=>r.cls),manual:inst.map(r=>!!r.manual),categories:classes,sat_max:satMax,val_min:valMin});}
 function saveNow(){if(!current||!ready)return;dirty=false;fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:payload()});}
 function scheduleSave(){if(!current)return;dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(saveNow,700);}
 function flush(){clearTimeout(saveTimer);if(dirty)saveNow();}
@@ -401,7 +406,7 @@ function persist(){stash();scheduleSave();if(current){if(inst.length)labeledSet.
 function refresh(){$('count').textContent=inst.length+' Vùng';persist();renderRegions();draw();}
 function pushHist(){hist.push(JSON.stringify(inst));if(hist.length>60)hist.shift();}
 function undo(){if(!hist.length)return;inst=JSON.parse(hist.pop());sel=-1;dragPt=-1;hovPt=-1;editStep=0;refresh();}
-function addRegion(poly){inst.push({poly:poly,cls:activeCls,vis:true,id:rid++,pct:null});return inst.length-1;}
+function addRegion(poly){inst.push({poly:poly,cls:activeCls,vis:true,id:rid++,pct:null,manual:false});return inst.length-1;}
 $('undo').onclick=undo;
 $('clear').onclick=()=>{pushHist();inst=[];sel=-1;editStep=0;refresh();};
 $('zin').onclick=()=>zoomAt(cv.width/2,cv.height/2,1.25);
