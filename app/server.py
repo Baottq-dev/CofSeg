@@ -82,30 +82,34 @@ def _json_path(name):
     return os.path.join(OUT_DIR, _full_rel(name).replace("/", "__") + ".json")
 
 
-def _flower_mask(img_bgr, sat_max, val_min):
-    # Mask pixel hoa (trắng/kem) cho CẢ ảnh: blur -> HSV -> ngưỡng S/V -> opening.
-    # Tính 1 lần mỗi ảnh rồi dùng lại cho mọi polygon.
-    blur = cv2.GaussianBlur(img_bgr, (3, 3), 0)            # khử nhiễu
-    hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
-    flower = ((hsv[:, :, 1] < sat_max) & (hsv[:, :, 2] > val_min)).astype(np.uint8)
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    return cv2.morphologyEx(flower, cv2.MORPH_OPEN, kernel)   # morphological opening
+_KERNEL = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
 
 
-def _poly_mask(poly, h, w):
+def _flower_counts(img_bgr, poly, sat_max, val_min):
+    # Theo README mục 6 của bộ dữ liệu: TRÍCH XUẤT vùng polygon rồi mới đếm ->
+    # blur/HSV/opening chạy TRONG từng tán, không phải trên cả ảnh.
+    # Trả về (số pixel hoa, tổng pixel) của 1 tán.
+    h, w = img_bgr.shape[:2]
     pts = np.round(np.array(poly, dtype=np.float64).reshape(-1, 2)).astype(np.int32)
-    mask = np.zeros((h, w), np.uint8)
-    cv2.fillPoly(mask, [pts], 1)
-    return mask
-
-
-def _flower_counts(fmask, poly):
-    # (số pixel hoa, tổng pixel) trong 1 polygon, theo mask hoa đã tính sẵn.
-    mask = _poly_mask(poly, fmask.shape[0], fmask.shape[1])
-    total = int(mask.sum())
+    # Kẹp bbox vào trong ảnh: polygon vẽ tay có thể vượt ra ngoài khung.
+    x0 = max(0, int(pts[:, 0].min()))
+    x1 = min(w, int(pts[:, 0].max()) + 1)
+    y0 = max(0, int(pts[:, 1].min()))
+    y1 = min(h, int(pts[:, 1].max()) + 1)
+    if x1 <= x0 or y1 <= y0:
+        return 0, 0
+    pm = np.zeros((y1 - y0, x1 - x0), np.uint8)
+    cv2.fillPoly(pm, [pts - np.array([x0, y0], np.int32)], 1)
+    total = int(pm.sum())
     if total == 0:
         return 0, 0
-    return int(np.count_nonzero((fmask > 0) & (mask > 0))), total
+    crop = img_bgr[y0:y1, x0:x1]
+    region = cv2.bitwise_and(crop, crop, mask=pm)   # chỉ giữ pixel trong tán
+    blur = cv2.GaussianBlur(region, (3, 3), 0)      # khử nhiễu
+    hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
+    flower = ((hsv[:, :, 1] < sat_max) & (hsv[:, :, 2] > val_min)).astype(np.uint8)
+    flower = cv2.morphologyEx(flower, cv2.MORPH_OPEN, _KERNEL)  # morphological opening
+    return int(np.count_nonzero((flower > 0) & (pm > 0))), total
 
 
 def _poly_area(poly):
@@ -318,10 +322,9 @@ def flower(req: FlowerReq):
     img = cv2.imread(os.path.join(ROOT, req.name))
     if img is None:
         return {"ratios": []}
-    fmask = _flower_mask(img, req.sat_max, req.val_min)
     ratios = []
     for p in req.polygons:
-        cnt, total = _flower_counts(fmask, p)
+        cnt, total = _flower_counts(img, p, req.sat_max, req.val_min)
         ratios.append(round(100.0 * cnt / total, 2) if total else 0.0)
     return {"ratios": ratios}
 
@@ -423,13 +426,12 @@ def save(req: SaveReq):
             os.remove(out)
         return {"saved": None, "count": 0}
     img = cv2.imread(os.path.join(ROOT, req.name))
-    fmask = _flower_mask(img, req.sat_max, req.val_min) if img is not None else None
     stats = {nm: 0 for nm in FLOWER_NAMES}
     ratios, out_polys = [], []
     for poly, conf, cid, is_man in zip(polys, confs, cls, man):
         xs, ys = poly[0::2], poly[1::2]
-        if fmask is not None:
-            fpx, tpx = _flower_counts(fmask, poly)
+        if img is not None:
+            fpx, tpx = _flower_counts(img, poly, req.sat_max, req.val_min)
         else:
             fpx, tpx = 0, 0
         ratio = round(fpx / tpx, 4) if tpx else 0.0
