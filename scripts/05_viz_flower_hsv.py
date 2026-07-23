@@ -115,35 +115,50 @@ def find_label(labels_dir, img_name):
     return None
 
 
-def canopy_mask(polys, h, w):
-    m = np.zeros((h, w), np.uint8)
-    for arr in polys:
-        cv2.fillPoly(m, [np.round(arr).astype(np.int32)], 1)
-    return m
-
-
 # --- tao 3 anh RIENG, tinh THEO TUNG POLYGON (giong server.py) ---
 # mau vien theo muc: 0 xam, 1 xanh la, 2 cam, 3 do (BGR).
 LEVEL_COLORS = ((150, 150, 150), (0, 200, 60), (0, 170, 255), (0, 0, 235))
 
 
-def poly_flower_ratio(fmask, arr, h, w):
-    # ratio = pixel hoa TRONG polygon / dien tich polygon (giong _flower_ratio).
-    pm = np.zeros((h, w), np.uint8)
-    cv2.fillPoly(pm, [np.round(arr).astype(np.int32)], 1)
+def poly_flower(img_bgr, arr, sat_max, val_min):
+    # Theo README muc 6 cua bo du lieu (va app/server.py): TRICH XUAT vung
+    # polygon roi moi dem -> blur/HSV/opening chay TRONG tung tan, khong phai
+    # tren ca anh. Tra ve (cnt, area, y0, x0, flower_crop) - flower_crop chi
+    # dung de ve overlay dung bang pixel da dem.
+    h, w = img_bgr.shape[:2]
+    pts = np.round(arr).astype(np.int32)
+    # kep bbox vao trong anh: polygon ve tay co the vuot ra ngoai khung
+    x0 = max(0, int(pts[:, 0].min()))
+    x1 = min(w, int(pts[:, 0].max()) + 1)
+    y0 = max(0, int(pts[:, 1].min()))
+    y1 = min(h, int(pts[:, 1].max()) + 1)
+    if x1 <= x0 or y1 <= y0:
+        return 0, 0, 0, 0, None
+    pm = np.zeros((y1 - y0, x1 - x0), np.uint8)
+    cv2.fillPoly(pm, [pts - np.array([x0, y0], np.int32)], 1)
     area = int(pm.sum())
     if area == 0:
-        return 0.0
-    cnt = int(np.count_nonzero((fmask > 0) & (pm > 0)))
-    return cnt / area
+        return 0, 0, 0, 0, None
+    crop = img_bgr[y0:y1, x0:x1]
+    region = cv2.bitwise_and(crop, crop, mask=pm)   # chi giu pixel trong tan
+    f = flower_mask(region, sat_max, val_min) & pm
+    return int(f.sum()), area, y0, x0, f
 
 
 def render_views(img_bgr, sat_max, val_min, polys):
     """Tra ve 3 anh RIENG (full res, khong ghep) + list ratio tung tan."""
     h, w = img_bgr.shape[:2]
-    fmask = flower_mask(img_bgr, sat_max, val_min)
-    cmask = canopy_mask(polys, h, w)             # chi xet trong tan
-    in_flower = (fmask > 0) & (cmask > 0)         # DUNG pixel ma module dem
+    # Dem RIENG trong tung tan (README muc 6), roi gop lai chi de HIEN THI.
+    # Ratio van lay tu tung tan, khong lay tu mask gop -> tan chong nhau khong
+    # muon pixel cua nhau.
+    in_flower = np.zeros((h, w), bool)
+    ratios = []
+    for arr in polys:
+        cnt, area, y0, x0, f = poly_flower(img_bgr, arr, sat_max, val_min)
+        ratios.append(cnt / area if area else 0.0)
+        if f is not None:
+            sub = in_flower[y0:y0 + f.shape[0], x0:x0 + f.shape[1]]
+            sub |= f > 0
 
     a = 0.55
     PINK = np.array([180, 60, 255], np.float64)
@@ -153,10 +168,7 @@ def render_views(img_bgr, sat_max, val_min, polys):
     mask_vis = np.zeros_like(img_bgr)
     mask_vis[in_flower] = (255, 255, 255)
 
-    ratios = []
-    for arr in polys:
-        ratio = poly_flower_ratio(fmask, arr, h, w)
-        ratios.append(ratio)
+    for arr, ratio in zip(polys, ratios):
         lvl = flower_label(ratio)
         pts = np.round(arr).astype(np.int32)
         cv2.polylines(overlay, [pts], True, LEVEL_COLORS[lvl], 2)
