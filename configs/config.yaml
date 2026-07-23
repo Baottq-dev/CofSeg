@@ -1,22 +1,14 @@
 project:
   name: coffee-seg
   seed: 42
-  device: cuda
 
 data:
   images_dir: data/iachim_dataset_export/data_compressed   # quét đệ quy field_*/10/... (ảnh drone gốc)
-  tiles_dir: data/tiles           # tile sau khi cắt
-  masks_dir: data/masks           # COCO json: seed / train / val / test
-  tile_size: 1024
-  tile_overlap: 0.2
-
-split:
-  test_ratio: 0.2
-  val_ratio: 0.1
-  block_col: plot_id              # chia theo lô/khu để chống rò rỉ
+  masks_dir: data/masks           # nhãn lưu ở masks/corrected/, export ở data/export/
 
 sam:
   variant: sam2                   # sam2 | sam3 (đổi ở phase sau)
+  device: cuda                    # cuda | cpu (không có GPU -> đặt cpu, rất chậm)
   # LƯU Ý: model_cfg là TÊN CONFIG NỘI BỘ của package sam2 (Hydra, pkg://sam2),
   #        KHÔNG phải file trong repo. Bắt buộc có tiền tố "configs/sam2.1/".
   #   large      : configs/sam2.1/sam2.1_hiera_l.yaml   + weights/sam2.1_hiera_large.pt
@@ -25,15 +17,3 @@ sam:
   #   tiny (test): configs/sam2.1/sam2.1_hiera_t.yaml   + weights/sam2.1_hiera_tiny.pt
   checkpoint: weights/sam2.1_hiera_large.pt
   model_cfg: configs/sam2.1/sam2.1_hiera_l.yaml
-  freeze_image_encoder: true      # đóng băng encoder -> tiết kiệm nhãn
-  train_prompt_encoder: true
-  train_mask_decoder: true
-  lr: 1.0e-4
-  epochs: 40
-  batch_size: 4
-  min_seed_area: 500
-
-infer:
-  points_per_side: 32
-  min_area: 500
-  out_dir: outputs/p1
