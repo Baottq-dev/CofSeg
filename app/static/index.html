@@ -34,7 +34,8 @@
   #advanced summary::-webkit-details-marker{display:none}
   #advanced summary:before{content:"⚙ "}
   #advanced input{width:100%;margin-top:5px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:6px 8px;font-size:12px;outline:none}
-  .tree{max-height:170px;overflow:auto;background:var(--panel2);border:1px solid var(--border);border-radius:var(--radius);padding:6px}
+  /* Co giãn theo cột thay vì chốt cứng 170px — cây lồng 3 cấp không đủ chỗ. */
+  .tree{flex:1 1 auto;min-height:130px;overflow:auto;background:var(--panel2);border:1px solid var(--border);border-radius:var(--radius);padding:6px}
   .tree .dir{display:flex;align-items:center;gap:4px;cursor:pointer;padding:3px 5px;border-radius:5px;font-size:12px;color:#c2cddd;white-space:nowrap}
   .tree .dir:hover{background:var(--elev)}
   .tree .dir.on{background:var(--blue);color:#fff}
@@ -140,6 +141,38 @@
   .fbfoot{display:flex;justify-content:flex-end;gap:8px}
   .resizer{flex:none;width:5px;cursor:col-resize;background:transparent}
   .resizer:hover,.resizer.drag{background:var(--teal)}
+  /* --- hộp thoại Xuất dữ liệu --- */
+  .exgrp{display:flex;flex-direction:column;gap:5px}
+  .exlbl{font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--teal)}
+  .exrow{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--border);background:var(--panel2);border-radius:7px;cursor:pointer;font-size:12.5px}
+  .exrow:hover{background:var(--elev)}
+  .exrow.on{border-color:var(--teal);background:var(--elev)}
+  .exrow input{margin:0;flex:none;accent-color:var(--teal)}
+  .exrow .exn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .exrow .exc{font-size:11px;color:var(--muted);white-space:nowrap}
+  .exrow.dis{opacity:.45;cursor:not-allowed}
+  .exfmt{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  .exsplit{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+  .exsplit select,.exsplit input{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 7px;font-size:12px;outline:none}
+  .exsplit input{width:52px;text-align:right}
+  .exwarn{font-size:11px;color:#f0b34a;line-height:1.45}
+  .exbody{overflow:auto;display:flex;flex-direction:column;gap:11px;padding-right:2px}
+  /* --- cây thư mục --- */
+  .tree .dir{gap:5px}
+  .tree .dir .dn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .tree .dir .dc{font-size:10.5px;color:var(--muted2);font-variant-numeric:tabular-nums;flex:none}
+  .tree .dir.on .dc{color:#cfe0f5}
+  .tree .dir.done .dc{color:var(--green)}
+  .bar{height:2px;border-radius:2px;background:#26364e;margin:2px 0 3px 16px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--green);border-radius:2px}
+  /* --- chỉ báo lưu --- */
+  #svst{white-space:nowrap;font-variant-numeric:tabular-nums}
+  #svst.err{color:#f7a5a5}
+  #svst.ok{color:var(--green)}
+  .kbd{display:inline-block;min-width:17px;padding:1px 5px;margin-right:6px;border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;background:var(--panel2);font:600 11px/1.5 ui-monospace,monospace;text-align:center}
+  .hlist{display:flex;flex-direction:column;gap:4px;font-size:12px}
+  .hlist div{display:flex;align-items:baseline;gap:2px}
+  .hlist span{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -152,11 +185,6 @@
     <div class="sec">Nguồn dữ liệu</div>
     <div class="folder-row"><select id="folder"></select><button id="applyFolder" title="Áp dụng">→</button></div>
     <details id="advanced"><summary>Đường dẫn tùy chỉnh</summary><input id="folderPath" placeholder="đường dẫn thư mục…"/></details>
-    <div class="sec">Nơi lưu</div>
-    <div class="expbox">
-      <button id="brOut" class="btn">📂 Nơi lưu nhãn (autosave)…</button>
-      <div id="pathInfo" class="expinfo"></div>
-    </div>
     <div class="sec">Project Tree</div>
     <div id="ptree" class="tree"></div>
     <div class="sec">Statistics <span class="tagnew">New</span></div>
@@ -168,7 +196,7 @@
     </div>
     <div class="sec">Train Model</div>
     <div class="train"><div class="trainicon">🚀</div><div class="traintxt"><b>Train model</b><span>Sắp có · Preparing…</span></div></div>
-    <button id="trainBtn" class="btn">Configure Training</button>
+    <button id="trainBtn" class="btn" disabled title="Sẽ thêm ở giai đoạn sau" style="opacity:.45;cursor:not-allowed">Configure Training</button>
   </aside>
   <div class="resizer" data-t="leftcol"></div>
   <aside id="imgcol">
@@ -194,25 +222,10 @@
       <div class="divider"></div>
       <button id="undo" class="tbtn">↶ Hoàn tác</button>
       <button id="clear" class="tbtn danger">🗑 Xoá hết</button>
-      <div class="dd">
-        <button id="save" class="save">💾 Lưu COCO ▾</button>
-        <div class="ddmenu" id="ddmenu" style="min-width:264px">
-          <div class="sec" style="margin:2px 8px 2px">Ảnh hiện tại</div>
-          <button id="exCoco">💾 Lưu COCO (ảnh này · server)</button>
-          <button id="exYolo">⬇ Xuất YOLO-seg (ảnh này)</button>
-          <button id="exVoc">⬇ Xuất Pascal VOC (ảnh này)</button>
-          <div style="height:1px;background:var(--border);margin:6px 4px"></div>
-          <div class="sec" style="margin:2px 8px 2px">Cả bộ dữ liệu</div>
-          <label class="expchk" style="padding:4px 10px"><input type="checkbox" id="expScope" checked/> Chỉ thư mục đang chọn</label>
-          <button id="expCoco">⬇ Xuất COCO (gộp cả bộ)</button>
-          <button id="expYolo">⬇ Xuất YOLO-seg (cả bộ)</button>
-          <button id="expDataset">📦 Xuất dataset (COCO+mask+YOLO)</button>
-          <div id="expInfo" class="expinfo" style="padding:4px 10px"></div>
-        </div>
-      </div>
+      <button id="save" class="save">📦 Xuất data</button>
     </div>
     <div id="wrap"><canvas id="cv"></canvas></div>
-    <div id="status"><span id="hint"></span><span id="count">0 Vùng</span></div>
+    <div id="status"><span id="hint"></span><span id="svst"></span><span id="count">0 Vùng</span></div>
   </div>
   <div class="resizer" data-t="rightcol" data-dir="r"></div>
   <aside id="rightcol">
@@ -227,6 +240,67 @@
     <div class="sec">Instances (vùng cây) <span class="pill" id="rcount">0</span></div>
     <div id="regions" class="reglist"></div>
   </aside>
+</div>
+<div id="expModal" class="fbmask">
+  <div class="fbbox">
+    <div class="fbhead"><b>📦 Xuất dữ liệu</b><span id="expClose" class="fbx">✕</span></div>
+    <div class="exbody">
+      <div class="exgrp">
+        <div class="exlbl">Phạm vi <span style="color:var(--muted2);font-weight:400;text-transform:none;letter-spacing:0">· chỉ ảnh đã gán nhãn</span></div>
+        <label class="exrow" id="scRowImg"><input type="radio" name="exsc" value="img"/><span class="exn">Ảnh hiện tại</span><span class="exc" id="scCntImg">—</span></label>
+        <label class="exrow" id="scRowDir"><input type="radio" name="exsc" value="dir" checked/><span class="exn">Thư mục đang chọn</span><span class="exc" id="scCntDir">—</span></label>
+        <label class="exrow" id="scRowAll"><input type="radio" name="exsc" value="all"/><span class="exn">Cả bộ dữ liệu</span><span class="exc" id="scCntAll">—</span></label>
+      </div>
+      <div class="exgrp">
+        <div class="exlbl">Định dạng</div>
+        <div class="exfmt">
+          <label class="exrow on"><input type="checkbox" id="fmCoco" checked/><span class="exn">COCO polygon</span></label>
+          <label class="exrow on"><input type="checkbox" id="fmYolo" checked/><span class="exn">YOLO-seg</span></label>
+          <label class="exrow"><input type="checkbox" id="fmMask"/><span class="exn">Mask semantic</span></label>
+          <label class="exrow"><input type="checkbox" id="fmInst"/><span class="exn">Mask instance</span></label>
+        </div>
+      </div>
+      <div class="exgrp">
+        <div class="exlbl">Chia dữ liệu</div>
+        <div class="exsplit">
+          <select id="spMode">
+            <option value="none">Không chia</option>
+            <option value="ratio" selected>Theo tỉ lệ</option>
+            <option value="field">Giữ nguyên field</option>
+          </select>
+          <span id="spBox">train <b id="spTrain" style="color:var(--text)">80</b>%
+            · val <input id="spVal" type="number" min="0" max="90" value="10"/>%
+            · test <input id="spTest" type="number" min="0" max="90" value="10"/>%
+            · seed <input id="spSeed" type="number" value="42" style="width:58px"/></span>
+        </div>
+        <div id="spNote" class="exwarn"></div>
+      </div>
+      <div class="exgrp">
+        <div class="exlbl">Tên bộ dữ liệu</div>
+        <input id="expName" class="search" value="dataset_v1"/>
+      </div>
+      <div id="expInfo" class="expinfo"></div>
+    </div>
+    <div class="fbfoot"><button id="expCancel" class="btn" style="width:auto">Huỷ</button><button id="expGo" class="save" style="border:0;cursor:pointer">Tiếp → chọn nơi lưu</button></div>
+  </div>
+</div>
+<div id="helpModal" class="fbmask">
+  <div class="fbbox" style="width:430px">
+    <div class="fbhead"><b>⌨ Phím tắt</b><span id="helpClose" class="fbx">✕</span></div>
+    <div class="hlist">
+      <div><b class="kbd">Ctrl</b><b class="kbd">Z</b><span>Hoàn tác</span></div>
+      <div><b class="kbd">Del</b><span>Xoá vùng đang chọn</span></div>
+      <div><b class="kbd">Esc</b><span>Huỷ nét đang vẽ</span></div>
+      <div><b class="kbd">+</b><b class="kbd">−</b><span>Phóng to / thu nhỏ</span></div>
+      <div><b class="kbd">0</b><span>Vừa màn hình</span></div>
+      <div style="height:6px"></div>
+      <div><b class="kbd">Shift</b><span>Giữ khi kéo điểm = chỉ nắn đúng 1 đỉnh</span></div>
+      <div><span>Chuột phải lên đỉnh = xoá đỉnh đó</span></div>
+      <div><span>Kéo vùng trống = di chuyển ảnh · lăn chuột = phóng to</span></div>
+      <div><span>Nháy đúp khi Vẽ tay = đóng vùng</span></div>
+    </div>
+    <div class="fbfoot"><button id="helpOk" class="btn" style="width:auto">Đóng</button></div>
+  </div>
 </div>
 <div id="fbModal" class="fbmask">
   <div class="fbbox">
@@ -249,11 +323,10 @@ let satMax=50,valMin=180;
 function densOf(pct){for(let i=classes.length-1;i>=0;i--){if(pct>=classes[i].lo)return classes[i].id;}return classes[0].id;}
 function thrText(c){if(c.hi>=1e9)return '≥ '+c.lo+'%';if(c.lo<=0)return '< '+c.hi+'%';return c.lo+'–'+c.hi+'%';}
 function clsById(id){return classes.find(c=>c.id===id);}
-function clsIdx(id){return classes.findIndex(c=>c.id===id);}
 function clsColor(id){const c=clsById(id);return c?c.color:'#f97316';}
 let imgs=[],labeledSet=new Set(),current=null,img=new Image(),curFolder='',pathFilter='';
 let baseFit=1,zoom=1,scale=1,ox=0,oy=0;
-let inst=[],store={},hist=[],saveTimer=null,rid=1,labelPreview=true,selToken=0,dirty=false,ready=false;
+let inst=[],store={},hist=[],saveTimer=null,rid=1,selToken=0,dirty=false,ready=false;
 let mode='sam-click',sel=-1,dragPt=-1,dragVi=-1,dragStart=null,origPoly=null,softD=null,dragSoft=true,hovPt=-1,draft=[],boxStart=null,mouse=null,pan=null;
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d'),wrap=document.getElementById('wrap');
 const $=id=>document.getElementById(id);
@@ -272,7 +345,8 @@ function renderClasses(){const box=$('classes');box.innerHTML='';
   sw.onclick=e=>e.stopPropagation();sw.oninput=()=>{c.color=sw.value;saveClasses();draw();renderRegions();};
   const nm=document.createElement('span');nm.className='cnm';nm.textContent=c.name;
   const thr=document.createElement('span');thr.className='cthr';thr.textContent=thrText(c);
-  const cnt=document.createElement('span');cnt.className='ccnt';cnt.textContent=inst.filter(r=>r.cls===c.id).length||'';
+  // Hiện thẳng số 0; bản cũ dùng `||''` nên ô trống trông như "chưa tính".
+  const cnt=document.createElement('span');cnt.className='ccnt';cnt.textContent=inst.filter(r=>r.cls===c.id).length;
   row.onclick=()=>{activeCls=c.id;renderClasses();};
   row.appendChild(sw);row.appendChild(nm);row.appendChild(thr);row.appendChild(cnt);box.appendChild(row);});
  $('stCls').textContent=classes.length;}
@@ -311,8 +385,15 @@ function renderRegions(){const box=$('regions');box.innerHTML='';$('rcount').tex
   bD.onclick=()=>{pushHist();inst.splice(i,1);if(sel===i)sel=-1;else if(sel>i)sel--;persist();draw();renderRegions();};
   act.appendChild(selc);act.appendChild(bF);act.appendChild(bV);act.appendChild(bD);
   row.appendChild(head);row.appendChild(act);box.appendChild(row);});}
-function renderStats(){const total=imgs.length,lab=labeledSet.size;
- $('stTotal').textContent=total;$('stLab').textContent=lab;$('stUnlab').textContent=Math.max(0,total-lab);$('stCls').textContent=classes.length;}
+// Thống kê bám theo thư mục đang chọn: đang gán dở một nhánh thì cần biết còn
+// bao nhiêu ảnh của NHÁNH ĐÓ, chứ tổng toàn bộ không giúp gì.
+function renderStats(){
+ const list=pathFilter?imgs.filter(inScope):imgs;
+ const total=list.length,lab=list.filter(p=>labeledSet.has(p)).length;
+ $('stTotal').textContent=total;$('stLab').textContent=lab;
+ $('stUnlab').textContent=Math.max(0,total-lab);$('stCls').textContent=classes.length;
+ const sub=pathFilter?(' · '+pathFilter):' · tất cả';
+ document.querySelectorAll('#leftcol .stat .slbl')[0].textContent='Total Images'+sub;}
 async function loadLabeled(){try{const d=await(await fetch('/api/labeled?t='+Date.now(),{cache:'no-store'})).json();labeledSet=new Set(d.labeled||[]);}catch(e){labeledSet=new Set();}renderStats();}
 async function loadFolders(){try{const d=await(await fetch('/api/folders',{cache:'no-store'})).json();
  curFolder=d.current||'';const s=$('folder');s.innerHTML='';
@@ -326,25 +407,81 @@ $('applyFolder').onclick=async()=>{flush();
   store={};current=null;pathFilter='';await loadFolders();await loadImgs();}catch(e){alert('Lỗi đổi thư mục: '+e);}};
 $('folder').onchange=()=>$('applyFolder').click();
 $('search').oninput=renderThumbs;
-$('trainBtn').onclick=()=>alert('Cấu hình huấn luyện sẽ được thêm ở giai đoạn sau.');
-async function runExport(fmt){const scope=($('expScope').checked?pathFilter:'')||'';
- const out_dir=await fbOpen(expDirStart);if(out_dir===null)return;expDirStart=out_dir;
- $('expInfo').textContent='⏳ Đang xuất '+fmt.toUpperCase()+'…';
- try{flush();const r=await(await fetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({format:fmt,scope:scope,out_dir:out_dir})})).json();
+// ============================ XUẤT DỮ LIỆU ============================
+// Luồng: chọn phạm vi + định dạng + cách chia -> chọn nơi lưu -> xuất.
+// Mọi phạm vi đều CHỈ tính ảnh đã gán nhãn; con số lấy từ /api/export_preview
+// để người dùng biết trước sẽ xuất bao nhiêu, thay vì bấm xong mới biết.
+const PREV={};
+function scopeOf(v){return v==='all'?'':(v==='img'?(current||''):(pathFilter||''));}
+function curScope(){const el=document.querySelector('input[name=exsc]:checked');return el?el.value:'dir';}
+async function preview(v){const sc=scopeOf(v);
+ if(v==='img'&&!current)return null;
+ if(PREV[sc]!==undefined)return PREV[sc];
+ try{PREV[sc]=await(await fetch('/api/export_preview?scope='+encodeURIComponent(sc),{cache:'no-store'})).json();}
+ catch(e){PREV[sc]=null;}
+ return PREV[sc];}
+function fmtCnt(p){if(!p)return '—';
+ const s=p.images_labeled+'/'+p.images_total+' ảnh · '+p.annotations+' vùng';
+ return p.skipped_regions?(s+' · bỏ '+p.skipped_regions):s;}
+async function refreshCounts(){
+ $('scRowDir').querySelector('.exn').textContent='Thư mục đang chọn'+(pathFilter?(' · '+pathFilter):' · tất cả');
+ $('scRowImg').querySelector('.exn').textContent='Ảnh hiện tại'+(current?(' · '+current.split('/').pop()):'');
+ $('scRowImg').classList.toggle('dis',!current);
+ $('scRowImg').querySelector('input').disabled=!current;
+ for(const [v,id] of [['img','scCntImg'],['dir','scCntDir'],['all','scCntAll']]){
+  $(id).textContent='…';const p=await preview(v);$(id).textContent=fmtCnt(p);}
+ syncSplit();}
+function syncSplit(){const m=$('spMode').value;
+ $('spBox').style.display=(m==='ratio')?'':'none';
+ const v=+$('spVal').value||0,t=+$('spTest').value||0;
+ $('spTrain').textContent=Math.max(0,100-v-t);
+ const n=$('spNote');
+ if(m==='none')n.textContent='data.yaml sẽ KHÔNG có khoá val — ultralytics dừng với "\'val:\' key missing" cho tới khi bạn chia. Cố ý như vậy để không ai lỡ đo trên chính tập train.';
+ else if(m==='field')n.textContent='Giữ nguyên field: hiện chỉ có nhãn ở field_2 nên val/test sẽ rỗng. Chỉ dùng khi đã gán nhãn từ 3 field trở lên.';
+ else if(v+t>=100)n.textContent='⚠ val + test ≥ 100%, không còn ảnh nào cho train.';
+ else n.textContent='Xáo trong từng đường bay rồi cắt, nên mọi tập đều có mặt ở mọi đường bay.';}
+function openExport(){PREV.__x=0;for(const k in PREV)delete PREV[k];
+ $('expInfo').textContent='';$('expModal').classList.add('open');refreshCounts();}
+$('save').onclick=openExport;
+$('expClose').onclick=$('expCancel').onclick=()=>$('expModal').classList.remove('open');
+$('expModal').onclick=e=>{if(e.target===$('expModal'))$('expModal').classList.remove('open');};
+document.querySelectorAll('input[name=exsc]').forEach(r=>r.onchange=syncSplit);
+['fmCoco','fmYolo','fmMask','fmInst'].forEach(id=>{const el=$(id);
+ el.onchange=()=>el.closest('.exrow').classList.toggle('on',el.checked);});
+$('spMode').onchange=syncSplit;$('spVal').oninput=syncSplit;$('spTest').oninput=syncSplit;
+$('expGo').onclick=async()=>{
+ const fmts=[];if($('fmCoco').checked)fmts.push('coco');if($('fmYolo').checked)fmts.push('yolo');
+ if($('fmMask').checked)fmts.push('masks');if($('fmInst').checked)fmts.push('masks_instance');
+ if(!fmts.length){$('expInfo').textContent='⚠ Chọn ít nhất một định dạng.';return;}
+ const name=($('expName').value||'').trim();
+ if(!name||/[\\/:*?"<>|]/.test(name)){$('expInfo').textContent='⚠ Tên bộ dữ liệu không hợp lệ.';return;}
+ const v=curScope(),p=await preview(v);
+ if(p&&!p.images_labeled){$('expInfo').textContent='⚠ Phạm vi này chưa có ảnh nào được gán nhãn.';return;}
+ const out_dir=await fbOpen(expDirStart);if(!out_dir)return;expDirStart=out_dir;
+ const body={scope:scopeOf(v),formats:fmts,name:name,out_dir:out_dir,
+  split_by:$('spMode').value,val_ratio:(+$('spVal').value||0)/100,
+  test_ratio:(+$('spTest').value||0)/100,seed:+$('spSeed').value||0,overwrite:false};
+ await doExport(body,p);};
+async function doExport(body,p){const btn=$('expGo');btn.disabled=true;
+ const t0=Date.now();const n=p?p.images_labeled:0;
+ const tick=setInterval(()=>{$('expInfo').textContent='⏳ Đang xuất '+n+' ảnh… '+Math.round((Date.now()-t0)/1000)+'s';},250);
+ try{flush();
+  const r=await(await fetch('/api/export_dataset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  clearInterval(tick);btn.disabled=false;
+  if(r.exists){if(confirm('Thư mục "'+body.name+'" đã tồn tại.\n\nGhi đè toàn bộ nội dung cũ?')){body.overwrite=true;return doExport(body,p);}
+   $('expInfo').textContent='⚠ Đã huỷ — thư mục cũ giữ nguyên.';return;}
   if(!r.ok){$('expInfo').textContent='⚠ '+(r.error||'Lỗi xuất');return;}
-  if(fmt==='yolo')$('expInfo').textContent='✔ YOLO-seg: '+r.images+' ảnh · '+r.objects+' vùng · '+r.classes+' lớp → '+r.dir;
-  else $('expInfo').textContent='✔ COCO: '+r.images+' ảnh · '+r.annotations+' vùng → '+r.file;}
- catch(e){$('expInfo').textContent='⚠ '+e;}}
-$('expCoco').onclick=()=>runExport('coco');
-$('expYolo').onclick=()=>runExport('yolo');
-$('expDataset').onclick=async()=>{const scope=($('expScope').checked?pathFilter:'')||'';
- const out_dir=await fbOpen(expDirStart);if(out_dir===null)return;expDirStart=out_dir;
- $('expInfo').textContent='⏳ Đang xuất dataset…';
- try{flush();const r=await(await fetch('/api/export_dataset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:scope,split_by:'none',out_dir:out_dir})})).json();
-  if(!r.ok){$('expInfo').textContent='⚠ '+(r.error||'Lỗi xuất dataset');return;}
-  const s=r.splits||{};const g=(s.all&&s.all.images)||0;const a=(s.all&&s.all.annotations)||0;
-  $('expInfo').textContent='✔ Dataset: '+g+' ảnh · '+a+' vùng → '+r.dir;}
- catch(e){$('expInfo').textContent='⚠ '+e;}};
+  const s=r.splits||{};
+  const parts=Object.keys(s).filter(k=>s[k].images).map(k=>k+' '+s[k].images);
+  const nimg=Object.values(s).reduce((a,b)=>a+b.images,0);
+  const nann=Object.values(s).reduce((a,b)=>a+b.annotations,0);
+  const skip=Object.values(s).reduce((a,b)=>a+(b.skipped_regions||0),0);
+  let msg='✔ '+nimg+' ảnh · '+nann+' vùng'+(parts.length>1?(' ('+parts.join(' · ')+')'):'')
+        +' · '+(r.formats||[]).join(', ')+' → '+r.dir+'  ['+Math.round((Date.now()-t0)/1000)+'s]';
+  if(skip)msg+='\n⚠ Bỏ qua '+skip+' vùng chưa xác định được mức hoa.';
+  if((r.problems||[]).length)msg+='\n⚠ '+r.problems.length+' ảnh có vấn đề: '+r.problems.slice(0,3).join(' · ');
+  $('expInfo').textContent=msg;}
+ catch(e){clearInterval(tick);btn.disabled=false;$('expInfo').textContent='⚠ '+e;}}
 async function loadModels(){const s=$('modelSel');if(!s)return;
  try{const d=await(await fetch('/api/models',{cache:'no-store'})).json();s.innerHTML='';
   (d.models||[]).forEach(m=>{const o=document.createElement('option');o.value=m.id;o.textContent=(m.variant==='sam3'?'✦3 ':'✦ ')+m.name;if(m.id===d.current)o.selected=true;s.appendChild(o);});
@@ -354,25 +491,57 @@ if($('modelSel'))$('modelSel').onchange=async()=>{const id=$('modelSel').value;$
  try{const r=await(await fetch('/api/model',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})).json();
   $('hint').textContent=r.ok?('✔ Đã chọn model: '+id+' — sẽ nạp khi bấm SAM lần đầu.'):('⚠ '+(r.error||'Lỗi đổi model'));}
  catch(e){$('hint').textContent='⚠ '+e;}};
-function buildDirs(paths){const root={dirs:{}};paths.forEach(p=>{const parts=p.split('/');let node=root;for(let i=0;i<parts.length-1;i++){node.dirs[parts[i]]=node.dirs[parts[i]]||{dirs:{}};node=node.dirs[parts[i]];}});return root;}
+// Cây thư mục: mỗi nhánh mang sẵn số ảnh và số đã gán, để biết còn phải làm
+// bao nhiêu mà không cần bấm vào từng thư mục.
+function buildDirs(paths){const root={dirs:{},n:0,done:0};
+ paths.forEach(p=>{const parts=p.split('/');let node=root;
+  for(let i=0;i<parts.length-1;i++){node.dirs[parts[i]]=node.dirs[parts[i]]||{dirs:{},n:0,done:0};
+   node=node.dirs[parts[i]];node.n++;if(labeledSet.has(p))node.done++;}
+  root.n++;if(labeledSet.has(p))root.done++;});
+ return root;}
+let collapsed=new Set();     // giữ qua các lần vẽ lại, nếu không mỗi lần bấm là bung hết
+function firstImgIn(pre){return imgs.find(p=>pre===''||p===pre||p.indexOf(pre+'/')===0);}
+function pickDir(full){pathFilter=full;renderPTree();renderThumbs();renderStats();
+ const f=firstImgIn(full);if(f&&f!==current)selectImg(f);}
+function treeRow(label,full,node){
+ const row=document.createElement('div');
+ const kidNames=Object.keys(node.dirs);
+ row.className='dir'+(pathFilter===full?' on':'')+(node.n&&node.done===node.n?' done':'');
+ const tw=document.createElement('span');tw.className='tw';
+ if(kidNames.length)tw.textContent=collapsed.has(full)?'▸':'▾';   // lá thì không có mũi
+ row.appendChild(tw);
+ const nm=document.createElement('span');nm.className='dn';nm.textContent='📁 '+label;row.appendChild(nm);
+ const c=document.createElement('span');c.className='dc';
+ c.textContent=node.done+'/'+node.n;row.title=label+' — đã gán '+node.done+'/'+node.n+' ảnh';
+ row.appendChild(c);
+ row.onclick=e=>{e.stopPropagation();pickDir(full);};
+ if(kidNames.length)tw.onclick=e=>{e.stopPropagation();
+  if(collapsed.has(full))collapsed.delete(full);else collapsed.add(full);renderPTree();};
+ return row;}
+function progBar(node){const b=document.createElement('div');b.className='bar';
+ const i=document.createElement('i');i.style.width=(node.n?100*node.done/node.n:0)+'%';
+ b.appendChild(i);return b;}
 function renderPTree(){const el=$('ptree');el.innerHTML='';
- const all=document.createElement('div');all.className='dir'+(pathFilter===''?' on':'');
- const tw0=document.createElement('span');tw0.className='tw';tw0.textContent='▾';all.appendChild(tw0);all.appendChild(document.createTextNode('📁 Tất cả'));
- all.onclick=()=>{pathFilter='';renderPTree();renderThumbs();};el.appendChild(all);
+ const root=buildDirs(imgs);
+ el.appendChild(treeRow('Tất cả','',root));
+ el.appendChild(progBar(root));
+ if(collapsed.has(''))return;
  const wrap2=document.createElement('div');wrap2.className='kids';
- (function walk(node,prefix,cont){Object.keys(node.dirs).sort(natcmp).forEach(name=>{const full=prefix?prefix+'/'+name:name;
-   const row=document.createElement('div');row.className='dir'+(pathFilter===full?' on':'');
-   const tw=document.createElement('span');tw.className='tw';tw.textContent='▾';row.appendChild(tw);row.appendChild(document.createTextNode('📁 '+name));
+ (function walk(node,prefix,cont){Object.keys(node.dirs).sort(natcmp).forEach(name=>{
+   const full=prefix?prefix+'/'+name:name,kid=node.dirs[name];
+   cont.appendChild(treeRow(name,full,kid));
+   if(collapsed.has(full))return;
    const kids=document.createElement('div');kids.className='kids';
-   row.onclick=e=>{e.stopPropagation();pathFilter=full;renderPTree();renderThumbs();};
-   tw.onclick=e=>{e.stopPropagation();const h=kids.style.display==='none';kids.style.display=h?'':'none';tw.textContent=h?'▾':'▸';};
-   walk(node.dirs[name],full,kids);cont.appendChild(row);cont.appendChild(kids);});})(buildDirs(imgs),'',wrap2);
+   walk(kid,full,kids);cont.appendChild(kids);});})(root,'',wrap2);
  el.appendChild(wrap2);}
 function isDone(p){return labeledSet.has(p);}
+function inScope(p){return pathFilter===''||p===pathFilter||p.indexOf(pathFilter+'/')===0;}
 function renderThumbs(){const box=$('thumbs');box.innerHTML='';
  const q=($('search').value||'').toLowerCase();
- const list=imgs.filter(p=>(pathFilter===''||p===pathFilter||p.indexOf(pathFilter+'/')===0)&&p.toLowerCase().indexOf(q)>=0);
- $('nimg').textContent=imgs.length;
+ const list=imgs.filter(p=>inScope(p)&&p.toLowerCase().indexOf(q)>=0);
+ // Hiện số ĐANG LỌC, không phải tổng — bản cũ luôn ghi tổng nên chọn thư mục
+ // 67 ảnh vẫn thấy 118.
+ $('nimg').textContent=(list.length===imgs.length)?imgs.length:(list.length+' / '+imgs.length);
  list.forEach(p=>{const row=document.createElement('div');row.className='thumb'+(p===current?' active':'')+(isDone(p)?' done':'');row.dataset.n=p;
   const im=document.createElement('img');im.loading='lazy';im.src='/api/thumb/'+enc(p);
   const nm=document.createElement('div');nm.className='tname';nm.textContent=p.split('/').pop();nm.title=p;
@@ -397,7 +566,19 @@ async function selectImg(t){if(current&&ready&&dirty){flush();}if(current&&ready
  if(tok!==selToken)return;
  ready=true;$('count').textContent=inst.length+' Vùng';renderRegions();draw();renderClasses();}
 function payload(){return JSON.stringify({name:current,width:img.width||0,height:img.height||0,polygons:inst.map(r=>r.poly),classes:inst.map(r=>r.cls),manual:inst.map(r=>!!r.manual),categories:classes,sat_max:satMax,val_min:valMin});}
-function saveNow(){if(!current||!ready)return;dirty=false;fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:payload()});}
+// Chỉ báo lưu. Bản cũ gọi fetch rồi bỏ qua kết quả, nên server có báo lỗi cũng
+// không ai thấy — kể cả khi nó không đọc được ảnh và không tính được mật độ hoa.
+function svst(cls,txt,title){const el=$('svst');if(!el)return;
+ el.className=cls||'';el.textContent=txt||'';el.title=title||txt||'';}
+function hhmm(){const d=new Date(),p=n=>('0'+n).slice(-2);
+ return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
+async function saveNow(){if(!current||!ready)return;dirty=false;
+ const who=current;svst('','⏳ đang lưu…');
+ try{const r=await(await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:payload()})).json();
+  if(current!==who)return;
+  if(r.warning)svst('err','⚠ '+r.warning,r.warning);
+  else svst('ok','✔ đã lưu '+hhmm(),'Nhãn lưu tại: '+(saveDirStart||'(mặc định)'));}
+ catch(e){if(current===who)svst('err','⚠ chưa lưu được','Không gửi được về server: '+e);}}
 function scheduleSave(){if(!current)return;dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(saveNow,700);}
 function flush(){clearTimeout(saveTimer);if(dirty)saveNow();}
 function beacon(){if(!current||!ready||!dirty)return;try{navigator.sendBeacon('/api/save',new Blob([payload()],{type:'application/json'}));dirty=false;}catch(e){}}
@@ -412,25 +593,9 @@ $('clear').onclick=()=>{pushHist();inst=[];sel=-1;refresh();};
 $('zin').onclick=()=>zoomAt(cv.width/2,cv.height/2,1.25);
 $('zout').onclick=()=>zoomAt(cv.width/2,cv.height/2,0.8);
 $('zfit').onclick=()=>resetView();
-function baseName(){return (current||'image').split('/').pop().split('.').slice(0,-1).join('.')||'image';}
-function dl(fn,txt,mime){const b=new Blob([txt],{type:mime||'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=fn;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);}
-function exportYolo(){if(!img.width)return;const W=img.width,H=img.height,NL=String.fromCharCode(10);
- const lines=inst.map(r=>{const ci=clsIdx(r.cls);const co=r.poly.map((v,k)=>(k%2===0?v/W:v/H).toFixed(6)).join(' ');return ci+' '+co;});
- dl(baseName()+'.txt',lines.join(NL),'text/plain');}
-function exportVoc(){if(!img.width)return;const W=img.width,H=img.height,NL=String.fromCharCode(10),o=[];
- o.push('<annotation>');o.push('  <filename>'+baseName()+'</filename>');
- o.push('  <size><width>'+W+'</width><height>'+H+'</height><depth>3</depth></size>');
- inst.forEach(r=>{const xs=r.poly.filter((_,k)=>k%2===0),ys=r.poly.filter((_,k)=>k%2===1);
-  const x1=Math.round(Math.min.apply(null,xs)),y1=Math.round(Math.min.apply(null,ys)),x2=Math.round(Math.max.apply(null,xs)),y2=Math.round(Math.max.apply(null,ys));
-  const nm=(clsById(r.cls)||{}).name||'object';
-  o.push('  <object><name>'+nm+'</name><bndbox><xmin>'+x1+'</xmin><ymin>'+y1+'</ymin><xmax>'+x2+'</xmax><ymax>'+y2+'</ymax></bndbox></object>');});
- o.push('</annotation>');dl(baseName()+'.xml',o.join(NL),'application/xml');}
-function closeDD(){$('ddmenu').classList.remove('open');}
-$('save').onclick=e=>{e.stopPropagation();$('ddmenu').classList.toggle('open');};
-$('exCoco').onclick=()=>{saveNow();closeDD();alert('Đã lưu COCO '+inst.length+' vùng.');};
-$('exYolo').onclick=()=>{exportYolo();closeDD();};
-$('exVoc').onclick=()=>{exportVoc();closeDD();};
-document.addEventListener('click',e=>{if(!e.target.closest('.dd'))closeDD();});
+// Xuất một ảnh lẻ giờ là mức phạm vi "Ảnh hiện tại" trong hộp thoại Xuất data,
+// ghi ra thư mục như mọi phạm vi khác. Pascal VOC đã bỏ: nó chỉ lưu khung chữ
+// nhật bao quanh, vứt sạch polygon nên vô dụng với bài toán phân đoạn tán.
 function sizeCanvas(){cv.width=wrap.clientWidth;cv.height=wrap.clientHeight;}
 function resetView(){if(!img.width)return;baseFit=Math.min(cv.width/img.width,cv.height/img.height,1);zoom=1;scale=baseFit;ox=(cv.width-img.width*scale)/2;oy=(cv.height-img.height*scale)/2;setZlbl();draw();}
 function zoomAt(cx,cy,f){if(!img.width)return;const ix=(cx-ox)/scale,iy=(cy-oy)/scale;zoom=Math.min(12,Math.max(0.1,zoom*f));scale=baseFit*zoom;ox=cx-ix*scale;oy=cy-iy*scale;setZlbl();draw();}
@@ -554,10 +719,12 @@ document.querySelectorAll('.resizer').forEach(rz=>{rz.addEventListener('mousedow
  const mv=ev=>{const w=Math.max(150,Math.min(560,w0+dir*(ev.clientX-x0)));el.style.width=w+'px';if(img.width){sizeCanvas();draw();}};
  const up=()=>{rz.classList.remove('drag');document.body.style.userSelect='';window.removeEventListener('mousemove',mv);window.removeEventListener('mouseup',up);};
  window.addEventListener('mousemove',mv);window.addEventListener('mouseup',up);});});
+// Nơi autosave nhãn là cố định theo configs/config.yaml — chỉ đọc để hiện lên
+// tooltip chỉ báo lưu. Nơi xuất thì hỏi lại mỗi lần, đây chỉ là thư mục mở đầu.
 let saveDirStart='',expDirStart='';
 async function loadPaths(){try{const d=await(await fetch('/api/paths',{cache:'no-store'})).json();
  saveDirStart=d.out_dir||'';expDirStart=d.export_dir||'';
- if($('pathInfo'))$('pathInfo').textContent='Nhãn: '+(d.out_dir||'(mặc định)');}catch(e){}}
+ svst('','','Nhãn lưu tại: '+(saveDirStart||'(mặc định)'));}catch(e){}}
 let fbCur='',fbResolve=null;
 function fbOpen(start){return new Promise(res=>{fbResolve=res;$('fbModal').classList.add('open');fbLoad(start||'');});}
 function fbDone(val){$('fbModal').classList.remove('open');if(fbResolve){const r=fbResolve;fbResolve=null;r(val);}}
@@ -578,13 +745,10 @@ $('fbPick').onclick=()=>fbDone(fbCur);
 $('fbMk').onclick=async()=>{const nm=$('fbNew').value.trim();if(!nm)return;
  try{const r=await(await fetch('/api/mkdir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:fbCur,name:nm})})).json();
   if(r.ok){$('fbNew').value='';fbLoad(fbCur);}else alert(r.error||'Không tạo được thư mục');}catch(e){alert(e);}};
-if($('brOut'))$('brOut').onclick=async()=>{const p=await fbOpen(saveDirStart);if(!p)return;
- $('pathInfo').textContent='⏳ Đang cập nhật…';
- try{const r=await(await fetch('/api/set_paths',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({out_dir:p})})).json();
-  if(!r.ok){$('pathInfo').textContent='⚠ '+(r.error||'Lỗi');return;}
-  saveDirStart=r.out_dir;$('pathInfo').textContent='✔ Nhãn lưu tại: '+r.out_dir;
-  await loadLabeled();renderThumbs();updateThumbActive();}
- catch(e){$('pathInfo').textContent='⚠ '+e;}};
+const hlp=document.querySelector('.hbtn');
+if(hlp){hlp.title='Phím tắt';hlp.onclick=()=>$('helpModal').classList.add('open');}
+$('helpClose').onclick=$('helpOk').onclick=()=>$('helpModal').classList.remove('open');
+$('helpModal').onclick=e=>{if(e.target===$('helpModal'))$('helpModal').classList.remove('open');};
 renderClasses();setMode('sam-click');loadModels();loadPaths();loadFolders().then(loadImgs);
 </script>
 </body>
