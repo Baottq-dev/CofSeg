@@ -64,8 +64,8 @@ def med(a):
     return sorted(a)[len(a) // 2] if a else 0.0
 
 
-def quart(a, p):
-    return sorted(a)[int(p * (len(a) - 1))] if a else 0.0
+# def quart(a, p):
+#     return sorted(a)[int(p * (len(a) - 1))] if a else 0.0
 
 
 def leaf_dirs(base: str):
@@ -159,21 +159,21 @@ def main():
 
     print("\nkich thuoc anh gap:", sorted(sizes))
 
-    print("\n=== SO THU TU DJI THIEU (khung bi xoa/mat) ===")
-    for d in dirs:
-        ms = all_ms.get(d)
-        if not ms:
-            continue
-        seqs = sorted(s for s in (dji_meta(os.path.basename(x["path"]))[1]
-                                  for x in ms) if s is not None)
-        if not seqs:
-            continue
-        gaps = ["%d..%d" % (a + 1, b - 1)
-                for a, b in zip(seqs, seqs[1:]) if b - a > 1]
-        rel = os.path.relpath(d, args.base).replace("\\", "/")
-        print("  %-26s seq %04d-%04d  thieu %d khung%s"
-              % (rel, seqs[0], seqs[-1], seqs[-1] - seqs[0] + 1 - len(seqs),
-                 ("  (" + ", ".join(gaps[:6]) + ")") if gaps else ""))
+    # print("\n=== SO THU TU DJI THIEU (khung bi xoa/mat) ===")
+    # for d in dirs:
+    #     ms = all_ms.get(d)
+    #     if not ms:
+    #         continue
+    #     seqs = sorted(s for s in (dji_meta(os.path.basename(x["path"]))[1]
+    #                               for x in ms) if s is not None)
+    #     if not seqs:
+    #         continue
+    #     gaps = ["%d..%d" % (a + 1, b - 1)
+    #             for a, b in zip(seqs, seqs[1:]) if b - a > 1]
+    #     rel = os.path.relpath(d, args.base).replace("\\", "/")
+    #     print("  %-26s seq %04d-%04d  thieu %d khung%s"
+    #           % (rel, seqs[0], seqs[-1], seqs[-1] - seqs[0] + 1 - len(seqs),
+    #              ("  (" + ", ".join(gaps[:6]) + ")") if gaps else ""))
 
     print("\n=== NHIP CHUP (giay giua 2 khung lien tiep) ===")
     for d in dirs:
@@ -188,12 +188,12 @@ def main():
             print("  %-26s min %2.0fs  trung vi %2.0fs  max %3.0fs"
                   % (rel, deltas[0], med(deltas), deltas[-1]))
 
-    print("\n=== ANH MO (do net < 40%% trung vi folder) ===")
-    if not blurry:
-        print("  (khong co)")
-    for d, nm, s, m in blurry:
-        rel = os.path.relpath(d, args.base).replace("\\", "/")
-        print("  %-26s %-42s %6.0f (tv %5.0f)" % (rel, nm, s, m))
+    # print("\n=== ANH MO (do net < 40%% trung vi folder) ===")
+    # if not blurry:
+    #     print("  (khong co)")
+    # for d, nm, s, m in blurry:
+    #     rel = os.path.relpath(d, args.base).replace("\\", "/")
+    #     print("  %-26s %-42s %6.0f (tv %5.0f)" % (rel, nm, s, m))
 
 
 if __name__ == "__main__":
