@@ -310,6 +310,7 @@
       <div><b class="kbd">Shift</b><span>Giữ khi kéo điểm = chỉ nắn đúng 1 đỉnh</span></div>
       <div><span>Chuột phải lên đỉnh = xoá đỉnh đó</span></div>
       <div><span>Kéo vùng trống = di chuyển ảnh · lăn chuột = phóng to</span></div>
+      <div><span>Rê lên cạnh = hiện điểm mờ ⊕, bấm vào là thêm điểm và kéo được ngay</span></div>
       <div><span>Nháy đúp khi Vẽ tay = đóng vùng</span></div>
     </div>
     <div class="fbfoot"><button id="helpOk" class="btn" style="width:auto">Đóng</button></div>
@@ -326,6 +327,13 @@
 </div>
 <script>
 const HANDLE_PX=16,INFLUENCE_PX=60;
+// Bút nắn: BRUSH_STEP_PX = khoảng cách đỉnh chèn thêm dưới bút, BRUSH_MAX_PX
+// = trần bán kính khi kéo xa. SIMPLIFY_PX/WELD_PX tính bằng px ẢNH (KHÔNG
+// theo zoom) — đó là điểm mấu chốt giữ số đỉnh không phình theo mức zoom.
+const BRUSH_STEP_PX=8,BRUSH_MAX_PX=INFLUENCE_PX*4,SIMPLIFY_PX=0.6,WELD_PX=0.3;
+// Bán kính bắt CẠNH (px màn hình). Nhỏ hơn bán kính bắt đỉnh (11) để đỉnh
+// thật luôn thắng khi hai thứ nằm chồng nhau.
+const EDGE_PX=8;
 const DENS=[{id:0,name:'0 · Không hoa',color:'#64748b',lo:0,hi:2},{id:1,name:'1 · Ít hoa',color:'#22c55e',lo:2,hi:10},{id:2,name:'2 · Nhiều hoa',color:'#f59e0b',lo:10,hi:30},{id:3,name:'3 · Rất nhiều hoa',color:'#ef4444',lo:30,hi:1e9}];
 function loadClasses(){try{const s=JSON.parse(localStorage.getItem('cofseg_density'));if(Array.isArray(s)&&s.length===4)return DENS.map((d,i)=>({id:d.id,name:d.name,color:(s[i]&&s[i].color)||d.color,lo:d.lo,hi:d.hi}));}catch(e){}return DENS.map(c=>({id:c.id,name:c.name,color:c.color,lo:c.lo,hi:c.hi}));}
 function saveClasses(){localStorage.setItem('cofseg_density',JSON.stringify(classes));}
@@ -340,14 +348,14 @@ function clsColor(id){const c=clsById(id);return c?c.color:'#f97316';}
 let imgs=[],labeledSet=new Set(),current=null,img=new Image(),curFolder='',pathFilter='';
 let baseFit=1,zoom=1,scale=1,ox=0,oy=0;
 let inst=[],store={},hist=[],saveTimer=null,rid=1,selToken=0,dirty=false,ready=false;
-let mode='sam-click',sel=-1,dragPt=-1,dragVi=-1,dragStart=null,origPoly=null,softD=null,dragSoft=true,hovPt=-1,draft=[],boxStart=null,mouse=null,pan=null;
+let mode='sam-click',sel=-1,dragPt=-1,dragVi=-1,dragStart=null,origPoly=null,softD=null,dragSoft=true,dragTouch=null,hovPt=-1,ghost=null,draft=[],boxStart=null,mouse=null,pan=null;
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d'),wrap=document.getElementById('wrap');
 const $=id=>document.getElementById(id);
 function enc(t){return t.split('/').map(encodeURIComponent).join('/');}
 function natcmp(a,b){return String(a).localeCompare(String(b),undefined,{numeric:true});}
-const HINT={'sam-click':'SAM Click · Bấm vào 1 cây để tạo vùng mới (lớp đang chọn).','sam-box':'SAM Box · Kéo 1 khung quanh cây để tạo vùng chính xác hơn.','draw':'Vẽ tay · Click các điểm quanh tán; double-click để đóng vùng; Esc để huỷ.','select':'Chọn / Sửa · Kéo điểm trắng để nắn viền (Shift = 1 điểm) · chuột phải xoá điểm · Delete xoá vùng · kéo vùng trống để di chuyển ảnh · Ctrl+Z hoàn tác.'};
+const HINT={'sam-click':'SAM Click · Bấm vào 1 cây để tạo vùng mới (lớp đang chọn).','sam-box':'SAM Box · Kéo 1 khung quanh cây để tạo vùng chính xác hơn.','draw':'Vẽ tay · Click các điểm quanh tán; double-click để đóng vùng; Esc để huỷ.','select':'Chọn / Sửa · Kéo điểm trắng để nắn viền (Shift = 1 điểm) · rê lên cạnh để hiện điểm mờ, bấm là thêm điểm ngay đó · chuột phải xoá điểm · Delete xoá vùng · Ctrl+Z hoàn tác.'};
 const BTN={'sam-click':'m-click','sam-box':'m-box','draw':'m-draw','select':'m-sel'};
-function setMode(m){mode=m;draft=[];boxStart=null;hovPt=-1;
+function setMode(m){mode=m;draft=[];boxStart=null;hovPt=-1;ghost=null;
  document.querySelectorAll('#bar .seg button').forEach(b=>b.classList.remove('on'));
  if(BTN[m])$(BTN[m]).classList.add('on');
  cv.style.cursor='crosshair';$('hint').textContent=HINT[m]||'';draw();}
@@ -387,8 +395,9 @@ function renderRegions(){const box=$('regions');box.innerHTML='';$('rcount').tex
   const cn=document.createElement('span');cn.className='rcls';cn.textContent=c.name+(r.manual?' ✋':'');
   cn.title=r.manual?'Mức do bạn gán tay — HSV sẽ không ghi đè. Bấm ⚡ để phân loại lại tự động.':'Mức do HSV tự phân loại';
   const pc=document.createElement('span');pc.className='rpct';pc.textContent=(r.pct==null?'—':'🌸 '+r.pct.toFixed(1)+'%');pc.title='Tỉ lệ pixel hoa trong vùng';
+  head.title='#'+r.id+' · '+(r.poly.length/2)+' đỉnh';
   head.appendChild(dot);head.appendChild(idb);head.appendChild(cn);head.appendChild(pc);
-  head.onclick=()=>{sel=i;setMode('select');renderRegions();draw();};
+  head.onclick=()=>{sel=i;setMode('select');tidySel(i);renderRegions();draw();};
   const act=document.createElement('div');act.className='ract';
   const selc=document.createElement('select');selc.title='Gán mức mật độ thủ công';classes.forEach(cc=>{const o=document.createElement('option');o.value=cc.id;o.textContent=cc.name;if(cc.id===r.cls)o.selected=true;selc.appendChild(o);});
   selc.onchange=()=>{pushHist();r.cls=parseInt(selc.value);r.manual=true;persist();draw();renderRegions();};
@@ -611,7 +620,7 @@ function pickCls(id){return clsById(id)?id:activeCls;}
 function mergeCats(cats){if(!cats)return;let ch=false;cats.forEach(c=>{if(c&&c.id!=null&&!clsById(c.id)){classes.push({id:c.id,name:c.name||('Lớp '+c.id),color:c.color||'#888'});if(c.id>clsMax)clsMax=c.id;ch=true;}});if(ch){saveClasses();renderClasses();renderStats();}}
 async function selectImg(t){if(current&&ready&&dirty){flush();}if(current&&ready){store[current]=inst.map(cloneR);}
  const tok=++selToken;
- current=t;ready=false;dirty=false;draft=[];sel=-1;dragPt=-1;hovPt=-1;hist=[];inst=[];updateThumbActive();
+ current=t;ready=false;dirty=false;draft=[];sel=-1;dragPt=-1;hovPt=-1;ghost=null;hist=[];inst=[];updateThumbActive();
  img=new Image();img.onload=()=>{if(tok===selToken){sizeCanvas();resetView();renderRegions();}};
  img.src='/api/image/'+enc(t)+'?t='+Date.now();
  if(store[t]){inst=store[t].map(cloneR);}
@@ -665,19 +674,129 @@ function sx(x){return x*scale+ox;}
 function sy(y){return y*scale+oy;}
 function hexA(h,a){const n=parseInt(h.slice(1),16);return'rgba('+(n>>16&255)+','+(n>>8&255)+','+(n&255)+','+a+')';}
 function centroid(p){let x=0,y=0,n=p.length/2;for(let i=0;i<p.length;i+=2){x+=p[i];y+=p[i+1];}return[x/n,y/n];}
-// CHỈ CHÈN thêm điểm vào giữa các cạnh dài, KHÔNG BAO GIỜ xoá đỉnh -> hình dạng
-// giữ nguyên tuyệt đối. (Bản cũ lấy mẫu lại theo độ dài cung nên cắt mất góc và
-// bào mòn biên đã nắn tay mỗi lần chọn/zoom.)
-function densifyPoly(p,maxLen,cap){const n=p.length/2;if(n<3||!(maxLen>0))return p.slice();
- let per=0;for(let i=0;i<n;i++){const a=i*2,b=((i+1)%n)*2;per+=Math.hypot(p[b]-p[a],p[b+1]-p[a+1]);}
- if(per===0)return p.slice();
- maxLen=Math.max(maxLen,per/(cap||2000));            // chặn trần số đỉnh
- const out=[];
- for(let i=0;i<n;i++){const a=i*2,b=((i+1)%n)*2,ax=p[a],ay=p[a+1],bx=p[b],by=p[b+1];
-  out.push(ax,ay);
+function ringArea(p){let a=0;const n=p.length/2;
+ for(let i=0;i<n;i++){const j=(i+1)%n;a+=p[i*2]*p[j*2+1]-p[j*2]*p[i*2+1];}return a/2;}
+// Chèn thêm đỉnh CHỈ trong cung nằm dưới bút, quanh đỉnh vi (rad tính bằng px
+// ẢNH). Bản cũ densify CẢ polygon theo zoom hiện tại và không bao giờ xoá, nên
+// số đỉnh chỉ có tăng và tích luỹ theo mức zoom sâu nhất từng dùng — đo được
+// median 103 đỉnh/tán (SAM chỉ trả 20-40) và có tán chạm 1480 đỉnh.
+// Trả {poly,vi} vì việc chèn làm dịch chỉ số của chính đỉnh đang kéo.
+function densifyArc(p,vi,rad,maxLen){const n=p.length/2;
+ if(n<3||!(maxLen>0))return {poly:p.slice(),vi:vi};
+ const mark=new Uint8Array(n);
+ for(let dir=0;dir<2;dir++){let acc=0,cur=vi;
+  for(let s=0;s<n;s++){const nxt=dir?(cur-1+n)%n:(cur+1)%n;
+   mark[dir?nxt:cur]=1;
+   acc+=Math.hypot(p[nxt*2]-p[cur*2],p[nxt*2+1]-p[cur*2+1]);
+   if(acc>rad)break;
+   cur=nxt;}}
+ const out=[];let nvi=vi;
+ for(let i=0;i<n;i++){const a=i*2,b=((i+1)%n)*2;
+  if(i===vi)nvi=out.length/2;
+  out.push(p[a],p[a+1]);
+  if(!mark[i])continue;
+  const ax=p[a],ay=p[a+1],bx=p[b],by=p[b+1];
   const m=Math.max(0,Math.ceil(Math.hypot(bx-ax,by-ay)/maxLen)-1);
   for(let j=1;j<=m;j++){const t=j/(m+1);out.push(ax+(bx-ax)*t,ay+(by-ay)*t);}}
- return out;}
+ return {poly:out,vi:nvi};}
+// Gộp các đỉnh sát nhau hơn minD (px ảnh). Kéo tràn ra ngoài khung rồi bị cX/cY
+// kẹp vào mép sinh ra cả loạt đỉnh trùng nhau, có cạnh dài đúng 0,00px.
+function weldPoly(p,minD){const n=p.length/2;if(n<4)return p.slice();
+ const out=[],m2=minD*minD;
+ for(let i=0;i<n;i++){const x=p[i*2],y=p[i*2+1];
+  if(out.length){const dx=x-out[out.length-2],dy=y-out[out.length-1];
+   if(dx*dx+dy*dy<m2)continue;}
+  out.push(x,y);}
+ if(out.length>=6){const dx=out[0]-out[out.length-2],dy=out[1]-out[out.length-1];
+  if(dx*dx+dy*dy<m2)out.length-=2;}
+ return out.length>=6?out:p.slice();}
+// Ramer-Douglas-Peucker: bỏ đỉnh lệch dưới eps (px ẢNH) so với dây cung — tức
+// đỉnh không mang thông tin hình dạng nào. Chốt 2 đỉnh xa nhau nhất để cắt vòng
+// kín thành hai cung, tránh việc đỉnh số 0 luôn được giữ làm lệch kết quả.
+function rdpPoly(p,eps){const n=p.length/2;if(n<4)return p.slice();
+ let b=0,bd=-1;
+ for(let i=1;i<n;i++){const d=Math.hypot(p[i*2]-p[0],p[i*2+1]-p[1]);
+  if(d>bd){bd=d;b=i;}}
+ if(b<1)return p.slice();
+ const keep=new Uint8Array(n);keep[0]=keep[b]=1;
+ const st=[[0,b],[b,n]];
+ while(st.length){const seg=st.pop(),i=seg[0],j=seg[1];
+  if(j<=i+1)continue;
+  const ax=p[(i%n)*2],ay=p[(i%n)*2+1];
+  const ex=p[(j%n)*2]-ax,ey=p[(j%n)*2+1]-ay,L2=ex*ex+ey*ey;
+  let m=-1,md=eps;
+  for(let k=i+1;k<j;k++){const kk=k%n,px=p[kk*2],py=p[kk*2+1];
+   let t=L2>0?((px-ax)*ex+(py-ay)*ey)/L2:0;t=t<0?0:(t>1?1:t);
+   const d=Math.hypot(px-ax-t*ex,py-ay-t*ey);
+   if(d>md){md=d;m=k;}}
+  if(m<0)continue;
+  keep[m%n]=1;st.push([i,m]);st.push([m,j]);}
+ const out=[];
+ for(let i=0;i<n;i++)if(keep[i])out.push(p[i*2],p[i*2+1]);
+ return out.length>=6?out:p.slice();}
+// Giao của hai đoạn thẳng, chỉ tính khi cắt THỰC SỰ ở phần trong (bỏ đầu mút).
+function segX(ax,ay,bx,by,cx0,cy0,dx0,dy0){
+ const r1=bx-ax,r2=by-ay,s1=dx0-cx0,s2=dy0-cy0,den=r1*s2-r2*s1;
+ if(Math.abs(den)<1e-12)return null;
+ const t=((cx0-ax)*s2-(cy0-ay)*s1)/den,u=((cx0-ax)*r2-(cy0-ay)*r1)/den;
+ if(t<=0||t>=1||u<=0||u>=1)return null;
+ return [ax+t*r1,ay+t*r2];}
+// Gỡ nút thắt: chỗ biên tự cắt chia polygon thành hai vòng, giữ vòng LỚN hơn.
+// Đây mới là thứ chữa "móc chéo" — kẹp theo khoảng cách không gian thì vô ích
+// vì khoảng cách thẳng luôn <= khoảng cách dọc biên, cửa chặn không bao giờ mở.
+function untanglePoly(p,maxIter){let poly=p.slice();
+ for(let it=0;it<(maxIter||8);it++){const n=poly.length/2;
+  if(n<4)break;
+  let hit=null;
+  for(let i=0;i<n&&!hit;i++){const a=i*2,b=((i+1)%n)*2;
+   for(let j=i+2;j<n;j++){
+    if(i===0&&j===n-1)continue;
+    const c=j*2,d=((j+1)%n)*2;
+    const X=segX(poly[a],poly[a+1],poly[b],poly[b+1],
+                 poly[c],poly[c+1],poly[d],poly[d+1]);
+    if(X){hit=[i,j,X];break;}}}
+  if(!hit)break;
+  const i=hit[0],j=hit[1],X=hit[2];
+  const A=[X[0],X[1]];
+  for(let k=i+1;k<=j;k++)A.push(poly[k*2],poly[k*2+1]);
+  const B=[X[0],X[1]];
+  for(let k=j+1;k<n+i+1;k++){const kk=k%n;B.push(poly[kk*2],poly[kk*2+1]);}
+  const keepA=Math.abs(ringArea(A))>=Math.abs(ringArea(B));
+  const nx=keepA?A:B;
+  if(nx.length<6)break;
+  poly=nx;}
+ return poly.length>=6?poly:p.slice();}
+function samePts(a,b){if(a.length!==b.length)return false;
+ for(let i=0;i<a.length;i++)if(a[i]!==b[i])return false;
+ return true;}
+// Dọn sau MỖI nhát nắn: gộp đỉnh trùng -> bỏ đỉnh thừa -> gỡ nút tự cắt.
+// Nhờ bước này số đỉnh CÂN BẰNG lại (chèn khi cần nắn, bỏ khi hết tác dụng)
+// thay vì chỉ tăng một chiều theo mức zoom. Ngưỡng tính bằng px ảnh nên kết quả
+// giống hệt nhau dù bạn nắn ở 100% hay 1200%.
+// LẶP tới điểm bất động: untangle đổi thứ tự đỉnh nên RDP ở vòng sau còn bỏ được
+// thêm vài đỉnh (đo trên tán thật: 383 -> 265 -> 264 -> đứng yên). Chốt vòng lặp
+// ngay đây để cleanPoly IDEMPOTENT tuyệt đối — điều kiện bắt buộc mới dám dọn
+// lúc CHỌN polygon, xem commit a743905.
+function cleanPoly(p){let q=p.slice();
+ for(let it=0;it<4;it++){
+  const r=untanglePoly(rdpPoly(weldPoly(q,WELD_PX),SIMPLIFY_PX));
+  if(samePts(r,q))return r;
+  q=r;}
+ return q;}
+// Dọn polygon NGAY KHI CHỌN, để các tán đã lỡ phình/móc chéo từ trước tự gọn lại
+// khi bạn bấm vào, không phải nắn tay từng cái.
+// Commit a743905 đã gỡ đúng hành vi này vì resamplePoly lấy mẫu theo
+// HANDLE_PX/scale: cùng một tán cho ra 26..1500 đỉnh tuỳ zoom và cỡ màn hình, và
+// mỗi lần chọn lại bào thêm một ít. cleanPoly không có cả hai tật đó — ngưỡng
+// tính bằng px ẢNH nên mọi màn hình ra cùng một kết quả, và đã bất động nên
+// chọn 100 lần đúng bằng chọn 1 lần.
+function tidySel(i){const r=inst[i];if(!r)return;
+ const before=r.poly.length/2,np=cleanPoly(r.poly);
+ if(samePts(np,r.poly))return;     // đã sạch -> không đụng lịch sử, không lưu lại
+ pushHist();r.poly=np;
+ $('hint').textContent='🧹 Đã dọn #'+r.id+': '+before+' → '+(np.length/2)+
+  ' đỉnh · Ctrl+Z để hoàn tác';
+ persist();}
 // Tập đỉnh được VẼ làm tay cầm: cách nhau >= gap px trên màn hình. Chỉ ảnh hưởng
 // hiển thị, dữ liệu polygon không đổi.
 function handleIdx(p,gap){const n=p.length/2,out=[];let lx=0,ly=0;
@@ -697,9 +816,6 @@ function arcDistPx(p,vi,limit){const n=p.length/2,d=new Float64Array(n).fill(Inf
    if(acc<d[nxt])d[nxt]=acc;
    cur=nxt;}}
  return d;}
-function nearestVi(p,x,y){let bi=0,bd=Infinity;
- for(let i=0;i<p.length/2;i++){const dd=Math.hypot(p[i*2]-x,p[i*2+1]-y);if(dd<bd){bd=dd;bi=i;}}
- return bi;}
 function draw(){ctx.clearRect(0,0,cv.width,cv.height);
  if(img.complete&&img.width)ctx.drawImage(img,ox,oy,img.width*scale,img.height*scale);
  inst.forEach((r,i)=>{if(!r.vis)return;const col=clsColor(r.cls),on=(i===sel&&mode==='select'),p=r.poly;
@@ -708,6 +824,17 @@ function draw(){ctx.clearRect(0,0,cv.width,cv.height);
   ctx.strokeStyle=on?'#ffffff':col;ctx.lineWidth=on?3:2;ctx.stroke();
   if(on)for(const vi of handleIdx(p,HANDLE_PX)){const k=vi*2,hv=(k===hovPt);
    ctx.beginPath();ctx.arc(sx(p[k]),sy(p[k+1]),hv?7:5,0,7);ctx.fillStyle=hv?col:'#fff';ctx.fill();ctx.strokeStyle=hv?'#fff':col;ctx.lineWidth=hv?2:1.5;ctx.stroke();}});
+ // Đỉnh giả: vòng tròn rỗng nét đứt + dấu cộng, để phân biệt ngay với đỉnh
+ // thật (tròn đặc). Bấm vào là nó thành đỉnh thật.
+ if(ghost&&mode==='select'&&sel>=0&&inst[sel]&&inst[sel].vis&&dragPt<0){
+  const gx=sx(ghost.x),gy=sy(ghost.y);
+  ctx.beginPath();ctx.arc(gx,gy,6,0,7);
+  ctx.fillStyle='rgba(255,255,255,.30)';ctx.fill();
+  ctx.setLineDash([3,3]);ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();ctx.moveTo(gx-3.5,gy);ctx.lineTo(gx+3.5,gy);
+  ctx.moveTo(gx,gy-3.5);ctx.lineTo(gx,gy+3.5);
+  ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke();}
  if(draft.length){ctx.strokeStyle='#f97316';ctx.setLineDash([6,4]);ctx.beginPath();
   for(let k=0;k<draft.length;k+=2){k===0?ctx.moveTo(sx(draft[k]),sy(draft[k+1])):ctx.lineTo(sx(draft[k]),sy(draft[k+1]));}
   if(mouse)ctx.lineTo(sx(cX(mouse[0])),sy(cY(mouse[1])));ctx.stroke();ctx.setLineDash([]);
@@ -719,6 +846,27 @@ function hitVertex(p,x,y){let best=-1,bd=11;
  for(const i of handleIdx(p,HANDLE_PX)){const d=Math.hypot(p[i*2]-x,p[i*2+1]-y)*scale;
   if(d<bd){bd=d;best=i*2;}}
  return best;}
+// Điểm trên BIÊN gần con trỏ nhất, trong bán kính EDGE_PX px màn hình.
+// Trả {i,x,y}: i = đỉnh đầu của cạnh, (x,y) = điểm chiếu (toạ độ ảnh).
+// Sau khi dọn đỉnh thì biên thưa hẳn ra, không còn chỗ để nhắm; đỉnh giả cho
+// phép nắn ở BẤT KỲ đâu trên cạnh mà không phải chèn sẵn đỉnh thừa khắp nơi.
+function hitEdge(p,mx,my){const n=p.length/2;let best=null,bd=EDGE_PX;
+ for(let i=0;i<n;i++){const a=i*2,b=((i+1)%n)*2;
+  const ax=p[a],ay=p[a+1],ex=p[b]-ax,ey=p[b+1]-ay,L2=ex*ex+ey*ey;
+  let t=L2>0?((mx-ax)*ex+(my-ay)*ey)/L2:0;t=t<0?0:(t>1?1:t);
+  const qx=ax+ex*t,qy=ay+ey*t,d=Math.hypot(qx-mx,qy-my)*scale;
+  if(d<bd){bd=d;best={i:i,x:qx,y:qy};}}
+ return best;}
+// Bắt đầu kéo đỉnh vi. Tách riêng vì giờ có hai lối vào: bấm trúng đỉnh có
+// sẵn, và bấm vào đỉnh giả trên cạnh.
+function beginDrag(vi,x,y,shift){
+ const dz=densifyArc(inst[sel].poly,vi,BRUSH_MAX_PX/scale,
+                     Math.max(BRUSH_STEP_PX/scale,SIMPLIFY_PX));
+ inst[sel].poly=dz.poly;dragVi=dz.vi;dragPt=dragVi*2;
+ dragStart=[x,y];origPoly=inst[sel].poly.slice();dragSoft=!shift;
+ dragTouch=new Uint8Array(origPoly.length/2);
+ softD=arcDistPx(origPoly,dragVi,BRUSH_MAX_PX);
+ ghost=null;hovPt=dragPt;cv.style.cursor='grabbing';}
 function hitPolygon(x,y){for(let i=inst.length-1;i>=0;i--){if(!inst[i].vis)continue;if(pip(inst[i].poly,x,y))return i;}return -1;}
 function pip(p,x,y){let c=false;for(let i=0,j=p.length-2;i<p.length;j=i,i+=2){const xi=p[i],yi=p[i+1],xj=p[j],yj=p[j+1];if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))c=!c;}return c;}
 cv.addEventListener('wheel',e=>{e.preventDefault();const r=cv.getBoundingClientRect();zoomAt(e.clientX-r.left,e.clientY-r.top,e.deltaY<0?1.1:1/1.1);},{passive:false});
@@ -732,38 +880,66 @@ cv.addEventListener('mousedown',async e=>{
   if(sel>=0&&inst[sel]){const k=hitVertex(inst[sel].poly,x,y);
    if(k>=0){if(e.button===2){pushHist();inst[sel].poly.splice(k,2);if(inst[sel].poly.length<6){inst.splice(sel,1);sel=-1;}persist();renderRegions();draw();return;}
     pushHist();
-    // Chèn thêm điểm (không xoá cái nào) để nắn mượt ở mức zoom hiện tại.
-    inst[sel].poly=densifyPoly(inst[sel].poly,HANDLE_PX/scale,2000);
-    dragVi=nearestVi(inst[sel].poly,x,y);dragPt=dragVi*2;
-    dragStart=[x,y];origPoly=inst[sel].poly.slice();dragSoft=!e.shiftKey;
-    softD=arcDistPx(origPoly,dragVi,INFLUENCE_PX);
-    cv.style.cursor='grabbing';return;}}
+    // beginDrag chèn điểm CHỈ dưới bút và bám đúng đỉnh vừa bấm (bản cũ dò lại
+    // bằng nearestVi theo vị trí con trỏ nên hay tóm nhầm đỉnh khác, hình giật
+    // một cái lúc bắt đầu kéo).
+    beginDrag(k>>1,x,y,e.shiftKey);return;}
+   // Không trúng đỉnh nào nhưng đang rê trên cạnh -> biến đỉnh giả thành đỉnh
+   // thật rồi kéo luôn, khỏi phải nhắm vào mấy đỉnh thưa.
+   if(e.button===0&&ghost){pushHist();
+    const Q=inst[sel].poly,n=Q.length/2,j=(ghost.i+1)%n;
+    // Đã có đỉnh thật sát ngay đó (đỉnh bị ẩn vì handleIdx vẽ thưa) thì dùng
+    // chính nó, đừng chèn một đỉnh gần như trùng.
+    const da=Math.hypot(Q[ghost.i*2]-ghost.x,Q[ghost.i*2+1]-ghost.y)*scale;
+    const db=Math.hypot(Q[j*2]-ghost.x,Q[j*2+1]-ghost.y)*scale;
+    let vi;
+    if(da<HANDLE_PX*0.5)vi=ghost.i;
+    else if(db<HANDLE_PX*0.5)vi=j;
+    else{Q.splice(ghost.i*2+2,0,ghost.x,ghost.y);vi=ghost.i+1;}
+    beginDrag(vi,x,y,e.shiftKey);renderRegions();return;}}
   const ip=hitPolygon(x,y);
-  if(ip>=0){sel=ip;dragPt=-1;renderRegions();draw();}
+  if(ip>=0){sel=ip;dragPt=-1;tidySel(ip);renderRegions();draw();}
   else{sel=-1;pan=[e.clientX,e.clientY,ox,oy];cv.style.cursor='grabbing';renderRegions();draw();}}});
 cv.addEventListener('mousemove',e=>{
  if(pan){ox=pan[2]+(e.clientX-pan[0]);oy=pan[3]+(e.clientY-pan[1]);draw();return;}
  mouse=toImg(e);
  if(mode==='select'&&dragPt>=0&&sel>=0&&origPoly&&softD){const P=inst[sel].poly,dx=mouse[0]-dragStart[0],dy=mouse[1]-dragStart[1],N=origPoly.length/2;
   // Trọng số theo KHOẢNG CÁCH dọc biên (px màn hình), không theo số thứ tự đỉnh,
-  // nên bút luôn rộng đúng INFLUENCE_PX dù đỉnh thưa hay dày.
-  for(let i=0;i<N;i++){let w;
+  // nên bút luôn rộng đúng bán kính đặt ra dù đỉnh thưa hay dày.
+  // Bán kính NỞ theo độ kéo: bản cũ giữ cứng 60px màn hình, nên ở zoom 1200%
+  // (60px màn hình ≈ 23px ảnh) kéo đi 100px là dựng một cái gai cao 100px trên
+  // chân đế 23px. Cho R >= độ kéo thì độ dốc <= 1, không bao giờ thành gai nữa.
+  const R=Math.min(BRUSH_MAX_PX,Math.max(INFLUENCE_PX,Math.hypot(dx,dy)*scale));
+  for(let i=0;i<N;i++){let w=0;
    if(!dragSoft)w=(i===dragVi)?1:0;                  // Shift = chỉ 1 đỉnh
-   else{const dd=softD[i];if(!isFinite(dd))continue;w=0.5*(1+Math.cos(Math.PI*Math.min(1,dd/INFLUENCE_PX)));}
-   if(w<=0)continue;
-   P[i*2]=cX(origPoly[i*2]+dx*w);P[i*2+1]=cY(origPoly[i*2+1]+dy*w);}
+   else{const dd=softD[i];
+    if(isFinite(dd)&&dd<R)w=0.5*(1+Math.cos(Math.PI*(dd/R)));}
+   // R co lại được (kéo ngược về gần điểm bắt đầu), nên đỉnh từng bị đẩy mà giờ
+   // nằm ngoài bút phải được TRẢ VỀ đúng chỗ cũ, không bỏ mặc ở vị trí dở dang.
+   if(w>0){P[i*2]=cX(origPoly[i*2]+dx*w);P[i*2+1]=cY(origPoly[i*2+1]+dy*w);
+    dragTouch[i]=1;}
+   else if(dragTouch[i]){P[i*2]=origPoly[i*2];P[i*2+1]=origPoly[i*2+1];
+    dragTouch[i]=0;}}
   draw();}
  else if(mode==='sam-box'&&boxStart){draw();}
  else if(mode==='draw'&&draft.length){draw();}
  else if(mode==='select'){const hv=(sel>=0&&inst[sel])?hitVertex(inst[sel].poly,mouse[0],mouse[1]):-1;
-  const cur=(hv>=0)?'move':((hitPolygon(mouse[0],mouse[1])>=0)?'pointer':'grab');if(cv.style.cursor!==cur)cv.style.cursor=cur;
-  if(hv!==hovPt){hovPt=hv;draw();}}});
+  // Đỉnh thật được ưu tiên; chỉ khi trượt hết mới tìm điểm trên cạnh.
+  const g=(hv<0&&sel>=0&&inst[sel]&&inst[sel].vis)?
+   hitEdge(inst[sel].poly,mouse[0],mouse[1]):null;
+  const cur=(hv>=0)?'move':(g?'copy':((hitPolygon(mouse[0],mouse[1])>=0)?'pointer':'grab'));
+  if(cv.style.cursor!==cur)cv.style.cursor=cur;
+  const moved=(!g!==!ghost)||(g&&ghost&&(g.x!==ghost.x||g.y!==ghost.y));
+  if(hv!==hovPt||moved){hovPt=hv;ghost=g;draw();}}});
 cv.addEventListener('mouseup',async e=>{
  if(pan){pan=null;cv.style.cursor=(mode==='select')?'grab':'crosshair';return;}
  if(mode==='sam-box'&&boxStart){const xy=toImg(e),x=xy[0],y=xy[1],b=[cX(Math.min(boxStart[0],x)),cY(Math.min(boxStart[1],y)),cX(Math.max(boxStart[0],x)),cY(Math.max(boxStart[1],y))];boxStart=null;
   if(Math.abs(b[2]-b[0])>5&&Math.abs(b[3]-b[1])>5){pushHist();await samCall('/api/sam/box',{name:current,box:b});}else draw();return;}
- if(dragPt>=0){dragPt=-1;dragVi=-1;origPoly=null;softD=null;cv.style.cursor='move';persist();renderRegions();draw();if(sel>=0)computeFlower([sel]);}});
-cv.addEventListener('mouseleave',()=>{if(!pan&&dragPt<0){hovPt=-1;if(mode==='select')cv.style.cursor='crosshair';draw();}});
+ if(dragPt>=0){dragPt=-1;dragVi=-1;origPoly=null;softD=null;dragTouch=null;
+  cv.style.cursor='move';
+  if(sel>=0&&inst[sel])inst[sel].poly=cleanPoly(inst[sel].poly);
+  persist();renderRegions();draw();if(sel>=0)computeFlower([sel]);}});
+cv.addEventListener('mouseleave',()=>{if(!pan&&dragPt<0){hovPt=-1;ghost=null;if(mode==='select')cv.style.cursor='crosshair';draw();}});
 cv.addEventListener('dblclick',()=>{if(mode==='draw'&&draft.length>=6){pushHist();const ni=addRegion(draft.slice());draft=[];sel=inst.length-1;refresh();computeFlower([ni]);}});
 cv.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('keydown',e=>{
