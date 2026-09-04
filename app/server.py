@@ -163,9 +163,12 @@ def _prev_flower(jp):
     return out
 
 
-def _read_records(jp):
+def _read_records(jp, single_class=False):
     # Đọc 1 file nhãn (định dạng MỚI hoặc COCO cũ) -> (w, h, [ann...], bỏ qua).
     # "bỏ qua" = số vùng chưa xác định được mức hoa (lưu lúc không đọc được ảnh).
+    # Chỉ bỏ khi mức hoa LÀ class index. Xuất 1 lớp thì polygon vẫn là một tán
+    # hợp lệ -> giữ lại, đừng vứt công nắn tay vì thiếu một thuộc tính dẫn xuất.
+    # cat_id = class index để xuất; flower_label = mức hoa gốc (có thể None).
     data = json.load(open(jp, encoding="utf-8"))
     anns = []
     skipped = 0
@@ -177,17 +180,19 @@ def _read_records(jp):
             poly = [float(v) for xy in pts for v in xy]
             if len(poly) < 6:
                 continue
-            cid = _as_level(p.get("flower_label"))
-            if cid is None:
+            lvl = _as_level(p.get("flower_label"))
+            if lvl is None and not single_class:
                 skipped += 1     # thà bỏ còn hơn gán bừa mức 0
                 continue
+            cid = 0 if single_class else lvl
             xs, ys = poly[0::2], poly[1::2]
             anns.append(dict(poly=poly,
                              bbox_xywh=[min(xs), min(ys),
                                         max(xs) - min(xs), max(ys) - min(ys)],
                              area=_poly_area(poly), cat_id=cid,
-                             cat_name=p.get("flower_label_name")
-                             or FLOWER_NAMES[cid],
+                             flower_label=lvl,
+                             cat_name="canopy" if single_class else
+                             (p.get("flower_label_name") or FLOWER_NAMES[lvl]),
                              conf=p.get("conf"),
                              flower_ratio=p.get("flower_ratio"),
                              flower_pixels=p.get("flower_pixels"),
@@ -203,13 +208,16 @@ def _read_records(jp):
             seg = a.get("segmentation") or []
             if not seg:
                 continue
-            cid = _as_level(a.get("category_id"))
-            if cid is None:
+            lvl = _as_level(a.get("category_id"))
+            if lvl is None and not single_class:
                 skipped += 1
                 continue
+            cid = 0 if single_class else lvl
             anns.append(dict(poly=seg[0], bbox_xywh=a.get("bbox", []),
                              area=float(a.get("area", 0.0)), cat_id=cid,
-                             cat_name=cmap.get(cid) or FLOWER_NAMES[cid],
+                             flower_label=lvl,
+                             cat_name="canopy" if single_class else
+                             (cmap.get(lvl) or FLOWER_NAMES[lvl]),
                              conf=None, flower_ratio=None, flower_pixels=None,
                              total_pixels=None, label_source=None))
     return w, h, anns, skipped
@@ -619,12 +627,19 @@ def _size_of(name, w, h):
 class DatasetReq(BaseModel):
     scope: str = ""                       # lọc theo thư mục con của ROOT (""=tất cả)
     formats: list = ["coco", "yolo"]      # coco | yolo | masks | masks_instance
-    split_by: str = "none"                # "none" | "ratio" | "field"
+    split_by: str = "none"                # "none" | "ratio" | "field" | "folder"
     val_ratio: float = 0.10
     test_ratio: float = 0.10
     val_fields: list = []                 # dùng khi split_by="field"
     test_fields: list = []
+    val_folders: list = []                # dùng khi split_by="folder" (đường bay)
+    test_folders: list = []
     seed: int = 42
+    # Model segment tán và module mật độ hoa là HAI việc khác nhau. Mặc định xuất
+    # 1 LỚP "canopy": mức hoa đi kèm từng annotation để module sau đọc, chứ KHÔNG
+    # làm class index. Đẩy mức hoa thành lớp sẽ khiến class-aware NMS coi cùng một
+    # tán ở hai mức là hai vật thể -> một cây ra hai instance.
+    single_class: bool = True             # True = nc:1 canopy | False = nc:4 mức hoa
     name: str = "dataset"                 # tên thư mục output dưới out_dir
     out_dir: str = ""                     # nơi lưu (rỗng = EXPORT_DIR mặc định)
     overwrite: bool = False               # ghi đè thư mục cùng tên đã có
@@ -657,9 +672,28 @@ def _split_items(items, req):
             splits["test" if f in testf else
                    ("val" if f in valf else "train")].append(it)
         return splits, fields
-    # split_by == "ratio": xáo trong từng nhóm rồi cắt. An toàn vì đã đo được
-    # các khung UAV liên tiếp KHÔNG chồng lấn nhau (tương quan 0.14, bằng đúng
-    # mức của hai khung ngẫu nhiên không liên quan).
+    if req.split_by == "folder":
+        # Gán NGUYÊN một đường bay vào một tập. Đây là cách chia duy nhất không
+        # rò rỉ: trong mỗi lượt bay có những khung liền kề chụp trúng cùng mấy
+        # cây (đo được 35/392 cặp, ở mọi đường bay), nên tách chúng ra hai tập
+        # là rò rỉ cấp đối tượng. Để cả hai cùng một bên thì chồng lấn vô hại.
+        # Khớp theo tiền tố: "field_1" ăn cả 4 folder, "field_2/10/2" ăn đúng 1.
+        def _pick(g, names):
+            return any(g == x or g.startswith(x.rstrip("/") + "/")
+                       for x in names if x)
+        for it in items:
+            g = _group_key(it[0])
+            splits["test" if _pick(g, req.test_folders) else
+                   ("val" if _pick(g, req.val_folders) else "train")].append(it)
+        return splits, fields
+    # split_by == "ratio": xáo trong từng nhóm rồi cắt.
+    # CẢNH BÁO: phép xáo này tách các khung liền kề của CÙNG một lượt bay ra hai
+    # tập khác nhau. Comment cũ ở đây khẳng định là an toàn vì "khung liên tiếp
+    # không chồng lấn (tương quan 0.14)" — số đó đo bằng matchTemplate với ngưỡng
+    # hiệu chuẩn trên cặp KHÁC field, nên nó đo độ giống vân ảnh chứ không đo
+    # cùng mảnh đất; các cặp cách nhau 30 khung (không thể chồng lấn) cũng vượt
+    # ngưỡng 24-37%. Đo lại bằng SIFT+RANSAC: 35/392 cặp liền kề chồng lấn thật.
+    # -> Dùng split_by="folder" nếu cần con số val/test đáng tin.
     by_group = {}
     for it in items:
         by_group.setdefault(_group_key(it[0]), []).append(it)
@@ -710,9 +744,10 @@ def _instance_mask(recs, w, h):
     return mask
 
 
-def _write_coco(per_image, out_file, hsv):
-    cats = [dict(id=i, name=FLOWER_NAMES[i], supercategory="canopy")
-            for i in range(len(FLOWER_NAMES))]
+def _write_coco(per_image, out_file, hsv, single_class=False):
+    cats = ([dict(id=0, name="canopy", supercategory="canopy")] if single_class
+            else [dict(id=i, name=FLOWER_NAMES[i], supercategory="canopy")
+                  for i in range(len(FLOWER_NAMES))])
     images, anns = [], []
     iid = aid = 0
     for name, w, h, recs in per_image:
@@ -724,6 +759,8 @@ def _write_coco(per_image, out_file, hsv):
             xs, ys = r["poly"][0::2], r["poly"][1::2]
             anns.append(dict(
                 id=aid, image_id=iid, category_id=int(r["cat_id"]),
+                # Mức hoa luôn đi kèm annotation dù có làm class index hay không.
+                flower_label=r.get("flower_label"),
                 segmentation=[r["poly"]], area=float(_poly_area(r["poly"])),
                 bbox=[min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)],
                 iscrowd=0,
@@ -755,7 +792,7 @@ def _copy_file(src, dst):
         return False
 
 
-def _write_yaml(root_out, no_split):
+def _write_yaml(root_out, no_split, single_class=False, summary=None):
     # Bố cục chuẩn ultralytics: nó tìm nhãn bằng cách thay '/images/' cuối cùng
     # trong đường dẫn ảnh thành '/labels/'.
     lines = ["path: " + os.path.abspath(root_out).replace("\\", "/")]
@@ -767,10 +804,23 @@ def _write_yaml(root_out, no_split):
                   "# CHUA CHIA train/val. Bo comment dong duoi sau khi chia:",
                   "# val: images/val"]
     else:
-        lines += ["train: images/train", "val: images/val", "test: images/test"]
-    lines += ["nc: %d" % len(FLOWER_NAMES), "names:"]
-    for i, nm in enumerate(FLOWER_NAMES):
-        lines.append("  %d: %s" % (i, nm))
+        # CHỈ khai split thực sự có ảnh. Khai một thư mục rỗng thì ultralytics
+        # chết vì không tìm thấy đường dẫn — người đọc lỗi sẽ đi tìm nhầm chỗ.
+        # Thiếu hẳn khoá val thì nó nói thẳng "'val:' key missing", đúng ý đồ ở
+        # nhánh trên. Tệ hơn nữa là 'test' rỗng: train vẫn chạy ngon, lỗi chỉ nổ
+        # ra lúc đo trên test, có khi vài tiếng sau.
+        sm = summary or {}
+        for k in SPLITS:
+            if (sm.get(k) or {}).get("images"):
+                lines.append("%s: images/%s" % (k, k))
+            else:
+                lines.append("# %s: images/%s  <- khong co anh nao" % (k, k))
+    if single_class:
+        lines += ["nc: 1", "names:", "  0: canopy"]
+    else:
+        lines += ["nc: %d" % len(FLOWER_NAMES), "names:"]
+        for i, nm in enumerate(FLOWER_NAMES):
+            lines.append("  %d: %s" % (i, nm))
     with open(os.path.join(root_out, "data.yaml"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
@@ -789,6 +839,7 @@ def _export_dataset(items, req):
     splits, fields = _split_items(items, req)
     formats = set(req.formats or [])
     no_split = (req.split_by == "none")
+    one = bool(req.single_class)
     hsv = _hsv_used(items)
     summary, problems = {}, []
     written = set()
@@ -804,7 +855,7 @@ def _export_dataset(items, req):
 
         per_image = []          # (name, w, h, recs đã kẹp) dùng chung mọi format
         for name, jp in sp_items:
-            w, h, recs, skipped = _read_records(jp)
+            w, h, recs, skipped = _read_records(jp, one)
             w, h = _size_of(name, w, h)
             if not w or not h:
                 problems.append("%s: không xác định được kích thước ảnh" % name)
@@ -826,7 +877,7 @@ def _export_dataset(items, req):
             cdir = os.path.join(root_out, "coco")
             os.makedirs(cdir, exist_ok=True)
             _write_coco(per_image, os.path.join(
-                cdir, ("instances" if no_split else sp) + ".json"), hsv)
+                cdir, ("instances" if no_split else sp) + ".json"), hsv, one)
             written.add("coco")
         if "yolo" in formats:
             yl = os.path.join(root_out, "labels", sub)
@@ -860,21 +911,28 @@ def _export_dataset(items, req):
 
     os.makedirs(root_out, exist_ok=True)
     if "yolo" in written:
-        _write_yaml(root_out, no_split)
+        _write_yaml(root_out, no_split, one, summary)
     meta = dict(
         name=req.name, created=_now(),
         source_root=ROOT.replace("\\", "/"), scope=req.scope, fields=fields,
         formats=sorted(written),
-        classes={i: nm for i, nm in enumerate(FLOWER_NAMES)},
+        class_mode="canopy" if one else "flower",
+        classes=({0: "canopy"} if one
+                 else {i: nm for i, nm in enumerate(FLOWER_NAMES)}),
         split=dict(mode=req.split_by, seed=req.seed,
                    val_ratio=req.val_ratio, test_ratio=req.test_ratio),
         splits=summary,
         image_naming="flattened: field__<...>__file.ext",
         # Quy ước mask LỆCH 1 so với category_id của COCO — phải ghi ra, nếu
         # không người train U-Net sẽ lệch một mức trên toàn bộ dataset.
-        mask_values=("0=background, sau đó = flower_label + 1 "
+        mask_values=("0=background, 1=canopy (chế độ 1 lớp)" if one else
+                     "0=background, sau đó = flower_label + 1 "
                      "(1=no_flower ... 4=very_many_flowers); "
                      "COCO category_id = giá trị mask - 1"),
+        flower_label_note=("class index = 0 cho mọi tán; mức hoa nằm ở trường "
+                           "flower_label/flower_ratio của từng annotation COCO, "
+                           "dành cho module mật độ hoa chạy riêng" if one else
+                           "class index CHÍNH LÀ mức hoa (0-3)"),
         instance_mask_values="0=background, 1..N = từng tán, khớp thứ tự COCO",
         flower=dict(thresholds=list(FLOWER_THRESHOLDS), hsv=hsv),
         problems=problems)
@@ -909,8 +967,9 @@ def export_preview(scope: str = ""):
     total = 0
     labeled = 0
     regions = 0
-    skipped = 0
+    no_level = 0
     per_class = {i: 0 for i in range(len(FLOWER_NAMES))}
+    folders = {}
     for p in sorted(root.rglob("*")):
         if p.suffix.lower() not in EXTS:
             continue
@@ -922,16 +981,27 @@ def export_preview(scope: str = ""):
         if not os.path.exists(jp):
             continue
         labeled += 1
+        # Đếm theo chế độ 1 LỚP (giữ cả vùng chưa rõ mức hoa) rồi tách riêng số
+        # vùng thiếu mức — xuất 4 lớp mới bỏ chúng. Một lần đọc, đúng cả hai chế độ.
         try:
-            _, _, recs, sk = _read_records(jp)
+            _, _, recs, _ = _read_records(jp, True)
         except Exception:
             continue
-        skipped += sk
         regions += len(recs)
+        g = _group_key(name)
+        folders[g] = folders.get(g, 0) + 1
         for r in recs:
-            per_class[r["cat_id"]] = per_class.get(r["cat_id"], 0) + 1
+            lvl = r.get("flower_label")
+            if lvl is None:
+                no_level += 1
+            else:
+                per_class[lvl] = per_class.get(lvl, 0) + 1
     return {"scope": sc, "images_total": total, "images_labeled": labeled,
-            "annotations": regions, "skipped_regions": skipped,
+            "annotations": regions,
+            # vùng chưa xác định được mức hoa: chỉ bị bỏ khi xuất 4 lớp
+            "no_level_regions": no_level, "skipped_regions": no_level,
+            "folders": [{"key": k, "images": folders[k]}
+                        for k in sorted(folders)],
             "per_class": {FLOWER_NAMES[i]: per_class.get(i, 0)
                           for i in range(len(FLOWER_NAMES))}}
 
