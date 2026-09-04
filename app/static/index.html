@@ -327,10 +327,13 @@
 </div>
 <script>
 const HANDLE_PX=16,INFLUENCE_PX=60;
-// Bút nắn: BRUSH_STEP_PX = khoảng cách đỉnh chèn thêm dưới bút, BRUSH_MAX_PX
-// = trần bán kính khi kéo xa. SIMPLIFY_PX/WELD_PX tính bằng px ẢNH (KHÔNG
-// theo zoom) — đó là điểm mấu chốt giữ số đỉnh không phình theo mức zoom.
-const BRUSH_STEP_PX=8,BRUSH_MAX_PX=INFLUENCE_PX*4,SIMPLIFY_PX=0.6,WELD_PX=0.3;
+// INFLUENCE_PX là bán kính bút, CỐ ĐỊNH theo px màn hình: kéo xa hay gần thì
+// vẫn đúng ngần ấy đoạn biên nhúc nhích, nên nắn được đúng chỗ mình muốn.
+// Muốn ảnh hưởng rộng hơn thì zoom ra, hẹp hơn thì zoom vào — mức zoom chính
+// là núm chỉnh cỡ bút (60px màn hình ≈ 23px ảnh ở 1200%, ≈ 270px ở cỡ vừa khung).
+// BRUSH_STEP_PX = khoảng cách đỉnh chèn thêm dưới bút. SIMPLIFY_PX/WELD_PX tính
+// bằng px ẢNH (KHÔNG theo zoom) — mấu chốt giữ số đỉnh không phình theo zoom.
+const BRUSH_STEP_PX=8,SIMPLIFY_PX=0.6,WELD_PX=0.3;
 // Bán kính bắt CẠNH (px màn hình). Nhỏ hơn bán kính bắt đỉnh (11) để đỉnh
 // thật luôn thắng khi hai thứ nằm chồng nhau.
 const EDGE_PX=8;
@@ -348,7 +351,7 @@ function clsColor(id){const c=clsById(id);return c?c.color:'#f97316';}
 let imgs=[],labeledSet=new Set(),current=null,img=new Image(),curFolder='',pathFilter='';
 let baseFit=1,zoom=1,scale=1,ox=0,oy=0;
 let inst=[],store={},hist=[],saveTimer=null,rid=1,selToken=0,dirty=false,ready=false;
-let mode='sam-click',sel=-1,dragPt=-1,dragVi=-1,dragStart=null,origPoly=null,softD=null,dragSoft=true,dragTouch=null,hovPt=-1,ghost=null,draft=[],boxStart=null,mouse=null,pan=null;
+let mode='sam-click',sel=-1,dragPt=-1,dragVi=-1,dragStart=null,origPoly=null,softD=null,dragSoft=true,hovPt=-1,ghost=null,draft=[],boxStart=null,mouse=null,pan=null;
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d'),wrap=document.getElementById('wrap');
 const $=id=>document.getElementById(id);
 function enc(t){return t.split('/').map(encodeURIComponent).join('/');}
@@ -860,12 +863,13 @@ function hitEdge(p,mx,my){const n=p.length/2;let best=null,bd=EDGE_PX;
 // Bắt đầu kéo đỉnh vi. Tách riêng vì giờ có hai lối vào: bấm trúng đỉnh có
 // sẵn, và bấm vào đỉnh giả trên cạnh.
 function beginDrag(vi,x,y,shift){
- const dz=densifyArc(inst[sel].poly,vi,BRUSH_MAX_PX/scale,
+ // Chỉ chèn đỉnh và chỉ đo khoảng cách trong đúng tầm bút — ngoài tầm đó
+ // trọng số bằng 0 nên tính thêm cũng vứt đi.
+ const dz=densifyArc(inst[sel].poly,vi,INFLUENCE_PX/scale,
                      Math.max(BRUSH_STEP_PX/scale,SIMPLIFY_PX));
  inst[sel].poly=dz.poly;dragVi=dz.vi;dragPt=dragVi*2;
  dragStart=[x,y];origPoly=inst[sel].poly.slice();dragSoft=!shift;
- dragTouch=new Uint8Array(origPoly.length/2);
- softD=arcDistPx(origPoly,dragVi,BRUSH_MAX_PX);
+ softD=arcDistPx(origPoly,dragVi,INFLUENCE_PX);
  ghost=null;hovPt=dragPt;cv.style.cursor='grabbing';}
 function hitPolygon(x,y){for(let i=inst.length-1;i>=0;i--){if(!inst[i].vis)continue;if(pip(inst[i].poly,x,y))return i;}return -1;}
 function pip(p,x,y){let c=false;for(let i=0,j=p.length-2;i<p.length;j=i,i+=2){const xi=p[i],yi=p[i+1],xj=p[j],yj=p[j+1];if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))c=!c;}return c;}
@@ -905,21 +909,19 @@ cv.addEventListener('mousemove',e=>{
  mouse=toImg(e);
  if(mode==='select'&&dragPt>=0&&sel>=0&&origPoly&&softD){const P=inst[sel].poly,dx=mouse[0]-dragStart[0],dy=mouse[1]-dragStart[1],N=origPoly.length/2;
   // Trọng số theo KHOẢNG CÁCH dọc biên (px màn hình), không theo số thứ tự đỉnh,
-  // nên bút luôn rộng đúng bán kính đặt ra dù đỉnh thưa hay dày.
-  // Bán kính NỞ theo độ kéo: bản cũ giữ cứng 60px màn hình, nên ở zoom 1200%
-  // (60px màn hình ≈ 23px ảnh) kéo đi 100px là dựng một cái gai cao 100px trên
-  // chân đế 23px. Cho R >= độ kéo thì độ dốc <= 1, không bao giờ thành gai nữa.
-  const R=Math.min(BRUSH_MAX_PX,Math.max(INFLUENCE_PX,Math.hypot(dx,dy)*scale));
+  // nên bút luôn rộng đúng INFLUENCE_PX dù đỉnh thưa hay dày.
+  // Bán kính CỐ ĐỊNH, KHÔNG nở theo độ kéo. Bản nở làm số đỉnh bị kéo theo tăng
+  // vọt (đo trên tán thật ở zoom 1200%: kéo 10px động 15% đường biên, kéo 100px
+  // động 62%) nên không nắn cục bộ được nữa. Nó vốn để chống gấp mép, nhưng việc
+  // đó nay do untanglePoly lo lúc thả chuột — bỏ đi số đỉnh chỉ đổi 153->163 và
+  // chỗ tự cắt lưu xuống file vẫn bằng 0.
   for(let i=0;i<N;i++){let w=0;
    if(!dragSoft)w=(i===dragVi)?1:0;                  // Shift = chỉ 1 đỉnh
    else{const dd=softD[i];
-    if(isFinite(dd)&&dd<R)w=0.5*(1+Math.cos(Math.PI*(dd/R)));}
-   // R co lại được (kéo ngược về gần điểm bắt đầu), nên đỉnh từng bị đẩy mà giờ
-   // nằm ngoài bút phải được TRẢ VỀ đúng chỗ cũ, không bỏ mặc ở vị trí dở dang.
-   if(w>0){P[i*2]=cX(origPoly[i*2]+dx*w);P[i*2+1]=cY(origPoly[i*2+1]+dy*w);
-    dragTouch[i]=1;}
-   else if(dragTouch[i]){P[i*2]=origPoly[i*2];P[i*2+1]=origPoly[i*2+1];
-    dragTouch[i]=0;}}
+    if(isFinite(dd)&&dd<INFLUENCE_PX)
+     w=0.5*(1+Math.cos(Math.PI*(dd/INFLUENCE_PX)));}
+   if(w<=0)continue;   // R cố định -> tập đỉnh chịu ảnh hưởng không đổi cả nhát
+   P[i*2]=cX(origPoly[i*2]+dx*w);P[i*2+1]=cY(origPoly[i*2+1]+dy*w);}
   draw();}
  else if(mode==='sam-box'&&boxStart){draw();}
  else if(mode==='draw'&&draft.length){draw();}
@@ -935,7 +937,7 @@ cv.addEventListener('mouseup',async e=>{
  if(pan){pan=null;cv.style.cursor=(mode==='select')?'grab':'crosshair';return;}
  if(mode==='sam-box'&&boxStart){const xy=toImg(e),x=xy[0],y=xy[1],b=[cX(Math.min(boxStart[0],x)),cY(Math.min(boxStart[1],y)),cX(Math.max(boxStart[0],x)),cY(Math.max(boxStart[1],y))];boxStart=null;
   if(Math.abs(b[2]-b[0])>5&&Math.abs(b[3]-b[1])>5){pushHist();await samCall('/api/sam/box',{name:current,box:b});}else draw();return;}
- if(dragPt>=0){dragPt=-1;dragVi=-1;origPoly=null;softD=null;dragTouch=null;
+ if(dragPt>=0){dragPt=-1;dragVi=-1;origPoly=null;softD=null;
   cv.style.cursor='move';
   if(sel>=0&&inst[sel])inst[sel].poly=cleanPoly(inst[sel].poly);
   persist();renderRegions();draw();if(sel>=0)computeFlower([sel]);}});
