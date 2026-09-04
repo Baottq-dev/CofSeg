@@ -156,6 +156,11 @@
   .exsplit select,.exsplit input{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 7px;font-size:12px;outline:none}
   .exsplit input{width:52px;text-align:right}
   .exwarn{font-size:11px;color:#f0b34a;line-height:1.45}
+  .fldbox{display:flex;flex-direction:column;gap:4px;max-height:190px;overflow:auto;border:1px solid var(--border);border-radius:7px;padding:6px;background:var(--panel2)}
+  .fldrow{display:flex;align-items:center;gap:8px;font-size:12px}
+  .fldrow .fn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,monospace}
+  .fldrow .fc{color:var(--muted);font-size:11px;white-space:nowrap}
+  .fldrow select{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 5px;font-size:11.5px}
   .exbody{overflow:auto;display:flex;flex-direction:column;gap:11px;padding-right:2px}
   /* --- cây thư mục --- */
   .tree .dir{gap:5px}
@@ -261,18 +266,26 @@
         </div>
       </div>
       <div class="exgrp">
+        <div class="exlbl">Lớp</div>
+        <label class="exrow on"><input type="radio" name="excls" value="canopy" checked/><span class="exn">1 lớp · canopy</span><span class="exc">nc=1</span></label>
+        <label class="exrow"><input type="radio" name="excls" value="flower"/><span class="exn">4 lớp · theo mức hoa</span><span class="exc">nc=4</span></label>
+        <div id="clsNote" class="exwarn"></div>
+      </div>
+      <div class="exgrp">
         <div class="exlbl">Chia dữ liệu</div>
         <div class="exsplit">
           <select id="spMode">
             <option value="none">Không chia</option>
             <option value="ratio" selected>Theo tỉ lệ</option>
             <option value="field">Giữ nguyên field</option>
+            <option value="folder">Theo đường bay (khuyến nghị)</option>
           </select>
           <span id="spBox">train <b id="spTrain" style="color:var(--text)">80</b>%
             · val <input id="spVal" type="number" min="0" max="90" value="10"/>%
             · test <input id="spTest" type="number" min="0" max="90" value="10"/>%
             · seed <input id="spSeed" type="number" value="42" style="width:58px"/></span>
         </div>
+        <div id="fldWrap" style="display:none"><div id="fldList" class="fldbox"></div></div>
         <div id="spNote" class="exwarn"></div>
       </div>
       <div class="exgrp">
@@ -422,7 +435,9 @@ async function preview(v){const sc=scopeOf(v);
  return PREV[sc];}
 function fmtCnt(p){if(!p)return '—';
  const s=p.images_labeled+'/'+p.images_total+' ảnh · '+p.annotations+' vùng';
- return p.skipped_regions?(s+' · bỏ '+p.skipped_regions):s;}
+ const nl=p.no_level_regions||0;
+ // Vùng thiếu mức hoa CHỈ bị bỏ khi xuất 4 lớp; xuất 1 lớp vẫn giữ nguyên.
+ return nl?(s+' · '+nl+' vùng chưa có mức hoa'):s;}
 async function refreshCounts(){
  $('scRowDir').querySelector('.exn').textContent='Thư mục đang chọn'+(pathFilter?(' · '+pathFilter):' · tất cả');
  $('scRowImg').querySelector('.exn').textContent='Ảnh hiện tại'+(current?(' · '+current.split('/').pop()):'');
@@ -430,18 +445,49 @@ async function refreshCounts(){
  $('scRowImg').querySelector('input').disabled=!current;
  for(const [v,id] of [['img','scCntImg'],['dir','scCntDir'],['all','scCntAll']]){
   $(id).textContent='…';const p=await preview(v);$(id).textContent=fmtCnt(p);}
+ renderFolders(await preview(curScope()));
  syncSplit();}
+function syncCls(){const one=document.querySelector('input[name=excls]:checked').value==='canopy';
+ document.querySelectorAll('input[name=excls]').forEach(r=>r.closest('.exrow').classList.toggle('on',r.checked));
+ $('clsNote').textContent=one
+  ? 'Model chỉ học tìm tán; mức hoa vẫn đi kèm từng annotation COCO cho module mật độ hoa chạy sau.'
+  : '⚠ Mức hoa thành class index. Class-aware NMS sẽ coi cùng một tán ở hai mức là hai vật thể → một cây ra hai instance. Chỉ chọn khi thực sự muốn model học luôn mức hoa.';}
+document.querySelectorAll('input[name=excls]').forEach(r=>r.onchange=syncCls);
+// Danh sách đường bay lấy từ /api/export_preview chứ không tự dựng ở client:
+// khoá nhóm phía server tính theo BASE, nếu client tự ghép đường dẫn sẽ lệch khi
+// người dùng đổi thư mục nguồn, và gán nhầm folder mà không ai biết.
+const FLD={};
+function renderFolders(p){const box=$('fldList');box.innerHTML='';
+ const list=(p&&p.folders)||[];
+ if(!list.length){box.innerHTML='<div class="fldrow"><span class="fn">(chưa có ảnh đã gán nhãn)</span></div>';return;}
+ list.forEach(f=>{
+  if(FLD[f.key]===undefined)FLD[f.key]='train';
+  const row=document.createElement('div');row.className='fldrow';
+  const nm=document.createElement('span');nm.className='fn';nm.textContent=f.key;nm.title=f.key;
+  const ct=document.createElement('span');ct.className='fc';ct.textContent=f.images+' ảnh';
+  const sel=document.createElement('select');
+  ['train','val','test'].forEach(o=>{
+   const op=document.createElement('option');op.value=o;op.textContent=o;
+   if(FLD[f.key]===o)op.selected=true;sel.appendChild(op);});
+  sel.onchange=()=>{FLD[f.key]=sel.value;syncSplit();};
+  row.appendChild(nm);row.appendChild(ct);row.appendChild(sel);box.appendChild(row);});}
+function foldersOf(kind){return Object.keys(FLD).filter(k=>FLD[k]===kind);}
 function syncSplit(){const m=$('spMode').value;
  $('spBox').style.display=(m==='ratio')?'':'none';
+ $('fldWrap').style.display=(m==='folder')?'':'none';
  const v=+$('spVal').value||0,t=+$('spTest').value||0;
  $('spTrain').textContent=Math.max(0,100-v-t);
  const n=$('spNote');
  if(m==='none')n.textContent='data.yaml sẽ KHÔNG có khoá val — ultralytics dừng với "\'val:\' key missing" cho tới khi bạn chia. Cố ý như vậy để không ai lỡ đo trên chính tập train.';
- else if(m==='field')n.textContent='Giữ nguyên field: hiện chỉ có nhãn ở field_2 nên val/test sẽ rỗng. Chỉ dùng khi đã gán nhãn từ 3 field trở lên.';
+ else if(m==='folder'){const nv=foldersOf('val').length,nt=foldersOf('test').length;
+  n.textContent=(nv||nt)
+   ? 'Gán nguyên đường bay vào từng tập — cách chia duy nhất không rò rỉ. val: '+nv+' đường bay · test: '+nt+'.'
+   : '⚠ Chưa gán đường bay nào cho val/test — tất cả sẽ vào train, data.yaml sẽ không khai khoá val.';}
+ else if(m==='field')n.textContent='Giữ nguyên field: chỉ tách được ở mức field, không tách được hai đường bay trong cùng một field.';
  else if(v+t>=100)n.textContent='⚠ val + test ≥ 100%, không còn ảnh nào cho train.';
- else n.textContent='Xáo trong từng đường bay rồi cắt, nên mọi tập đều có mặt ở mọi đường bay.';}
+ else n.textContent='⚠ RÒ RỈ: xáo trong từng đường bay sẽ tách các khung liền kề chụp trùng cây ra hai tập (đo được 35/392 cặp liền kề chồng lấn). Điểm val sẽ cao hơn thực tế — dùng "Theo đường bay" nếu cần con số đáng tin.';}
 function openExport(){PREV.__x=0;for(const k in PREV)delete PREV[k];
- $('expInfo').textContent='';$('expModal').classList.add('open');refreshCounts();}
+ $('expInfo').textContent='';syncCls();$('expModal').classList.add('open');refreshCounts();}
 $('save').onclick=openExport;
 $('expClose').onclick=$('expCancel').onclick=()=>$('expModal').classList.remove('open');
 $('expModal').onclick=e=>{if(e.target===$('expModal'))$('expModal').classList.remove('open');};
@@ -458,7 +504,9 @@ $('expGo').onclick=async()=>{
  const v=curScope(),p=await preview(v);
  if(p&&!p.images_labeled){$('expInfo').textContent='⚠ Phạm vi này chưa có ảnh nào được gán nhãn.';return;}
  const out_dir=await fbOpen(expDirStart);if(!out_dir)return;expDirStart=out_dir;
- const body={scope:scopeOf(v),formats:fmts,name:name,out_dir:out_dir,
+ const one=document.querySelector('input[name=excls]:checked').value==='canopy';
+ const body={scope:scopeOf(v),formats:fmts,name:name,out_dir:out_dir,single_class:one,
+  val_folders:foldersOf('val'),test_folders:foldersOf('test'),
   split_by:$('spMode').value,val_ratio:(+$('spVal').value||0)/100,
   test_ratio:(+$('spTest').value||0)/100,seed:+$('spSeed').value||0,overwrite:false};
  await doExport(body,p);};
@@ -476,8 +524,16 @@ async function doExport(body,p){const btn=$('expGo');btn.disabled=true;
   const nimg=Object.values(s).reduce((a,b)=>a+b.images,0);
   const nann=Object.values(s).reduce((a,b)=>a+b.annotations,0);
   const skip=Object.values(s).reduce((a,b)=>a+(b.skipped_regions||0),0);
+  // Server cũ không biết single_class -> pydantic bỏ qua field lạ và xuất 4 lớp
+  // trong im lặng. Đối chiếu lại điều server THỰC SỰ làm, đừng tin điều đã gửi.
+  if(body.single_class&&r.class_mode!=='canopy'){
+   $('expInfo').textContent='⚠ Server chưa hỗ trợ chế độ 1 lớp nên đã xuất '
+    +((r.classes&&Object.keys(r.classes).length)||4)+' lớp theo mức hoa. '
+    +'Khởi động lại server rồi xuất lại — bộ vừa tạo ở '+r.dir+' KHÔNG dùng để train segment được.';
+   return;}
+  const cls=(r.class_mode==='canopy')?'1 lớp canopy':'4 lớp mức hoa';
   let msg='✔ '+nimg+' ảnh · '+nann+' vùng'+(parts.length>1?(' ('+parts.join(' · ')+')'):'')
-        +' · '+(r.formats||[]).join(', ')+' → '+r.dir+'  ['+Math.round((Date.now()-t0)/1000)+'s]';
+        +' · '+cls+' · '+(r.formats||[]).join(', ')+' → '+r.dir+'  ['+Math.round((Date.now()-t0)/1000)+'s]';
   if(skip)msg+='\n⚠ Bỏ qua '+skip+' vùng chưa xác định được mức hoa.';
   if((r.problems||[]).length)msg+='\n⚠ '+r.problems.length+' ảnh có vấn đề: '+r.problems.slice(0,3).join(' · ');
   $('expInfo').textContent=msg;}
@@ -601,6 +657,10 @@ function resetView(){if(!img.width)return;baseFit=Math.min(cv.width/img.width,cv
 function zoomAt(cx,cy,f){if(!img.width)return;const ix=(cx-ox)/scale,iy=(cy-oy)/scale;zoom=Math.min(12,Math.max(0.1,zoom*f));scale=baseFit*zoom;ox=cx-ix*scale;oy=cy-iy*scale;setZlbl();draw();}
 function setZlbl(){$('zlbl').textContent=Math.round(zoom*100)+'%';}
 function toImg(e){const r=cv.getBoundingClientRect();const kx=r.width?cv.width/r.width:1,ky=r.height?cv.height/r.height:1;return[((e.clientX-r.left)*kx-ox)/scale,((e.clientY-r.top)*ky-oy)/scale];}
+// Kẹp toạ độ về trong khung ảnh: kéo/vẽ tràn ra ngoài thì điểm dán vào mép
+// chứ không nằm ngoài ảnh. Biên [0,w]/[0,h] khớp đúng _clip_poly bên server.
+function cX(x){return img.width?Math.min(Math.max(x,0),img.width):x;}
+function cY(y){return img.height?Math.min(Math.max(y,0),img.height):y;}
 function sx(x){return x*scale+ox;}
 function sy(y){return y*scale+oy;}
 function hexA(h,a){const n=parseInt(h.slice(1),16);return'rgba('+(n>>16&255)+','+(n>>8&255)+','+(n&255)+','+a+')';}
@@ -650,9 +710,9 @@ function draw(){ctx.clearRect(0,0,cv.width,cv.height);
    ctx.beginPath();ctx.arc(sx(p[k]),sy(p[k+1]),hv?7:5,0,7);ctx.fillStyle=hv?col:'#fff';ctx.fill();ctx.strokeStyle=hv?'#fff':col;ctx.lineWidth=hv?2:1.5;ctx.stroke();}});
  if(draft.length){ctx.strokeStyle='#f97316';ctx.setLineDash([6,4]);ctx.beginPath();
   for(let k=0;k<draft.length;k+=2){k===0?ctx.moveTo(sx(draft[k]),sy(draft[k+1])):ctx.lineTo(sx(draft[k]),sy(draft[k+1]));}
-  if(mouse)ctx.lineTo(sx(mouse[0]),sy(mouse[1]));ctx.stroke();ctx.setLineDash([]);
+  if(mouse)ctx.lineTo(sx(cX(mouse[0])),sy(cY(mouse[1])));ctx.stroke();ctx.setLineDash([]);
   for(let k=0;k<draft.length;k+=2){ctx.beginPath();ctx.arc(sx(draft[k]),sy(draft[k+1]),4,0,7);ctx.fillStyle='#f97316';ctx.fill();}}
- if(mode==='sam-box'&&boxStart&&mouse){ctx.strokeStyle='#f97316';ctx.setLineDash([5,4]);ctx.strokeRect(sx(boxStart[0]),sy(boxStart[1]),(mouse[0]-boxStart[0])*scale,(mouse[1]-boxStart[1])*scale);ctx.setLineDash([]);}}
+ if(mode==='sam-box'&&boxStart&&mouse){const bx=cX(boxStart[0]),by=cY(boxStart[1]),mx=cX(mouse[0]),my=cY(mouse[1]);ctx.strokeStyle='#f97316';ctx.setLineDash([5,4]);ctx.strokeRect(sx(bx),sy(by),(mx-bx)*scale,(my-by)*scale);ctx.setLineDash([]);}}
 async function samCall(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(j.error){alert('SAM lỗi: '+j.error);return;}const ni=[];(j.polygons||[]).forEach(p=>ni.push(addRegion(p)));if(ni.length)sel=inst.length-1;refresh();if(ni.length)computeFlower(ni);}
 // Chỉ bắt vào các tay cầm ĐANG HIỆN, để bấm trúng cái mình nhìn thấy.
 function hitVertex(p,x,y){let best=-1,bd=11;
@@ -667,7 +727,7 @@ cv.addEventListener('mousedown',async e=>{
  const xy=toImg(e),x=xy[0],y=xy[1];
  if(mode==='sam-click'){pushHist();await samCall('/api/sam/click',{name:current,x:x,y:y});}
  else if(mode==='sam-box'){boxStart=[x,y];}
- else if(mode==='draw'){draft.push(x,y);draw();}
+ else if(mode==='draw'){draft.push(cX(x),cY(y));draw();}
  else if(mode==='select'){
   if(sel>=0&&inst[sel]){const k=hitVertex(inst[sel].poly,x,y);
    if(k>=0){if(e.button===2){pushHist();inst[sel].poly.splice(k,2);if(inst[sel].poly.length<6){inst.splice(sel,1);sel=-1;}persist();renderRegions();draw();return;}
@@ -691,7 +751,7 @@ cv.addEventListener('mousemove',e=>{
    if(!dragSoft)w=(i===dragVi)?1:0;                  // Shift = chỉ 1 đỉnh
    else{const dd=softD[i];if(!isFinite(dd))continue;w=0.5*(1+Math.cos(Math.PI*Math.min(1,dd/INFLUENCE_PX)));}
    if(w<=0)continue;
-   P[i*2]=origPoly[i*2]+dx*w;P[i*2+1]=origPoly[i*2+1]+dy*w;}
+   P[i*2]=cX(origPoly[i*2]+dx*w);P[i*2+1]=cY(origPoly[i*2+1]+dy*w);}
   draw();}
  else if(mode==='sam-box'&&boxStart){draw();}
  else if(mode==='draw'&&draft.length){draw();}
@@ -700,7 +760,7 @@ cv.addEventListener('mousemove',e=>{
   if(hv!==hovPt){hovPt=hv;draw();}}});
 cv.addEventListener('mouseup',async e=>{
  if(pan){pan=null;cv.style.cursor=(mode==='select')?'grab':'crosshair';return;}
- if(mode==='sam-box'&&boxStart){const xy=toImg(e),x=xy[0],y=xy[1],b=[Math.min(boxStart[0],x),Math.min(boxStart[1],y),Math.max(boxStart[0],x),Math.max(boxStart[1],y)];boxStart=null;
+ if(mode==='sam-box'&&boxStart){const xy=toImg(e),x=xy[0],y=xy[1],b=[cX(Math.min(boxStart[0],x)),cY(Math.min(boxStart[1],y)),cX(Math.max(boxStart[0],x)),cY(Math.max(boxStart[1],y))];boxStart=null;
   if(Math.abs(b[2]-b[0])>5&&Math.abs(b[3]-b[1])>5){pushHist();await samCall('/api/sam/box',{name:current,box:b});}else draw();return;}
  if(dragPt>=0){dragPt=-1;dragVi=-1;origPoly=null;softD=null;cv.style.cursor='move';persist();renderRegions();draw();if(sel>=0)computeFlower([sel]);}});
 cv.addEventListener('mouseleave',()=>{if(!pan&&dragPt<0){hovPt=-1;if(mode==='select')cv.style.cursor='crosshair';draw();}});
