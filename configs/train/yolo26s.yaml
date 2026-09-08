@@ -17,16 +17,27 @@ data:
 
 train:
   # ---- độ phân giải: tham số quan trọng nhất của cấu hình này ----
-  # Đo bằng --probe trên RTX 4060 8 GB, đối chiếu với trần Boundary IoU tính
-  # được từ chính 6521 vùng của bộ này:
-  #     imgsz   ô lưới   trần B-IoU   batch chạy được
-  #      1280    8.0 px      0.852           7
-  #      1536    6.7 px     ~0.88            5
-  #      2048    5.0 px      0.914           2
-  # Chọn 1536: trần cao hơn 1280 rõ rệt mà batch vẫn đủ cho BatchNorm; 2048
-  # tụt xuống batch 2, quá nhỏ để thống kê BN ổn định.
+  # Trần Boundary IoU tính từ chính 6521 vùng của bộ này (lưới mặt nạ = imgsz/4):
+  #     imgsz   ô lưới   trần B-IoU
+  #      1280    8.0 px      0.852
+  #      1536    6.7 px     ~0.88
+  #      2048    5.0 px      0.914
+  #
+  # Batch thì ĐO THẬT, không lấy theo --probe: autobatch chỉ tính chiều thuận
+  # nên đề xuất 5 ở 1536, trong khi chạy thật batch 4 đã chạm 7.2 GB. Trên card
+  # 8 GB này có một vách đứng quanh 7.0 GB — vượt qua thì driver tràn sang RAM
+  # hệ thống thay vì báo OOM:
+  #     1536 / batch 2  ->  6.99 GB   1.25 it/s   ~2.3 phút/epoch
+  #     1280 / batch 4  ->  7.22 GB   179 s/it    ~4h10/epoch  (đã tràn)
+  # Batch 4 ở độ phân giải THẤP HƠN lại chậm hơn 220 lần. Nên chọn 1536/2.
+  #
+  # Đánh đổi phải biết: batch 2 làm thống kê BatchNorm nhiễu. Chấp nhận được
+  # vì đây là finetune từ trọng số đã học, BN vào cuộc đã ở trạng thái hợp lý,
+  # và nbs=64 vẫn gộp gradient cho phía tối ưu hoá. Nếu kết quả cho thấy BN là
+  # vấn đề thì hạ imgsz xuống 1280 để lấy batch 3 (trần thấp hơn) hoặc đóng
+  # băng BN — đừng tăng batch ở 1536, nó rơi qua vách.
   imgsz: 1536
-  batch: 4
+  batch: 2
   # Độ phân giải MỤC TIÊU của nhánh mặt nạ = imgsz/mask_ratio. Mặc định 4 hạ
   # giám sát xuống 320 khi imgsz=1280. Hạ tham số này làm biên sắc hơn nhưng
   # tốn thêm bộ nhớ — đáng thử ở lần quét sau, sau khi có mốc nền.

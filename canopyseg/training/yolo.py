@@ -79,9 +79,15 @@ class YoloTrainer(Trainer):
     def probe(self) -> dict:
         """Ước lượng batch lớn nhất chạy được ở imgsz đang đặt.
 
-        Dùng autobatch của ultralytics: nó nạp thật, chạy thật, đo thật. Kết
-        quả là ƯỚC LƯỢNG — huấn luyện thật còn thêm bộ nhớ của dataloader và
-        phân mảnh, nên nên lùi một bậc so với con số nó đưa ra.
+        CẢNH BÁO, đo được trên chính máy này: autobatch báo cột backward là
+        `nan`, tức nó chỉ tính bộ nhớ CHIỀU THUẬN. Nó đề xuất batch 5 ở
+        imgsz=1536 (ước 4.7/8 GB), nhưng chạy thật batch 4 đã chạm 7.2 GB.
+
+        Vượt ngưỡng đó thì driver NVIDIA không báo OOM mà âm thầm tràn sang
+        RAM hệ thống: 1536/batch 2 chạy 1.25 it/s, còn 1280/batch 4 tụt xuống
+        179 s/it — chậm 220 lần mà không có lỗi nào. Nên coi con số ở đây là
+        cận trên lạc quan và LUÔN xác nhận bằng một lần chạy ngắn có nhìn cột
+        GPU_mem; ngưỡng an toàn thực nghiệm trên card 8 GB này là ~7.0 GB.
         """
         import torch
         from ultralytics import YOLO
@@ -109,9 +115,14 @@ class YoloTrainer(Trainer):
             "supported": True,
             "imgsz": imgsz,
             "suggested_batch": int(batch),
-            "recommended_batch": max(1, int(batch) - 1),
+            # Hệ số 0.4 rút từ đo thật: autobatch nói 5, thực tế chạy được 2.
+            "recommended_batch": max(1, int(int(batch) * 0.4)),
             "free_mb_before": round(free_before),
-            "note": "lùi một bậc so với suggested; dataloader và phân mảnh chưa tính vào",
+            "note": (
+                "suggested chỉ tính chiều thuận nên lạc quan ~2.5 lần; "
+                "xác nhận bằng một lần chạy ngắn, giữ GPU_mem dưới ~7.0G "
+                "để không tràn sang RAM hệ thống"
+            ),
         }
 
     # ----------------------------------------------------------------- huấn luyện
@@ -123,8 +134,11 @@ class YoloTrainer(Trainer):
         # Ultralytics tự quản lý cây thư mục riêng của nó; neo vào run_dir để
         # mọi thứ của một lần chạy nằm chung một chỗ.
         args.update(
-            data=str(self.data_yaml),
-            project=str(self.run_dir),
+            data=str(self.data_yaml.resolve()),
+            # Đường dẫn TUYỆT ĐỐI: với đường dẫn tương đối, ultralytics nối nó
+            # vào thư mục runs của chính nó và kết quả rơi vào
+            # runs/segment/<đường dẫn của ta>/ thay vì vào run_dir.
+            project=str(self.run_dir.resolve()),
             name="ultralytics",
             exist_ok=True,
         )
