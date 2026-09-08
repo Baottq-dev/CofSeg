@@ -1,20 +1,26 @@
 # QUAN TRỌNG: cài bản GPU trước cho khớp CUDA của máy, rồi mới pip install -r:
-#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-torch>=2.1
-torchvision>=0.16
-numpy
-scipy
-scikit-image
-opencv-python
-rasterio
-pycocotools
-pyyaml
-tqdm
-albumentations
-gradio>=4.0        # giao diện Phase 1 (app/)
-pillow
-fastapi            # annotator tự xây (app/server.py)
-uvicorn            # chạy server annotator
-# SAM2: cài từ https://github.com/facebookresearch/sam2
-#   pip install "git+https://github.com/facebookresearch/sam2.git"
+#   pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
+# Hai dòng dưới ghim cả hậu tố +cu121 nên CHỈ khớp khi cài từ index trên. Cố ý
+# như vậy: thiếu index thì pip báo lỗi ngay, thay vì âm thầm kéo bản CPU về rồi
+# để bạn ngồi chờ SAM chạy trên CPU mà không hiểu vì sao chậm.
+torch==2.5.1+cu121
+torchvision==0.20.1+cu121
+numpy==2.4.4
+scipy==1.18.0
+scikit-image==0.26.0
+# albumentations và ultralytics kéo theo opencv-python-headless cùng phiên bản;
+# cả hai gói ghi đè lên cùng thư mục cv2/ nên đừng để lệch phiên bản giữa chúng.
+opencv-python==5.0.0.93
+rasterio==1.5.0
+pycocotools==2.0.11
+pyyaml==6.0.3
+tqdm==4.68.3
+albumentations==2.0.8
+gradio==6.19.0         # giao diện Phase 1 (app/)
+pillow==12.2.0
+fastapi==0.139.0       # annotator tự xây (app/server.py)
+uvicorn==0.49.0        # chạy server annotator
+ultralytics==8.4.143   # đọc/kiểm bộ YOLO-seg do annotator xuất ra
+# SAM2: cài từ GitHub. Ghim đúng commit đang dùng (dist name là SAM-2 1.0):
+#   pip install "git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4"
 # (Phase 1 CHẈ cần SAM. detectron2 / stardist / coral-pytorch sẽ thêm ở phase sau.)
