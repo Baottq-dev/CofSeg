@@ -1,0 +1,27 @@
+# Bộ dữ liệu đã xuất từ app/ (định dạng COCO), thêm nhãn YOLO sinh từ nó.
+#
+# Cách chia hiện tại KHÔNG rò rỉ nhưng rất lệch, cần biết khi đọc kết quả:
+#   train  337 ảnh / 4941 vùng  — field_1 83%, field_4 11%, field_3 6%
+#   val     20 ảnh /  352 vùng  — chỉ field_5
+#   test   117 ảnh / 1228 vùng  — chỉ field_2
+# Không đường bay nào bị cắt đôi giữa hai tập, nên không rò rỉ cấp đối tượng.
+# Nhưng val chỉ 20 ảnh của MỘT field: điểm val rất nhiễu, đừng chọn model chỉ
+# dựa vào nó. field_6 chưa có nhãn nào.
+
+root: data/export/dataset_v1
+splits: [train, val, test]
+
+# COCO bên cạnh đánh category_id từ 1; YOLO đánh class index từ 0. Cố ý lệch.
+class_index: 0
+names:
+  0: canopy
+
+# Vai trò -> thư mục con trong images/
+yolo_splits:
+  train: train
+  val: val
+  test: test
+
+# Bộ có đúng 1 vùng diện tích 1.4 px2 (bbox 19.2 x 2.4) — nhãn hỏng, không
+# phải tán. Ngưỡng này loại nó mà không đụng tới vùng thật nhỏ nhất.
+min_area: 50.0

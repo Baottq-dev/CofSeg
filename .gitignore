@@ -78,10 +78,12 @@ dmypy.json
 # Training runs output (wandb, mlflow, tensorboard, etc.)
 runs/
 
-# Datasets (usually large; track with DVC or similar)
-datasets/
-data/iachim_dataset_export/
-data/
+# Datasets (usually large; track with DVC or similar).
+# Anchored to the repo root: unanchored, these matched every directory at
+# any depth, which silently swallowed source paths such as
+# canopyseg/datasets/ and configs/data/.
+/datasets/
+/data/
 
 *.zip
 *.tar
