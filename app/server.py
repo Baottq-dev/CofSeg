@@ -744,40 +744,51 @@ def _instance_mask(recs, w, h):
     return mask
 
 
-def _write_coco(per_image, out_file, hsv, single_class=False):
+# COCO ở đây là COCO THUẦN: images chỉ có id/file_name/width/height,
+# annotation chỉ có 7 trường của đặc tả. Mọi số đo về hoa đi ra file phụ
+# flower/<split>.json, nối lại bằng chính annotation id.
+# Hai file được ghi trong CÙNG MỘT lượt duyệt, vì id chỉ khớp khi được đánh
+# cùng một lần — tách ra hai hàm là mở đường cho chúng lệch nhau về sau.
+def _write_coco(per_image, out_file, single_class=False,
+                flower_file=None, hsv=None):
     cats = ([dict(id=0, name="canopy", supercategory="canopy")] if single_class
             else [dict(id=i, name=FLOWER_NAMES[i], supercategory="canopy")
                   for i in range(len(FLOWER_NAMES))])
-    images, anns = [], []
+    images, anns, flower = [], [], {}
     iid = aid = 0
     for name, rel, w, h, recs in per_image:
         iid += 1
         images.append(dict(id=iid, file_name=rel.replace("/", "__"),
-                           width=w, height=h, original_path=rel))
+                           width=w, height=h))
         for r in recs:
             aid += 1
             xs, ys = r["poly"][0::2], r["poly"][1::2]
             anns.append(dict(
                 id=aid, image_id=iid, category_id=int(r["cat_id"]),
-                # Mức hoa luôn đi kèm annotation dù có làm class index hay không.
-                flower_label=r.get("flower_label"),
                 segmentation=[r["poly"]], area=float(_poly_area(r["poly"])),
                 bbox=[min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)],
-                iscrowd=0,
-                # Giữ lại phần đo được: flower_ratio là số liên tục (dữ liệu gốc),
-                # còn category_id chỉ là nó đã bị rời rạc thành 4 rổ.
+                iscrowd=0))
+            flower[str(aid)] = dict(
+                flower_label=r.get("flower_label"),
                 flower_ratio=r.get("flower_ratio"),
                 flower_pixels=r.get("flower_pixels"),
                 total_pixels=r.get("total_pixels"),
                 label_source=r.get("label_source"),
-                conf=r.get("conf")))
-    info = dict(description="CoffeeSeg canopy + flower density",
-                image_root=ROOT.replace("\\", "/"),
-                date_created=_now(), flower_thresholds=list(FLOWER_THRESHOLDS),
-                hsv=hsv)
-    json.dump(dict(info=info, images=images, annotations=anns,
+                conf=r.get("conf"))
+    info = dict(description="CoffeeSeg coffee canopy segmentation",
+                version="1.0", year=int(_now()[:4]), contributor="",
+                date_created=_now())
+    json.dump(dict(info=info, licenses=[], images=images, annotations=anns,
                    categories=cats),
               open(out_file, "w", encoding="utf-8"), ensure_ascii=False)
+    if flower_file:
+        json.dump(dict(
+            note=("per-annotation flower density; join to the COCO file of the "
+                  "same name by annotation id"),
+            thresholds=list(FLOWER_THRESHOLDS),
+            levels={i: nm for i, nm in enumerate(FLOWER_NAMES)},
+            hsv=hsv, annotations=flower),
+            open(flower_file, "w", encoding="utf-8"), ensure_ascii=False)
     return len(images), len(anns)
 
 
@@ -881,9 +892,12 @@ def _export_dataset(items, req):
 
         if "coco" in formats:
             cdir = os.path.join(root_out, "coco")
+            fdir = os.path.join(root_out, "flower")
             os.makedirs(cdir, exist_ok=True)
-            _write_coco(per_image, os.path.join(
-                cdir, ("instances" if no_split else sp) + ".json"), hsv, one)
+            os.makedirs(fdir, exist_ok=True)
+            stem = ("instances" if no_split else sp) + ".json"
+            _write_coco(per_image, os.path.join(cdir, stem), one,
+                        os.path.join(fdir, stem), hsv)
             written.add("coco")
         if "yolo" in formats:
             yl = os.path.join(root_out, "labels", sub)
@@ -931,15 +945,20 @@ def _export_dataset(items, req):
         image_naming=("flattened from the path under source_base: "
                       "field__<...>__file.ext, '/' replaced by '__'"),
         source_base=BASE.replace("\\", "/"),
+        # COCO/YOLO ghi ra ĐÚNG CHUẨN, không kèm trường riêng nào. Số đo mật độ
+        # hoa nằm ở flower/<split>.json, nối lại bằng annotation id.
+        flower_sidecar=("flower/<split>.json — per-annotation flower_label, "
+                        "flower_ratio, flower_pixels, total_pixels, "
+                        "label_source, conf; join by COCO annotation id"),
         # Quy ước mask LỆCH 1 so với category_id của COCO — phải ghi ra, nếu
         # không người train U-Net sẽ lệch một mức trên toàn bộ dataset.
         mask_values=("0=background, 1=canopy (chế độ 1 lớp)" if one else
                      "0=background, sau đó = flower_label + 1 "
                      "(1=no_flower ... 4=very_many_flowers); "
                      "COCO category_id = giá trị mask - 1"),
-        flower_label_note=("class index = 0 cho mọi tán; mức hoa nằm ở trường "
-                           "flower_label/flower_ratio của từng annotation COCO, "
-                           "dành cho module mật độ hoa chạy riêng" if one else
+        flower_label_note=("class index = 0 cho mọi tán; mức hoa nằm ở "
+                           "flower/<split>.json, dành cho module mật độ hoa "
+                           "chạy riêng" if one else
                            "class index CHÍNH LÀ mức hoa (0-3)"),
         instance_mask_values="0=background, 1..N = từng tán, khớp thứ tự COCO",
         flower=dict(thresholds=list(FLOWER_THRESHOLDS), hsv=hsv),
