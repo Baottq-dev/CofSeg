@@ -266,12 +266,6 @@
         </div>
       </div>
       <div class="exgrp">
-        <div class="exlbl">Lớp</div>
-        <label class="exrow on"><input type="radio" name="excls" value="canopy" checked/><span class="exn">1 lớp · canopy</span><span class="exc">nc=1</span></label>
-        <label class="exrow"><input type="radio" name="excls" value="flower"/><span class="exn">4 lớp · theo mức hoa</span><span class="exc">nc=4</span></label>
-        <div id="clsNote" class="exwarn"></div>
-      </div>
-      <div class="exgrp">
         <div class="exlbl">Chia dữ liệu</div>
         <div class="exsplit">
           <select id="spMode">
@@ -446,10 +440,8 @@ async function preview(v){const sc=scopeOf(v);
  catch(e){PREV[sc]=null;}
  return PREV[sc];}
 function fmtCnt(p){if(!p)return '—';
- const s=p.images_labeled+'/'+p.images_total+' ảnh · '+p.annotations+' vùng';
- const nl=p.no_level_regions||0;
- // Vùng thiếu mức hoa CHỈ bị bỏ khi xuất 4 lớp; xuất 1 lớp vẫn giữ nguyên.
- return nl?(s+' · '+nl+' vùng chưa có mức hoa'):s;}
+ // Không vùng nào bị loại lúc xuất nữa: mọi polygon đã vẽ đều là một tán.
+ return p.images_labeled+'/'+p.images_total+' ảnh · '+p.annotations+' vùng';}
 async function refreshCounts(){
  $('scRowDir').querySelector('.exn').textContent='Thư mục đang chọn'+(pathFilter?(' · '+pathFilter):' · tất cả');
  $('scRowImg').querySelector('.exn').textContent='Ảnh hiện tại'+(current?(' · '+current.split('/').pop()):'');
@@ -459,12 +451,6 @@ async function refreshCounts(){
   $(id).textContent='…';const p=await preview(v);$(id).textContent=fmtCnt(p);}
  renderFolders(await preview(curScope()));
  syncSplit();}
-function syncCls(){const one=document.querySelector('input[name=excls]:checked').value==='canopy';
- document.querySelectorAll('input[name=excls]').forEach(r=>r.closest('.exrow').classList.toggle('on',r.checked));
- $('clsNote').textContent=one
-  ? 'Model chỉ học tìm tán; mức hoa vẫn đi kèm từng annotation COCO cho module mật độ hoa chạy sau.'
-  : '⚠ Mức hoa thành class index. Class-aware NMS sẽ coi cùng một tán ở hai mức là hai vật thể → một cây ra hai instance. Chỉ chọn khi thực sự muốn model học luôn mức hoa.';}
-document.querySelectorAll('input[name=excls]').forEach(r=>r.onchange=syncCls);
 // Danh sách đường bay lấy từ /api/export_preview chứ không tự dựng ở client:
 // khoá nhóm phía server tính theo BASE, nếu client tự ghép đường dẫn sẽ lệch khi
 // người dùng đổi thư mục nguồn, và gán nhầm folder mà không ai biết.
@@ -499,7 +485,7 @@ function syncSplit(){const m=$('spMode').value;
  else if(v+t>=100)n.textContent='⚠ val + test ≥ 100%, không còn ảnh nào cho train.';
  else n.textContent='⚠ RÒ RỈ: xáo trong từng đường bay sẽ tách các khung liền kề chụp trùng cây ra hai tập (đo được 35/392 cặp liền kề chồng lấn). Điểm val sẽ cao hơn thực tế — dùng "Theo đường bay" nếu cần con số đáng tin.';}
 function openExport(){PREV.__x=0;for(const k in PREV)delete PREV[k];
- $('expInfo').textContent='';syncCls();$('expModal').classList.add('open');refreshCounts();}
+ $('expInfo').textContent='';$('expModal').classList.add('open');refreshCounts();}
 $('save').onclick=openExport;
 $('expClose').onclick=$('expCancel').onclick=()=>$('expModal').classList.remove('open');
 $('expModal').onclick=e=>{if(e.target===$('expModal'))$('expModal').classList.remove('open');};
@@ -516,8 +502,7 @@ $('expGo').onclick=async()=>{
  const v=curScope(),p=await preview(v);
  if(p&&!p.images_labeled){$('expInfo').textContent='⚠ Phạm vi này chưa có ảnh nào được gán nhãn.';return;}
  const out_dir=await fbOpen(expDirStart);if(!out_dir)return;expDirStart=out_dir;
- const one=document.querySelector('input[name=excls]:checked').value==='canopy';
- const body={scope:scopeOf(v),formats:fmts,name:name,out_dir:out_dir,single_class:one,
+ const body={scope:scopeOf(v),formats:fmts,name:name,out_dir:out_dir,
   val_folders:foldersOf('val'),test_folders:foldersOf('test'),
   split_by:$('spMode').value,val_ratio:(+$('spVal').value||0)/100,
   test_ratio:(+$('spTest').value||0)/100,seed:+$('spSeed').value||0,overwrite:false};
@@ -535,18 +520,9 @@ async function doExport(body,p){const btn=$('expGo');btn.disabled=true;
   const parts=Object.keys(s).filter(k=>s[k].images).map(k=>k+' '+s[k].images);
   const nimg=Object.values(s).reduce((a,b)=>a+b.images,0);
   const nann=Object.values(s).reduce((a,b)=>a+b.annotations,0);
-  const skip=Object.values(s).reduce((a,b)=>a+(b.skipped_regions||0),0);
-  // Server cũ không biết single_class -> pydantic bỏ qua field lạ và xuất 4 lớp
-  // trong im lặng. Đối chiếu lại điều server THỰC SỰ làm, đừng tin điều đã gửi.
-  if(body.single_class&&r.class_mode!=='canopy'){
-   $('expInfo').textContent='⚠ Server chưa hỗ trợ chế độ 1 lớp nên đã xuất '
-    +((r.classes&&Object.keys(r.classes).length)||4)+' lớp theo mức hoa. '
-    +'Khởi động lại server rồi xuất lại — bộ vừa tạo ở '+r.dir+' KHÔNG dùng để train segment được.';
-   return;}
-  const cls=(r.class_mode==='canopy')?'1 lớp canopy':'4 lớp mức hoa';
   let msg='✔ '+nimg+' ảnh · '+nann+' vùng'+(parts.length>1?(' ('+parts.join(' · ')+')'):'')
-        +' · '+cls+' · '+(r.formats||[]).join(', ')+' → '+r.dir+'  ['+Math.round((Date.now()-t0)/1000)+'s]';
-  if(skip)msg+='\n⚠ Bỏ qua '+skip+' vùng chưa xác định được mức hoa.';
+        +' · 1 lớp canopy · '+(r.formats||[]).join(', ')+' → '+r.dir
+        +'  ['+Math.round((Date.now()-t0)/1000)+'s]';
   if((r.problems||[]).length)msg+='\n⚠ '+r.problems.length+' ảnh có vấn đề: '+r.problems.slice(0,3).join(' · ');
   $('expInfo').textContent=msg;}
  catch(e){clearInterval(tick);btn.disabled=false;$('expInfo').textContent='⚠ '+e;}}
