@@ -750,10 +750,10 @@ def _write_coco(per_image, out_file, hsv, single_class=False):
                   for i in range(len(FLOWER_NAMES))])
     images, anns = [], []
     iid = aid = 0
-    for name, w, h, recs in per_image:
+    for name, rel, w, h, recs in per_image:
         iid += 1
-        images.append(dict(id=iid, file_name=name.replace("/", "__"),
-                           width=w, height=h, original_path=name))
+        images.append(dict(id=iid, file_name=rel.replace("/", "__"),
+                           width=w, height=h, original_path=rel))
         for r in recs:
             aid += 1
             xs, ys = r["poly"][0::2], r["poly"][1::2]
@@ -853,20 +853,26 @@ def _export_dataset(items, req):
         img_out = os.path.join(root_out, "images", sub)
         os.makedirs(img_out, exist_ok=True)
 
-        per_image = []          # (name, w, h, recs đã kẹp) dùng chung mọi format
+        # (name, rel, w, h, recs đã kẹp). name để ĐỌC từ ROOT, rel để ĐẶT TÊN.
+        # Tên đầu ra phải tính theo BASE: trước đây nó dùng name (tương đối so
+        # với ROOT) nên chọn một field ở panel trái là mất luôn tên field trong
+        # tên file — cùng một tấm ảnh xuất ra hai tên khác nhau tuỳ thiết lập
+        # giao diện. Nhãn và khoá gom nhóm vốn đã theo BASE, giờ tên khớp nốt.
+        per_image = []
         for name, jp in sp_items:
             w, h, recs, skipped = _read_records(jp, one)
             w, h = _size_of(name, w, h)
             if not w or not h:
                 problems.append("%s: không xác định được kích thước ảnh" % name)
                 continue
+            rel = _full_rel(name)
             if not _copy_file(os.path.join(ROOT, name),
-                              os.path.join(img_out, name.replace("/", "__"))):
+                              os.path.join(img_out, rel.replace("/", "__"))):
                 problems.append("%s: không chép được ảnh gốc" % name)
                 continue
             for r in recs:
                 r["poly"] = _clip_poly(r["poly"], w, h)
-            per_image.append((name, w, h, recs))
+            per_image.append((name, rel, w, h, recs))
             summary[sp]["images"] += 1
             summary[sp]["annotations"] += len(recs)
             summary[sp]["skipped_regions"] += skipped
@@ -882,7 +888,7 @@ def _export_dataset(items, req):
         if "yolo" in formats:
             yl = os.path.join(root_out, "labels", sub)
             os.makedirs(yl, exist_ok=True)
-            for name, w, h, recs in per_image:
+            for name, rel, w, h, recs in per_image:
                 rows = []
                 for r in recs:
                     p = r["poly"]
@@ -890,7 +896,7 @@ def _export_dataset(items, req):
                         "%.6f" % min(1.0, max(0.0, p[j] / (w if j % 2 == 0 else h)))
                         for j in range(len(p)))
                     rows.append("%d %s" % (int(r["cat_id"]), coords))
-                stem = name.replace("/", "__").rsplit(".", 1)[0]
+                stem = rel.replace("/", "__").rsplit(".", 1)[0]
                 with open(os.path.join(yl, stem + ".txt"), "w",
                           encoding="utf-8") as f:
                     f.write("\n".join(rows))
@@ -902,8 +908,8 @@ def _export_dataset(items, req):
                 continue
             mdir = os.path.join(root_out, sub_dir, sub)
             os.makedirs(mdir, exist_ok=True)
-            for name, w, h, recs in per_image:
-                stem = name.replace("/", "__").rsplit(".", 1)[0]
+            for name, rel, w, h, recs in per_image:
+                stem = rel.replace("/", "__").rsplit(".", 1)[0]
                 if not _imwrite(os.path.join(mdir, stem + ".png"),
                                 fn(recs, w, h)):
                     problems.append("%s: không ghi được %s" % (name, sub_dir))
@@ -922,7 +928,9 @@ def _export_dataset(items, req):
         split=dict(mode=req.split_by, seed=req.seed,
                    val_ratio=req.val_ratio, test_ratio=req.test_ratio),
         splits=summary,
-        image_naming="flattened: field__<...>__file.ext",
+        image_naming=("flattened from the path under source_base: "
+                      "field__<...>__file.ext, '/' replaced by '__'"),
+        source_base=BASE.replace("\\", "/"),
         # Quy ước mask LỆCH 1 so với category_id của COCO — phải ghi ra, nếu
         # không người train U-Net sẽ lệch một mức trên toàn bộ dataset.
         mask_values=("0=background, 1=canopy (chế độ 1 lớp)" if one else
