@@ -725,8 +725,19 @@ def _instance_mask(recs, w, h):
 # flower/<split>.json, nối lại bằng chính annotation id.
 # Hai file được ghi trong CÙNG MỘT lượt duyệt, vì id chỉ khớp khi được đánh
 # cùng một lần — tách ra hai hàm là mở đường cho chúng lệch nhau về sau.
+# cat_id trong recs là class index 0-based (đúng thứ YOLO cần, ghi thẳng).
+# COCO thì đánh số lớp TỪ 1: bộ COCO gốc dùng id 1..90 và chừa 0 cho nền, nên
+# mọi công cụ đọc COCO đều làm `category_id - 1` để quy về class index. Ghi 0 ra
+# COCO thì chúng cho ra lớp -1 mà không báo lỗi (thử với
+# ultralytics.data.converter.convert_coco: ra dòng "-1 0.1 0.1 ..." kèm thông
+# báo "converted successfully").
+# Nên hai định dạng LỆCH NHAU 1 là cố ý, không phải lỗi: mỗi bên theo lệ của
+# chính nó. Đừng "sửa" cho chúng giống nhau.
+COCO_CAT_BASE = 1
+
+
 def _write_coco(per_image, out_file, flower_file=None, hsv=None):
-    cats = [dict(id=0, name="canopy", supercategory="canopy")]
+    cats = [dict(id=COCO_CAT_BASE, name="canopy", supercategory="canopy")]
     images, anns, flower = [], [], {}
     iid = aid = 0
     for name, rel, w, h, recs in per_image:
@@ -737,7 +748,8 @@ def _write_coco(per_image, out_file, flower_file=None, hsv=None):
             aid += 1
             xs, ys = r["poly"][0::2], r["poly"][1::2]
             anns.append(dict(
-                id=aid, image_id=iid, category_id=int(r["cat_id"]),
+                id=aid, image_id=iid,
+                category_id=int(r["cat_id"]) + COCO_CAT_BASE,
                 segmentation=[r["poly"]], area=float(_poly_area(r["poly"])),
                 bbox=[min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)],
                 iscrowd=0))
@@ -902,7 +914,7 @@ def _export_dataset(items, req):
         name=req.name, created=_now(),
         source_root=ROOT.replace("\\", "/"), scope=req.scope, fields=fields,
         formats=sorted(written),
-        classes={0: "canopy"},
+        classes={COCO_CAT_BASE: "canopy"},
         split=dict(mode=req.split_by, seed=req.seed,
                    val_ratio=req.val_ratio, test_ratio=req.test_ratio),
         splits=summary,
@@ -915,7 +927,10 @@ def _export_dataset(items, req):
                         "flower_ratio, flower_pixels, total_pixels, "
                         "label_source, conf; join by COCO annotation id"),
         mask_values="0=background, 1=canopy",
-        flower_label_note=("class index = 0 cho mọi tán; mức hoa KHÔNG phải "
+        class_numbering=("COCO category_id = 1 (đúng lệ COCO: bộ gốc đánh 1..90, "
+                         "chừa 0 cho nền). YOLO class index = 0 (đúng lệ YOLO). "
+                         "Hai bên lệch nhau 1 là cố ý."),
+        flower_label_note=("chỉ có MỘT lớp canopy; mức hoa KHÔNG phải "
                            "lớp, nó nằm ở flower/<split>.json để module mật độ "
                            "hoa đọc riêng"),
         instance_mask_values="0=background, 1..N = từng tán, khớp thứ tự COCO",
