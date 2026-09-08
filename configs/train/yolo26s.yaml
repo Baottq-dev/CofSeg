@@ -1,0 +1,61 @@
+# Finetune YOLO26-seg trên bộ tán cà phê.
+#
+# Vì sao chọn cỡ "s" chứ không phải "l": đo trên chính 6521 vùng của bộ này,
+# nút thắt là ĐỘ PHÂN GIẢI chứ không phải dung lượng model. Lưới mặt nạ của
+# YOLO là imgsz/4, nên ở imgsz=1280 mỗi ô nuốt 8 px ảnh gốc, ở 640 là 16 px.
+# Với 8 GB VRAM, đổi "s" lấy imgsz cao là đánh đổi có lãi; đổi "l" lấy imgsz
+# thấp là đánh đổi lỗ.
+
+name: yolo26s_seg_1536
+trainer: yolo
+model: weights/yolo26s-seg.pt
+
+data:
+  yaml: data/export/dataset_v1/data.yaml
+  # Ảnh dày nhất có 48 vùng; con số này để bước dò VRAM ước lượng đúng.
+  max_objects_per_image: 48
+
+train:
+  # ---- độ phân giải: tham số quan trọng nhất của cấu hình này ----
+  # Đo bằng --probe trên RTX 4060 8 GB, đối chiếu với trần Boundary IoU tính
+  # được từ chính 6521 vùng của bộ này:
+  #     imgsz   ô lưới   trần B-IoU   batch chạy được
+  #      1280    8.0 px      0.852           7
+  #      1536    6.7 px     ~0.88            5
+  #      2048    5.0 px      0.914           2
+  # Chọn 1536: trần cao hơn 1280 rõ rệt mà batch vẫn đủ cho BatchNorm; 2048
+  # tụt xuống batch 2, quá nhỏ để thống kê BN ổn định.
+  imgsz: 1536
+  batch: 4
+  # Độ phân giải MỤC TIÊU của nhánh mặt nạ = imgsz/mask_ratio. Mặc định 4 hạ
+  # giám sát xuống 320 khi imgsz=1280. Hạ tham số này làm biên sắc hơn nhưng
+  # tốn thêm bộ nhớ — đáng thử ở lần quét sau, sau khi có mốc nền.
+  mask_ratio: 4
+  # Tán mọc sát nhau nên mặt nạ chồng lấn; giữ True để chúng không đè nhau.
+  overlap_mask: true
+
+  epochs: 100
+  patience: 30
+  optimizer: auto
+  cos_lr: true
+  amp: true
+  workers: 4
+  seed: 0
+  deterministic: true
+  val: true
+  plots: true
+
+  # ---- tăng cường cho ảnh UAV nadir ----
+  # Mặc định của ultralytics giả định ảnh có chiều "trên"; ảnh chụp thẳng
+  # đứng thì không, nên lật dọc và xoay bất kỳ đều hợp lệ.
+  flipud: 0.5
+  fliplr: 0.5
+  degrees: 180.0
+  # Chỉ 337 ảnh train, nên dán ghép giúp bù dữ liệu. Đây là tham số dành cho
+  # phân đoạn, mặc định tắt.
+  copy_paste: 0.3
+  # Mosaic thu nhỏ tán vốn đã lớn; tắt ở 15 epoch cuối để model kết thúc trên
+  # phân bố giống lúc suy luận.
+  mosaic: 1.0
+  close_mosaic: 15
+  scale: 0.5
