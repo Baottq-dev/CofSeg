@@ -144,14 +144,27 @@ class YoloTrainer(Trainer):
         )
         results = model.train(**args)
 
-        save_dir = Path(getattr(results, "save_dir", self.run_dir / "ultralytics"))
+        # train() trả về SegmentMetrics, và thực thể đó KHÔNG có save_dir (đã
+        # kiểm trên ultralytics 8.4.143: hasattr -> False). Nên nơi ghi được
+        # suy thẳng từ project/name ta vừa truyền vào, chứ không dò thuộc tính
+        # rồi im lặng rơi vào giá trị mặc định.
+        save_dir = Path(getattr(results, "save_dir", None) or args["project"])
+        if not (save_dir / "weights").is_dir():
+            save_dir = self.run_dir / "ultralytics"
         weights = save_dir / "weights"
+        best, last = weights / "best.pt", weights / "last.pt"
+        if not best.exists() and not last.exists():
+            # Không có trọng số nghĩa là lần chạy hỏng, dù ultralytics không
+            # ném lỗi. Báo ra ngay thay vì trả về summary rỗng trông như thành công.
+            raise RuntimeError(
+                f"Huấn luyện kết thúc nhưng không có trọng số nào trong {weights}"
+            )
         out = {
             "weights": {
-                "best": str(weights / "best.pt") if (weights / "best.pt").exists() else None,
+                "best": str(best) if best.exists() else None,
                 # last.pt cũng phải chấm: val chỉ có 20 ảnh nên best.pt được
                 # chọn theo một tín hiệu rất nhiễu.
-                "last": str(weights / "last.pt") if (weights / "last.pt").exists() else None,
+                "last": str(last) if last.exists() else None,
             },
             "save_dir": str(save_dir),
             "args": {k: v for k, v in args.items() if not k.startswith("_")},
