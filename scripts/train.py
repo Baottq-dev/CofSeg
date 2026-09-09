@@ -6,9 +6,8 @@
 
 Truyền siêu tham số thẳng trên dòng lệnh — mọi tham số của trainer đều nhận:
 
-    python scripts/train.py --config configs/train/yolo26s.yaml \
-        --epochs 50 --imgsz 1280 --batch 3 --lr0 0.003 --optimizer AdamW
-
+    python scripts/train.py --config configs/train/yolo26s.yaml --epochs 100 --imgsz 640 --batch 16 
+    
 Tên viết gạch nối cũng được (--cos-lr = --cos_lr). Cờ không kèm giá trị nghĩa
 là bật: --amp tương đương --amp true. Gõ sai tên thì script BÁO LỖI kèm gợi ý,
 thay vì im lặng bỏ qua rồi để bạn chờ ba tiếng mới biết tham số không vào.
@@ -156,15 +155,20 @@ def main() -> int:
             print(f"  {k:<18} {merged[k]!r}{src}")
         return 0
 
+    trainer_cls = resolve("trainer", cfg["trainer"])
     name = a.name or cfg.get("name") or Path(a.config).stem
-    run_dir = artifacts.create_run_dir(a.runs, name)
+    # Nhãn sinh từ tham số ĐÃ GỘP (config + dòng lệnh), nên tên thư mục luôn
+    # mô tả đúng thứ vừa chạy kể cả khi bạn ghi đè imgsz hay batch.
+    run_dir = artifacts.create_run_dir(
+        a.runs, "probe" if a.probe else "train", name, trainer_cls.run_tag(cfg)
+    )
     artifacts.write_env(run_dir)
     artifacts.snapshot_config(run_dir, cfg)
     print(f"Lần chạy: {run_dir}")
     if hp:
         print("Ghi đè từ dòng lệnh:", json.dumps(hp, ensure_ascii=False))
 
-    trainer = resolve("trainer", cfg["trainer"])(cfg, run_dir)
+    trainer = trainer_cls(cfg, run_dir)
 
     info = trainer.prepare()
     if info:

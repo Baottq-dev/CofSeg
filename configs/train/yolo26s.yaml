@@ -6,7 +6,10 @@
 # Với 8 GB VRAM, đổi "s" lấy imgsz cao là đánh đổi có lãi; đổi "l" lấy imgsz
 # thấp là đánh đổi lỗ.
 
-name: yolo26s_seg_1536
+# Chỉ định danh model, KHÔNG kèm siêu tham số. imgsz/batch/epochs được trainer
+# gắn vào tên thư mục run từ giá trị THẬT lúc chạy, nên nhét "1536" vào đây sẽ
+# thành sai ngay lần đầu bạn gõ --imgsz 640.
+name: yolo26s-seg
 trainer: yolo
 model: weights/yolo26s-seg.pt
 
