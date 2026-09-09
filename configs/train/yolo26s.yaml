@@ -47,10 +47,21 @@ train:
 
   epochs: 100
   patience: 30
+  # optimizer: auto -> ultralytics tự chọn AdamW và tự đặt lr0/momentum theo
+  # số lớp và số epoch (lần chạy thử nó chọn lr=0.002). Đặt lr0 tay ở đây sẽ
+  # KHÔNG có tác dụng chừng nào optimizer còn là auto.
   optimizer: auto
   cos_lr: true
   amp: true
-  workers: 4
+
+  # workers=0 chứ không phải 8 như mặc định: trên Windows mỗi dataloader worker
+  # spawn một tiến trình mới và nạp lại torch, và trên máy này paging file
+  # không đủ cho việc đó -> WinError 1455 "The paging file is too small",
+  # gãy giữa chừng khi đang quét nhãn. 0 nghĩa là nạp dữ liệu trong tiến trình
+  # chính: chậm hơn một chút nhưng không gãy. Nếu bạn tăng paging file của
+  # Windows rồi khởi động lại thì nâng lên 2-4 sẽ nhanh hơn.
+  workers: 0
+
   seed: 0
   deterministic: true
   val: true
@@ -63,10 +74,22 @@ train:
   fliplr: 0.5
   degrees: 180.0
   # Chỉ 337 ảnh train, nên dán ghép giúp bù dữ liệu. Đây là tham số dành cho
-  # phân đoạn, mặc định tắt.
+  # phân đoạn, mặc định tắt. Nó cũng làm tăng số vùng mỗi ảnh, nhưng có chặn
+  # trên (không quá gấp đôi), khác hẳn mosaic ở dưới.
   copy_paste: 0.3
-  # Mosaic thu nhỏ tán vốn đã lớn; tắt ở 15 epoch cuối để model kết thúc trên
-  # phân bố giống lúc suy luận.
-  mosaic: 1.0
-  close_mosaic: 15
+
+  # ---- mosaic TẮT, và đây không phải lựa chọn thẩm mỹ ----
+  # Bộ nhớ của nhánh mặt nạ tỉ lệ với SỐ VÙNG trong batch, không phải với
+  # cấu hình tĩnh. Đo được trong cùng một lần chạy:
+  #      63 vùng  ->  6.04 GB   1.7 it/s
+  #     130 vùng  ->  7.23 GB   1.2 s/it   (đã tràn)
+  # Mosaic ghép 4 ảnh làm một, nên batch 2 thực chất chứa 8 ảnh nguồn. Ảnh ở
+  # đây dày vùng (trung vị 15, tối đa 48), nên có những batch vọt lên vài trăm
+  # vùng và rơi qua vách 7 GB một cách NGẪU NHIÊN — lần chạy trước tràn ở 74%
+  # của epoch 1, không báo lỗi, chỉ chậm đi.
+  # Tắt mosaic thì số vùng mỗi batch bị chặn bởi 48 x batch, tức bộ nhớ thành
+  # tiên đoán được. Nó cũng khớp với một lý do độc lập: mosaic thu nhỏ tán vốn
+  # đã lớn, đi ngược mục tiêu giữ độ phân giải đường biên.
+  mosaic: 0.0
+  close_mosaic: 0
   scale: 0.5
