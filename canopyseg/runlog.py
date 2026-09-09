@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import logging
 import re
 import sys
 import time
@@ -95,6 +96,40 @@ class _Tee(io.TextIOBase):
         return True
 
 
+def _stream_handlers():
+    """Mọi StreamHandler đang tồn tại, kể cả của thư viện bên thứ ba."""
+    mgr = logging.root.manager
+    loggers = [logging.root] + [
+        lg for lg in mgr.loggerDict.values() if isinstance(lg, logging.Logger)
+    ]
+    for lg in loggers:
+        for h in lg.handlers:
+            if isinstance(h, logging.StreamHandler):
+                yield h
+
+
+def _redirect_log_handlers(old_streams: dict, new_streams: dict) -> list:
+    """Trỏ lại các StreamHandler đang bám vào luồng cũ.
+
+    Vì sao cần: logging.StreamHandler GIỮ THAM CHIẾU tới luồng ngay lúc nó được
+    tạo, nên thay sys.stdout sau đó không hề tác động tới nó. Ultralytics dựng
+    LOGGER của nó lúc import — trước khi ta cài tee — nên nếu bỏ qua bước này,
+    log sẽ mất TOÀN BỘ dòng đi qua LOGGER: banner phiên bản, bảng kiến trúc
+    model, dòng optimizer, và quan trọng nhất là dòng số liệu val mỗi epoch.
+    tqdm thì ngược lại, nó tra sys.stdout ở từng lần gọi nên vẫn vào log bình
+    thường — đó là lý do log cũ có thanh tiến trình mà không có số liệu.
+    """
+    changed = []
+    for h in _stream_handlers():
+        s = getattr(h, "stream", None)
+        for key, old in old_streams.items():
+            if s is old:
+                changed.append((h, old))
+                h.setStream(new_streams[key])
+                break
+    return changed
+
+
 @contextlib.contextmanager
 def capture(path: str | Path, header: dict | None = None):
     """Chuyển hướng stdout/stderr vào console VÀ file, trong phạm vi khối with."""
@@ -113,6 +148,9 @@ def capture(path: str | Path, header: dict | None = None):
     out, err = sys.stdout, sys.stderr
     t_out, t_err = _Tee(out, fh), _Tee(err, fh)
     sys.stdout, sys.stderr = t_out, t_err
+    rebound = _redirect_log_handlers(
+        {"out": out, "err": err}, {"out": t_out, "err": t_err}
+    )
     status = "hoàn tất"
     try:
         yield path
@@ -126,6 +164,8 @@ def capture(path: str | Path, header: dict | None = None):
         traceback.print_exc()
         raise
     finally:
+        for handler, original in rebound:
+            handler.setStream(original)
         t_out.close_buffer()
         t_err.close_buffer()
         sys.stdout, sys.stderr = out, err
