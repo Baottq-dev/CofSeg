@@ -25,6 +25,7 @@ import argparse
 import difflib
 import json
 import sys
+import traceback
 from pathlib import Path
 
 import yaml
@@ -122,6 +123,11 @@ def main() -> int:
         action="store_true",
         help="liệt kê mọi siêu tham số trainer nhận, kèm giá trị mặc định",
     )
+    ap.add_argument(
+        "--log-clean",
+        action="store_true",
+        help="run.log gộp mỗi dòng một lần và bỏ mã màu (mặc định: chép nguyên văn)",
+    )
     ap.add_argument("--runs", default="runs", help="thư mục gốc chứa kết quả")
     ap.add_argument("--name", default=None, help="tên lần chạy (mặc định lấy từ config)")
     a, extra = ap.parse_known_args()
@@ -163,24 +169,18 @@ def main() -> int:
     run_dir = artifacts.create_run_dir(
         a.runs, "probe" if a.probe else "train", name, trainer_cls.run_tag(cfg)
     )
-    env = artifacts.write_env(run_dir)
+    artifacts.write_env(run_dir)
     artifacts.snapshot_config(run_dir, cfg)
     print(f"Lần chạy: {run_dir}")
 
-    # Mọi thứ từ đây trở đi được ghi song song vào run.log — kể cả output của
-    # ultralytics và traceback nếu có. Đặt ngoài cùng để không bỏ sót dòng nào.
-    with runlog.capture(
-        run_dir / "run.log",
-        header={
-            "run_dir": run_dir,
-            "config": a.config,
-            "trainer": cfg["trainer"],
-            "model": cfg.get("model"),
-            "git": (env.get("git_commit") or "?")[:12]
-            + (" (bẩn)" if env.get("git_dirty") else ""),
-            "gpu": (env.get("gpu") or {}).get("name", "không có"),
-        },
-    ) as log_path:
+    # Từ đây trở đi mọi thứ hiện trên màn hình được chép nguyên văn vào
+    # run.log, kể cả output của ultralytics. Xuất xứ lần chạy nằm ở env.json
+    # và config.yaml cùng thư mục, nên log không cần header.
+    with runlog.capture(run_dir / "run.log", raw=not a.log_clean) as log_path:
+      # Bắt lỗi BÊN TRONG khối with: nếu để ngoại lệ thoát ra, luồng đã được
+      # trả về nguyên trạng trước khi Python in traceback, và traceback sẽ
+      # không có trong log — đúng lúc cần nó nhất.
+      try:
         if hp:
             print("Ghi đè từ dòng lệnh:", json.dumps(hp, ensure_ascii=False))
 
@@ -206,6 +206,11 @@ def main() -> int:
         print("\nXong. Trọng số:", json.dumps(summary.get("weights"), ensure_ascii=False))
         print("Kết quả:", run_dir)
         print("Nhật ký:", log_path)
+      except SystemExit:
+        raise
+      except BaseException:                       # gồm cả KeyboardInterrupt
+        traceback.print_exc()
+        return 1
     return 0
 
 
