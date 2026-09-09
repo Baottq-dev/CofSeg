@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from canopyseg import artifacts  # noqa: E402
 from canopyseg import config as cfgmod  # noqa: E402
 from canopyseg import console  # noqa: E402
+from canopyseg import runlog  # noqa: E402
 from canopyseg import training  # noqa: F401,E402 - nạp để đăng ký trainer
 from canopyseg.registry import available, resolve  # noqa: E402
 
@@ -162,32 +163,49 @@ def main() -> int:
     run_dir = artifacts.create_run_dir(
         a.runs, "probe" if a.probe else "train", name, trainer_cls.run_tag(cfg)
     )
-    artifacts.write_env(run_dir)
+    env = artifacts.write_env(run_dir)
     artifacts.snapshot_config(run_dir, cfg)
     print(f"Lần chạy: {run_dir}")
-    if hp:
-        print("Ghi đè từ dòng lệnh:", json.dumps(hp, ensure_ascii=False))
 
-    trainer = trainer_cls(cfg, run_dir)
+    # Mọi thứ từ đây trở đi được ghi song song vào run.log — kể cả output của
+    # ultralytics và traceback nếu có. Đặt ngoài cùng để không bỏ sót dòng nào.
+    with runlog.capture(
+        run_dir / "run.log",
+        header={
+            "run_dir": run_dir,
+            "config": a.config,
+            "trainer": cfg["trainer"],
+            "model": cfg.get("model"),
+            "git": (env.get("git_commit") or "?")[:12]
+            + (" (bẩn)" if env.get("git_dirty") else ""),
+            "gpu": (env.get("gpu") or {}).get("name", "không có"),
+        },
+    ) as log_path:
+        if hp:
+            print("Ghi đè từ dòng lệnh:", json.dumps(hp, ensure_ascii=False))
 
-    info = trainer.prepare()
-    if info:
-        print("Dữ liệu:", json.dumps(info, ensure_ascii=False)[:400])
+        trainer = trainer_cls(cfg, run_dir)
 
-    if a.probe:
-        p = trainer.probe()
-        print("\nDò VRAM:", json.dumps(p, indent=2, ensure_ascii=False))
-        (run_dir / "probe.json").write_text(
-            json.dumps(p, indent=2, ensure_ascii=False), encoding="utf-8"
+        info = trainer.prepare()
+        if info:
+            print("Dữ liệu:", json.dumps(info, ensure_ascii=False)[:400])
+
+        if a.probe:
+            p = trainer.probe()
+            print("\nDò VRAM:", json.dumps(p, indent=2, ensure_ascii=False))
+            (run_dir / "probe.json").write_text(
+                json.dumps(p, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            return 0
+
+        summary = trainer.fit()
+        (run_dir / "summary.json").write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False, default=str),
+            encoding="utf-8",
         )
-        return 0
-
-    summary = trainer.fit()
-    (run_dir / "summary.json").write_text(
-        json.dumps(summary, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
-    )
-    print("\nXong. Trọng số:", json.dumps(summary.get("weights"), ensure_ascii=False))
-    print("Kết quả:", run_dir)
+        print("\nXong. Trọng số:", json.dumps(summary.get("weights"), ensure_ascii=False))
+        print("Kết quả:", run_dir)
+        print("Nhật ký:", log_path)
     return 0
 
 
