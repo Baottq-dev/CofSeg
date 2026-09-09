@@ -48,6 +48,19 @@ class YoloTrainer(Trainer):
         self.data_yaml = Path(cfg["data"]["yaml"])
         self.train_args: dict = {**AERIAL_DEFAULTS, **(cfg.get("train") or {})}
 
+    # -------------------------------------------------------------------- đặt tên
+    #: Tham số đưa vào tên thư mục, kèm tiền tố ngắn. Ba cái này quyết định cả
+    #: chất lượng lẫn chi phí của lần chạy, và cũng chính là ba cái hay bị ghi
+    #: đè từ dòng lệnh — tức ba cái dễ khiến nhãn tĩnh trong config thành sai.
+    TAG_KEYS = (("imgsz", "i"), ("batch", "b"), ("epochs", "e"))
+
+    @classmethod
+    def run_tag(cls, cfg: dict) -> str:
+        args = {**AERIAL_DEFAULTS, **(cfg.get("train") or {})}
+        return "".join(
+            f"{prefix}{args[key]}" for key, prefix in cls.TAG_KEYS if key in args
+        )
+
     # ------------------------------------------------------------------ chuẩn bị
     def prepare(self) -> dict:
         """Để ultralytics tự xác nhận bộ dữ liệu trước khi đụng GPU.

@@ -18,6 +18,17 @@ class Trainer(ABC):
         self.cfg = cfg
         self.run_dir = Path(run_dir)
 
+    # -------------------------------------------------------------------- đặt tên
+    @classmethod
+    def run_tag(cls, cfg: dict) -> str:
+        """Hậu tố ngắn mô tả cấu hình THẬT, để tên thư mục không nói dối.
+
+        Là classmethod vì tên thư mục phải có trước khi dựng trainer — trainer
+        nhận run_dir trong hàm khởi tạo. Mỗi họ model tự quyết tham số nào đáng
+        đưa vào tên; mặc định không thêm gì.
+        """
+        return ""
+
     # ------------------------------------------------------------------ vòng đời
     def prepare(self) -> dict:
         """Kiểm dữ liệu trước khi đụng tới GPU.
