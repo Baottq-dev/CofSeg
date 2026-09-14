@@ -105,7 +105,12 @@
   .cls .ccnt{font-size:11px;color:var(--muted);min-width:14px;text-align:right}
   .hsvbox{display:flex;flex-direction:column;gap:6px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:9px 10px}
   .hsvbox label{display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:var(--muted);gap:8px}
-  .hsvbox input{width:66px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px;outline:none}
+  .hsvbox input,.hsvbox select{width:66px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:12px;outline:none}
+  .hsvbox select{width:118px}
+  .hsvbox input[type=checkbox]{width:auto}
+  .hsvbox .chk{justify-content:flex-start;gap:6px;color:var(--text)}
+  .hsvbox .grp{display:flex;flex-direction:column;gap:6px}
+  .hsvbox .grp[hidden]{display:none}
   .hsvbox .btn{margin-top:2px}
   .cls .cdel{border:0;background:transparent;color:var(--muted2);cursor:pointer;font-size:12px}
   .cls .cdel:hover{color:#f7a5a5}
@@ -236,10 +241,22 @@
   <aside id="rightcol">
     <div class="sec">Mật độ hoa <button id="addCls" class="addbtn" title="Đếm hoa & tự phân loại tất cả vùng">⚡</button></div>
     <div id="classes" class="clslist"></div>
-    <div class="sec">Đếm pixel hoa (HSV)</div>
+    <div class="sec">Đếm pixel hoa</div>
     <div class="hsvbox">
-      <label>Saturation &lt; <input id="satMax" type="number" value="50" min="0" max="255"/></label>
-      <label>Value &gt; <input id="valMin" type="number" value="180" min="0" max="255"/></label>
+      <label>Phương pháp <select id="fmethod" title="HSV: ngưỡng cố định S/V. Otsu + blob: ngưỡng tự tìm trong từng tán, lọc theo blob"><option value="hsv">HSV cố định</option><option value="otsu">Otsu + blob</option></select></label>
+      <div id="hsvParams" class="grp">
+        <label>Saturation &lt; <input id="satMax" type="number" value="50" min="0" max="255"/></label>
+        <label>Value &gt; <input id="valMin" type="number" value="180" min="0" max="255"/></label>
+      </div>
+      <div id="otsuParams" class="grp" hidden>
+        <label>Kênh <select id="ochan" title="min2: Otsu hai tầng trên min(R,G,B) — mặc định. v2: hai tầng trên V. v: một lần trên V (đề cương §6, tách nắng/bóng chứ không tách hoa)"><option value="min2">min(R,G,B) 2 tầng</option><option value="v2">V 2 tầng</option><option value="v">V 1 lần</option></select></label>
+        <label title="Độ tách η tối thiểu của tầng Otsu cuối; 0 = tắt">Độ tách ≥ <input id="sepMin" type="number" step="0.05" min="0" max="1" value="0"/></label>
+        <label title="Bỏ blob nhỏ hơn (px²); 0 = tắt">Blob ≥ px² <input id="areaMin" type="number" min="0" value="0"/></label>
+        <label title="Bỏ blob lớn hơn (px²); 0 = tắt">Blob ≤ px² <input id="areaMax" type="number" min="0" value="0"/></label>
+        <label title="Bỏ blob có dài/rộng khung bao vượt ngưỡng; 0 = tắt">Dài/rộng ≤ <input id="elongMax" type="number" step="0.5" min="0" value="0"/></label>
+        <label class="chk"><input id="clipRule" type="checkbox"/> Bỏ blob lõi bão hoà (≥250)</label>
+      </div>
+      <label class="chk"><input id="showMask" type="checkbox"/> Hiện pixel hoa trên ảnh</label>
       <button id="autoAll" class="btn">⚡ Đếm hoa & phân loại tất cả</button>
     </div>
     <div class="sec">Instances (vùng cây) <span class="pill" id="rcount">0</span></div>
@@ -338,6 +355,18 @@ let classes=loadClasses();
 let clsMax=3;
 let activeCls=0;
 let satMax=50,valMin=180;
+// Phương pháp đếm hoa đang HIỂN THỊ và tham số Otsu. Cả hai kết quả luôn được
+// server tính và lưu; `fmethod` chỉ quyết định con số nào lên màn hình và vào
+// trường đầu của polygon khi lưu (label_method ghi lại điều đó).
+let fmethod='hsv',otsuP={channel:'min2',sep_min:0,area_min:0,area_max:0,elong_max:0,clip_rule:false};
+let showMask=false,maskImg=null,maskTimer=null,maskToken=0,maskUrl=null;
+function flowerParams(){return Object.assign({sat_max:satMax,val_min:valMin,method:fmethod},otsuP);}
+function loadFlowerPrefs(){try{const s=JSON.parse(localStorage.getItem('cofseg_flower'));if(!s)return;
+ if(s.method==='hsv'||s.method==='otsu')fmethod=s.method;if(s.otsu)Object.assign(otsuP,s.otsu);showMask=!!s.showMask;}catch(e){}}
+function saveFlowerPrefs(){localStorage.setItem('cofseg_flower',JSON.stringify({method:fmethod,otsu:otsuP,showMask:showMask}));}
+loadFlowerPrefs();
+function methodName(){return fmethod==='hsv'?'HSV':'Otsu + blob';}
+function pctTxt(v){return v==null?'—':v.toFixed(1)+'%';}
 function densOf(pct){for(let i=classes.length-1;i>=0;i--){if(pct>=classes[i].lo)return classes[i].id;}return classes[0].id;}
 function thrText(c){if(c.hi>=1e9)return '≥ '+c.lo+'%';if(c.lo<=0)return '< '+c.hi+'%';return c.lo+'–'+c.hi+'%';}
 function clsById(id){return classes.find(c=>c.id===id);}
@@ -372,9 +401,13 @@ function renderClasses(){const box=$('classes');box.innerHTML='';
 // ngầm (tạo vùng mới, nắn viền) luôn cập nhật % nhưng KHÔNG động vào nhãn tay.
 async function computeFlower(idxs,force){if(!current)return;idxs=idxs.filter(i=>inst[i]);if(!idxs.length)return;
  const who=current,polys=idxs.map(i=>inst[i].poly);
- try{const r=await(await fetch('/api/flower',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:who,polygons:polys,sat_max:satMax,val_min:valMin})})).json();
+ try{const r=await(await fetch('/api/flower',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({name:who,polygons:polys},flowerParams()))})).json();
   if(current!==who)return;
-  (r.ratios||[]).forEach((rt,k)=>{const i=idxs[k];if(!inst[i])return;inst[i].pct=rt;
+  if(r.error){alert('Không đếm được hoa: '+r.error);return;}
+  (r.ratios||[]).forEach((rt,k)=>{const i=idxs[k];if(!inst[i])return;
+   inst[i].pcts={hsv:(r.hsv&&r.hsv[k]!=null)?r.hsv[k]:null,otsu:(r.otsu&&r.otsu[k])?r.otsu[k].ratio:null};
+   inst[i].od=(r.otsu&&r.otsu[k])||null;
+   inst[i].pct=rt;
    if(force)inst[i].manual=false;
    if(!inst[i].manual)inst[i].cls=densOf(rt);});
   persist();renderRegions();renderClasses();draw();}catch(e){alert('Không đếm được hoa (đã khởi động lại server chưa?): '+e);}}
@@ -382,6 +415,36 @@ function autoAll(){if(!inst.length){alert('Chưa có vùng nào để phân lo�
 $('addCls').onclick=autoAll;$('autoAll').onclick=autoAll;
 $('satMax').oninput=()=>{satMax=parseInt($('satMax').value)||50;};
 $('valMin').oninput=()=>{valMin=parseInt($('valMin').value)||180;};
+function syncFlowerUI(){$('fmethod').value=fmethod;$('hsvParams').hidden=(fmethod!=='hsv');$('otsuParams').hidden=(fmethod!=='otsu');
+ $('ochan').value=otsuP.channel;$('sepMin').value=otsuP.sep_min;$('areaMin').value=otsuP.area_min;$('areaMax').value=otsuP.area_max;$('elongMax').value=otsuP.elong_max;$('clipRule').checked=!!otsuP.clip_rule;$('showMask').checked=showMask;}
+// Đổi phương pháp hiển thị: vùng nào đã có số của phương pháp mới thì đổi ngay
+// (nhãn auto đổi theo, nhãn tay giữ nguyên); vùng chưa có thì gọi server tính.
+$('fmethod').onchange=()=>{fmethod=$('fmethod').value;saveFlowerPrefs();syncFlowerUI();
+ if(!inst.length){draw();return;}
+ pushHist();const miss=[];
+ inst.forEach((r,i)=>{const v=r.pcts?r.pcts[fmethod]:null;if(v==null){miss.push(i);return;}r.pct=v;if(!r.manual)r.cls=densOf(v);});
+ persist();renderRegions();renderClasses();draw();
+ if(miss.length)computeFlower(miss,false);};
+$('ochan').onchange=()=>{otsuP.channel=$('ochan').value;saveFlowerPrefs();};
+$('sepMin').oninput=()=>{otsuP.sep_min=parseFloat($('sepMin').value)||0;saveFlowerPrefs();};
+$('areaMin').oninput=()=>{otsuP.area_min=parseInt($('areaMin').value)||0;saveFlowerPrefs();};
+$('areaMax').oninput=()=>{otsuP.area_max=parseInt($('areaMax').value)||0;saveFlowerPrefs();};
+$('elongMax').oninput=()=>{otsuP.elong_max=parseFloat($('elongMax').value)||0;saveFlowerPrefs();};
+$('clipRule').onchange=()=>{otsuP.clip_rule=$('clipRule').checked;saveFlowerPrefs();};
+$('showMask').onchange=()=>{showMask=$('showMask').checked;saveFlowerPrefs();scheduleMask();};
+// Lớp phủ pixel hoa: PNG trong suốt cỡ cả ảnh do server vẽ theo phương pháp đang
+// chọn. Làm mới có trễ 400 ms để kéo điểm liên tục không dội server; token và
+// tên ảnh chặn kết quả cũ đè lên ảnh mới.
+function scheduleMask(){clearTimeout(maskTimer);if(!showMask){maskImg=null;draw();return;}maskTimer=setTimeout(fetchMask,400);}
+async function fetchMask(){if(!showMask||!current||!ready||!inst.length){maskImg=null;draw();return;}
+ const who=current,tok=++maskToken;
+ try{const r=await fetch('/api/flower_mask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({name:who,polygons:inst.map(x=>x.poly)},flowerParams()))});
+  if(!r.ok)throw new Error('HTTP '+r.status);const blob=await r.blob();
+  if(tok!==maskToken||current!==who)return;
+  const im=new Image();im.onload=()=>{if(tok!==maskToken||current!==who)return;if(maskUrl)URL.revokeObjectURL(maskUrl);maskUrl=im.src;maskImg=im;draw();};
+  im.src=URL.createObjectURL(blob);}
+ catch(e){maskImg=null;draw();}}
+syncFlowerUI();
 function regionArea(r){const p=r.poly,n=p.length/2;let a=0;for(let i=0;i<n;i++){const j=(i+1)%n;a+=p[i*2]*p[j*2+1]-p[j*2]*p[i*2+1];}return Math.abs(a)/2;}
 function renderRegions(){const box=$('regions');box.innerHTML='';$('rcount').textContent=inst.length;
  inst.forEach((r,i)=>{const c=clsById(r.cls)||{name:'?',color:'#888'};
@@ -390,8 +453,10 @@ function renderRegions(){const box=$('regions');box.innerHTML='';$('rcount').tex
   const dot=document.createElement('span');dot.className='dot';dot.style.background=c.color;
   const idb=document.createElement('b');idb.textContent='#'+r.id;
   const cn=document.createElement('span');cn.className='rcls';cn.textContent=c.name+(r.manual?' ✋':'');
-  cn.title=r.manual?'Mức do bạn gán tay — HSV sẽ không ghi đè. Bấm ⚡ để phân loại lại tự động.':'Mức do HSV tự phân loại';
-  const pc=document.createElement('span');pc.className='rpct';pc.textContent=(r.pct==null?'—':'🌸 '+r.pct.toFixed(1)+'%');pc.title='Tỉ lệ pixel hoa trong vùng';
+  cn.title=r.manual?'Mức do bạn gán tay — máy sẽ không ghi đè. Bấm ⚡ để phân loại lại tự động.':'Mức do '+methodName()+' tự phân loại';
+  const pc=document.createElement('span');pc.className='rpct';pc.textContent=(r.pct==null?'—':'🌸 '+r.pct.toFixed(1)+'%');
+  const ps=r.pcts||{},od=r.od;
+  pc.title='Tỉ lệ pixel hoa ('+methodName()+')\nHSV '+pctTxt(ps.hsv)+' · Otsu '+pctTxt(ps.otsu)+(od?' ['+(od.channel||'')+' T='+(od.thr==null?'—':Math.round(od.thr))+(od.thr1!=null?' T1='+Math.round(od.thr1):'')+' η='+(od.sep==null?'—':(+od.sep).toFixed(2))+' '+(od.n_kept==null?'':od.n_kept+'/'+od.n_blobs+' blob')+(od.rejected?' '+od.rejected:'')+']':'');
   head.title='#'+r.id+' · '+(r.poly.length/2)+' đỉnh';
   head.appendChild(dot);head.appendChild(idb);head.appendChild(cn);head.appendChild(pc);
   head.onclick=()=>{sel=i;setMode('select');tidySel(i);renderRegions();draw();};
@@ -594,22 +659,26 @@ function updateThumbActive(){document.querySelectorAll('#thumbs .thumb').forEach
 async function loadImgs(){imgs=await(await fetch('/api/images',{cache:'no-store'})).json();
  await loadLabeled();renderPTree();renderThumbs();renderStats();
  if(imgs.length)selectImg(imgs[0]);else{inst=[];current=null;draw();renderRegions();}}
-function cloneR(r){return {poly:r.poly.slice(),cls:r.cls,vis:r.vis,id:r.id,pct:(r.pct==null?null:r.pct),manual:!!r.manual};}
+function cloneR(r){return {poly:r.poly.slice(),cls:r.cls,vis:r.vis,id:r.id,pct:(r.pct==null?null:r.pct),manual:!!r.manual,pcts:r.pcts?{hsv:r.pcts.hsv,otsu:r.pcts.otsu}:null,od:r.od||null};}
 function pickCls(id){return clsById(id)?id:activeCls;}
 function mergeCats(cats){if(!cats)return;let ch=false;cats.forEach(c=>{if(c&&c.id!=null&&!clsById(c.id)){classes.push({id:c.id,name:c.name||('Lớp '+c.id),color:c.color||'#888'});if(c.id>clsMax)clsMax=c.id;ch=true;}});if(ch){saveClasses();renderClasses();renderStats();}}
 async function selectImg(t){if(current&&ready&&dirty){flush();}if(current&&ready){store[current]=inst.map(cloneR);}
  const tok=++selToken;
  current=t;ready=false;dirty=false;draft=[];sel=-1;dragPt=-1;hovPt=-1;ghost=null;hist=[];inst=[];updateThumbActive();
+ maskImg=null;maskToken++;clearTimeout(maskTimer);
  img=new Image();img.onload=()=>{if(tok===selToken){sizeCanvas();resetView();renderRegions();}};
  img.src='/api/image/'+enc(t)+'?t='+Date.now();
  if(store[t]){inst=store[t].map(cloneR);}
  else{let d=null;try{d=await(await fetch('/api/load/'+enc(t)+'?t='+Date.now(),{cache:'no-store'})).json();}catch(e){d=null;}
   if(tok!==selToken)return;
-  if(d){mergeCats(d.categories);inst=(d.polygons||[]).map((pp,k)=>({poly:pp.slice(),cls:pickCls(d.classes&&d.classes[k]),vis:true,id:rid++,pct:(d.ratios&&d.ratios[k]!=null)?d.ratios[k]:null,manual:!!(d.manual&&d.manual[k])}));}else inst=[];
+  if(d){mergeCats(d.categories);inst=(d.polygons||[]).map((pp,k)=>{const h=(d.hsv_ratios&&d.hsv_ratios[k]!=null)?d.hsv_ratios[k]:((d.ratios&&d.ratios[k]!=null)?d.ratios[k]:null);
+    const o=(d.otsu_ratios&&d.otsu_ratios[k]!=null)?d.otsu_ratios[k]:null;const pcts={hsv:h,otsu:o};
+    // Mở lại ảnh: hiện % của phương pháp đang chọn; nhãn giữ như đã lưu.
+    return {poly:pp.slice(),cls:pickCls(d.classes&&d.classes[k]),vis:true,id:rid++,pct:pcts[fmethod],manual:!!(d.manual&&d.manual[k]),pcts:pcts,od:(d.otsu_info&&d.otsu_info[k])||null};});}else inst=[];
   store[t]=inst.map(cloneR);}
  if(tok!==selToken)return;
- ready=true;$('count').textContent=inst.length+' Vùng';renderRegions();draw();renderClasses();}
-function payload(){return JSON.stringify({name:current,width:img.width||0,height:img.height||0,polygons:inst.map(r=>r.poly),classes:inst.map(r=>r.cls),manual:inst.map(r=>!!r.manual),categories:classes,sat_max:satMax,val_min:valMin});}
+ ready=true;$('count').textContent=inst.length+' Vùng';renderRegions();draw();renderClasses();scheduleMask();}
+function payload(){return JSON.stringify(Object.assign({name:current,width:img.width||0,height:img.height||0,polygons:inst.map(r=>r.poly),classes:inst.map(r=>r.cls),manual:inst.map(r=>!!r.manual),categories:classes},flowerParams()));}
 // Chỉ báo lưu. Bản cũ gọi fetch rồi bỏ qua kết quả, nên server có báo lỗi cũng
 // không ai thấy — kể cả khi nó không đọc được ảnh và không tính được mật độ hoa.
 function svst(cls,txt,title){const el=$('svst');if(!el)return;
@@ -627,11 +696,11 @@ function scheduleSave(){if(!current)return;dirty=true;clearTimeout(saveTimer);sa
 function flush(){clearTimeout(saveTimer);if(dirty)saveNow();}
 function beacon(){if(!current||!ready||!dirty)return;try{navigator.sendBeacon('/api/save',new Blob([payload()],{type:'application/json'}));dirty=false;}catch(e){}}
 function stash(){if(current)store[current]=inst.map(cloneR);}
-function persist(){stash();scheduleSave();if(current){if(inst.length)labeledSet.add(current);else labeledSet.delete(current);}renderStats();updateThumbActive();renderClasses();}
+function persist(){stash();scheduleSave();if(current){if(inst.length)labeledSet.add(current);else labeledSet.delete(current);}renderStats();updateThumbActive();renderClasses();scheduleMask();}
 function refresh(){$('count').textContent=inst.length+' Vùng';persist();renderRegions();draw();}
 function pushHist(){hist.push(JSON.stringify(inst));if(hist.length>60)hist.shift();}
 function undo(){if(!hist.length)return;inst=JSON.parse(hist.pop());sel=-1;dragPt=-1;hovPt=-1;refresh();}
-function addRegion(poly){inst.push({poly:poly,cls:activeCls,vis:true,id:rid++,pct:null,manual:false});return inst.length-1;}
+function addRegion(poly){inst.push({poly:poly,cls:activeCls,vis:true,id:rid++,pct:null,manual:false,pcts:null,od:null});return inst.length-1;}
 $('undo').onclick=undo;
 $('clear').onclick=()=>{pushHist();inst=[];sel=-1;refresh();};
 $('zin').onclick=()=>zoomAt(cv.width/2,cv.height/2,1.25);
@@ -797,6 +866,7 @@ function arcDistPx(p,vi,limit){const n=p.length/2,d=new Float64Array(n).fill(Inf
  return d;}
 function draw(){ctx.clearRect(0,0,cv.width,cv.height);
  if(img.complete&&img.width)ctx.drawImage(img,ox,oy,img.width*scale,img.height*scale);
+ if(showMask&&maskImg)ctx.drawImage(maskImg,ox,oy,img.width*scale,img.height*scale);
  inst.forEach((r,i)=>{if(!r.vis)return;const col=clsColor(r.cls),on=(i===sel&&mode==='select'),p=r.poly;
   ctx.beginPath();for(let k=0;k<p.length;k+=2){k===0?ctx.moveTo(sx(p[k]),sy(p[k+1])):ctx.lineTo(sx(p[k]),sy(p[k+1]));}ctx.closePath();
   ctx.fillStyle=hexA(col,on?0.42:0.22);ctx.fill();
