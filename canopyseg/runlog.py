@@ -27,6 +27,7 @@ import io
 import logging
 import re
 import sys
+import traceback
 from pathlib import Path
 
 # Chỉ dùng cho chế độ gộp (raw=False). Mặc định KHÔNG lọc gì.
@@ -147,6 +148,13 @@ def capture(path: str | Path, raw: bool = True):
     )
     try:
         yield path
+    except BaseException:
+        # Python chỉ in traceback SAU khi khối with đã trả lại luồng gốc, nên
+        # nó không tự vào file. Ghi thẳng vào file (không qua tee, để console
+        # không thấy hai lần) rồi ném tiếp.
+        fh.write(traceback.format_exc())
+        fh.flush()
+        raise
     finally:
         for handler, original in rebound:
             handler.setStream(original)
