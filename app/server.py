@@ -106,6 +106,52 @@ def _flower_counts(img_bgr, poly, sat_max, val_min):
     return fl.hsv_counts(img_bgr, poly, sat_max, val_min)
 
 
+# Tham số của cả hai phương pháp đếm hoa, dùng chung cho /api/flower,
+# /api/flower_mask và /api/save. `method` là phương pháp đang HIỂN THỊ: nó quyết
+# định trường đầu của polygon khi lưu; cả hai kết quả đều được lưu bên cạnh.
+class FlowerParams(BaseModel):
+    sat_max: int = 50        # HSV: pixel hoa có S < sat_max
+    val_min: int = 180       # HSV: pixel hoa có V > val_min
+    method: str = "hsv"      # "hsv" | "otsu"
+    channel: str = "min2"    # Otsu: v | v2 | min2 (xem app/flower.py)
+    sep_min: float = 0.0     # Otsu: độ tách tối thiểu, 0 = tắt
+    area_min: int = 0        # Otsu: bỏ blob nhỏ hơn (px²), 0 = tắt
+    area_max: int = 0        # Otsu: bỏ blob lớn hơn (px²), 0 = tắt
+    elong_max: float = 0.0   # Otsu: bỏ blob dài/rộng vượt ngưỡng, 0 = tắt
+    clip_rule: bool = False  # Otsu: bỏ blob có lõi bão hoà
+
+
+def _check_params(req):
+    if req.method not in ("hsv", "otsu"):
+        return "method phải là hsv hoặc otsu"
+    if req.channel not in fl.CHANNELS:
+        return "channel phải là một trong " + ", ".join(fl.CHANNELS)
+    return None
+
+
+def _otsu_kwargs(req):
+    return dict(channel=req.channel, sep_min=req.sep_min, area_min=req.area_min,
+                area_max=req.area_max, elong_max=req.elong_max, clip_rule=req.clip_rule)
+
+
+_OTSU_KEYS = ("flower_pixels", "ratio", "label", "channel", "threshold", "threshold1",
+              "separability", "n_blobs", "n_blobs_kept", "rejected")
+
+
+def _both(img, poly, req):
+    # Cả hai phương pháp cho một tán -> (khối hsv, khối otsu) đúng dạng lưu vào JSON.
+    fpx, tpx = fl.hsv_counts(img, poly, req.sat_max, req.val_min)
+    r = round(fpx / tpx, 4) if tpx else 0.0
+    hsv = dict(flower_pixels=int(fpx), total_pixels=int(tpx), ratio=r, label=fl.level(r)[0])
+    o = fl.otsu_blob(img, poly, **_otsu_kwargs(req))
+    if o is None:
+        o = dict(flower_pixels=0, ratio=0.0, label=0, channel=req.channel, threshold=None,
+                 threshold1=None, separability=0.0, n_blobs=0, n_blobs_kept=0, rejected="empty")
+    otsu = {k: o.get(k) for k in _OTSU_KEYS}
+    otsu["total_pixels"] = int(tpx)
+    return hsv, otsu
+
+
 def _poly_area(poly):
     xs, ys = poly[0::2], poly[1::2]
     n = len(xs)
@@ -128,7 +174,10 @@ def _prev_flower(jp):
         r = p.get("flower_ratio")
         out.append(dict(flower_pixels=int(p.get("flower_pixels") or 0),
                         total_pixels=int(p.get("total_pixels") or 0),
-                        ratio=r if isinstance(r, (int, float)) else None))
+                        ratio=r if isinstance(r, (int, float)) else None,
+                        # Khối phụ của lần lưu trước (None với file cũ chưa có).
+                        hsv=p.get("hsv") if isinstance(p.get("hsv"), dict) else None,
+                        otsu=p.get("otsu") if isinstance(p.get("otsu"), dict) else None))
     return out
 
 
@@ -267,17 +316,16 @@ class BoxReq(BaseModel):
     box: list   # [x1, y1, x2, y2]
 
 
-class SaveReq(BaseModel):
+class SaveReq(FlowerParams):
     name: str
     width: int
     height: int
     polygons: list           # mỗi polygon = [x1, y1, x2, y2, ...]
     classes: list = []       # category_id cho từng polygon (song song polygons)
-    manual: list = []        # True = mức hoa do người gán tay -> HSV không ghi đè
+    manual: list = []        # True = mức hoa do người gán tay -> máy không ghi đè
     categories: list = []    # [{id, name, color}, ...] danh sách lớp của dự án
     confs: list = []         # confidence từng polygon (SAM/detector); mặc định 1.0
-    sat_max: int = 50        # ngưỡng HSV S để tính % hoa lúc lưu
-    val_min: int = 180       # ngưỡng HSV V để tính % hoa lúc lưu
+    # sat_max/val_min/method/tham số Otsu: từ FlowerParams — tính lại lúc lưu.
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -325,24 +373,55 @@ def labeled():
     return {"labeled": done, "total": len(names)}
 
 
-class FlowerReq(BaseModel):
+class FlowerReq(FlowerParams):
     name: str
     polygons: list          # danh sách polygon [x1, y1, x2, y2, ...]
-    sat_max: int = 50       # ngưỡng bão hoà: pixel hoa có S < sat_max
-    val_min: int = 180      # ngưỡng độ sáng: pixel hoa có V > val_min
+
+
+def _otsu_brief(o):
+    # Phần client cần để hiện tooltip; % thay vì tỉ lệ 0-1.
+    return dict(ratio=round(100.0 * o["ratio"], 2), thr=o["threshold"], thr1=o["threshold1"],
+                sep=o["separability"], n_blobs=o["n_blobs"], n_kept=o["n_blobs_kept"],
+                rejected=o["rejected"], channel=o["channel"])
 
 
 @app.post("/api/flower")
 def flower(req: FlowerReq):
-    # Trả về % pixel hoa cho từng polygon -> phân lớp mật độ 0/1/2/3 ở client.
+    # Trả về % pixel hoa cho từng polygon theo CẢ HAI phương pháp; `ratios` là
+    # của phương pháp đang chọn để client cũ vẫn chạy.
+    err = _check_params(req)
+    if err:
+        return {"ratios": [], "error": err}
     img = _imread(os.path.join(ROOT, req.name))
     if img is None:
         return {"ratios": [], "error": "Không đọc được ảnh: " + req.name}
-    ratios = []
+    hsv, otsu = [], []
     for p in req.polygons:
-        cnt, total = _flower_counts(img, p, req.sat_max, req.val_min)
-        ratios.append(round(100.0 * cnt / total, 2) if total else 0.0)
-    return {"ratios": ratios}
+        h, o = _both(img, p, req)
+        hsv.append(round(100.0 * h["ratio"], 2))
+        otsu.append(_otsu_brief(o))
+    ratios = hsv if req.method == "hsv" else [o["ratio"] for o in otsu]
+    return {"ratios": ratios, "hsv": hsv, "otsu": otsu}
+
+
+_MASK_COLOR = {"hsv": (0, 200, 255), "otsu": (255, 0, 255)}   # BGR: vàng / hồng
+
+
+@app.post("/api/flower_mask")
+def flower_mask(req: FlowerReq):
+    # PNG trong suốt cỡ cả ảnh: pixel hoa của phương pháp đang chọn, trong mọi
+    # polygon gửi lên. Client vẽ đè lên ảnh để NHÌN hai phương pháp bắt gì.
+    err = _check_params(req)
+    if err:
+        return Response(json.dumps({"error": err}), status_code=400, media_type="application/json")
+    img = _imread(os.path.join(ROOT, req.name))
+    if img is None:
+        return Response(json.dumps({"error": "Không đọc được ảnh: " + req.name}),
+                        status_code=404, media_type="application/json")
+    kw = _otsu_kwargs(req) if req.method == "otsu" else {}
+    mask = fl.render_mask(img, req.polygons, req.method, req.sat_max, req.val_min, **kw)
+    png = fl.mask_png(mask, _MASK_COLOR[req.method])
+    return Response(png, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/models")
@@ -398,6 +477,12 @@ def load(name: str):
                 "categories": []}
     data = json.load(open(fp, encoding="utf-8"))
     polys, cls, ratios, manual = [], [], [], []
+    hsv_r, otsu_r, otsu_i = [], [], []
+
+    def pct(r):
+        # file lưu tỉ lệ 0-1, giao diện hiện %.
+        return round(100.0 * r, 2) if isinstance(r, (int, float)) else None
+
     if isinstance(data.get("polygons"), list):
         # Định dạng mới: polygons=[{points:[[x,y],...], flower_label}]
         for p in data["polygons"]:
@@ -406,11 +491,20 @@ def load(name: str):
             if len(flat) >= 6:
                 polys.append(flat)
                 cls.append(p.get("flower_label", 0))
-                r = p.get("flower_ratio")
-                # file lưu tỉ lệ 0-1, giao diện hiện %.
-                ratios.append(round(100.0 * r, 2)
-                              if isinstance(r, (int, float)) else None)
+                ratios.append(pct(p.get("flower_ratio")))
                 manual.append(p.get("label_source") == "manual")
+                h, o = p.get("hsv"), p.get("otsu")
+                # File cũ chưa có khối phụ: trường đầu chính là HSV.
+                hsv_r.append(pct(h.get("ratio")) if isinstance(h, dict) else pct(p.get("flower_ratio")))
+                if isinstance(o, dict):
+                    otsu_r.append(pct(o.get("ratio")))
+                    otsu_i.append(dict(thr=o.get("threshold"), thr1=o.get("threshold1"),
+                                       sep=o.get("separability"), n_blobs=o.get("n_blobs"),
+                                       n_kept=o.get("n_blobs_kept"), rejected=o.get("rejected"),
+                                       channel=o.get("channel")))
+                else:
+                    otsu_r.append(None)
+                    otsu_i.append(None)
     else:
         # Định dạng COCO cũ.
         for a in data.get("annotations", []):
@@ -419,8 +513,13 @@ def load(name: str):
                 cls.append(a.get("category_id", 1))
                 ratios.append(None)
                 manual.append(False)
+                hsv_r.append(None)
+                otsu_r.append(None)
+                otsu_i.append(None)
     return {"polygons": polys, "classes": cls, "ratios": ratios,
-            "manual": manual, "categories": data.get("categories", [])}
+            "manual": manual, "categories": data.get("categories", []),
+            "hsv_ratios": hsv_r, "otsu_ratios": otsu_r, "otsu_info": otsu_i,
+            "flower_method": data.get("flower_method", "hsv")}
 
 
 @app.post("/api/save")
@@ -441,6 +540,9 @@ def save(req: SaveReq):
         if os.path.exists(out):
             os.remove(out)
         return {"saved": None, "count": 0}
+    err = _check_params(req)
+    if err:
+        return {"saved": None, "count": 0, "error": err}
     img = _imread(os.path.join(ROOT, req.name))
     # Ảnh không đọc được (đường dẫn Unicode, ảnh bị di chuyển...) thì KHÔNG được
     # tính lại ra 0% rồi ghi đè -> giữ nguyên số cũ theo vị trí và báo lên UI.
@@ -450,11 +552,14 @@ def save(req: SaveReq):
     for i, (poly, conf, cid, is_man) in enumerate(zip(polys, confs, cls, man)):
         xs, ys = poly[0::2], poly[1::2]
         old = prev[i] if i < len(prev) else None
+        hsv_blk = otsu_blk = None
         if img is not None:
-            fpx, tpx = _flower_counts(img, poly, req.sat_max, req.val_min)
-            ratio = round(fpx / tpx, 4) if tpx else 0.0
+            hsv_blk, otsu_blk = _both(img, poly, req)
+            sel = hsv_blk if req.method == "hsv" else otsu_blk
+            fpx, tpx, ratio = sel["flower_pixels"], sel["total_pixels"], sel["ratio"]
         elif old is not None:
             fpx, tpx, ratio = old["flower_pixels"], old["total_pixels"], old["ratio"]
+            hsv_blk, otsu_blk = old["hsv"], old["otsu"]
         else:
             fpx, tpx, ratio = 0, 0, None    # chưa xác định được, không phải 0%
         # Nhãn người gán tay THẮNG HSV; chỉ suy từ ratio khi vùng đang ở chế độ auto.
@@ -473,21 +578,30 @@ def save(req: SaveReq):
             stats[lname] += 1
         if ratio is not None:
             ratios.append(ratio)
-        out_polys.append(dict(
+        source = "manual" if is_man else ("auto" if lvl is not None else "unknown")
+        entry = dict(
             points=[[float(x), float(y)] for x, y in zip(xs, ys)],
             conf=round(float(conf), 4),
             bbox=[round(float(min(xs)), 1), round(float(min(ys)), 1),
                   round(float(max(xs)), 1), round(float(max(ys)), 1)],
+            # Trường đầu = phương pháp đang chọn (req.method); cả hai khối bên dưới.
             flower_pixels=int(fpx), total_pixels=int(tpx),
             flower_ratio=ratio, flower_label=lvl, flower_label_name=lname,
-            label_source=("manual" if is_man else
-                          ("auto" if lvl is not None else "unknown"))))
+            label_source=source,
+            label_method=(req.method if source == "auto" else None))
+        if hsv_blk is not None:
+            entry["hsv"] = hsv_blk
+        if otsu_blk is not None:
+            entry["otsu"] = otsu_blk
+        out_polys.append(entry)
     doc = dict(path=rel, field=_field_of(rel),
                img_w=req.width, img_h=req.height,
                n_canopy=len(out_polys), conf_thr=DEFAULT_CONF_THR,
-               # Ghi lại ngưỡng đã dùng -> tỉ lệ hoa mới tái lập được về sau.
+               flower_method=req.method,
+               # Ghi lại tham số đã dùng -> tỉ lệ hoa mới tái lập được về sau.
                hsv=dict(sat_max=int(req.sat_max), val_min=int(req.val_min),
                         thresholds=list(FLOWER_THRESHOLDS)),
+               otsu=dict(**_otsu_kwargs(req), thresholds=list(FLOWER_THRESHOLDS)),
                polygons=out_polys,
                flower_stats=dict(
                    no_flower=stats["no_flower"], few_flowers=stats["few_flowers"],
