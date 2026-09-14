@@ -148,7 +148,8 @@ def fit_ground_plane(rec, max_error: float = 2.0, min_track: int = 3):
 
 def footprint(rec, image_id: int, plane) -> np.ndarray | None:
     """Bốn góc khung ảnh chiếu xuống mặt phẳng đất, toạ độ 2D trong mặt phẳng.
-    None nếu một góc không cắt đất phía trước camera (ảnh nghiêng quá)."""
+    None nếu một góc không cắt đất phía trước camera (ảnh nghiêng quá), hoặc
+    không khử méo được góc đó (méo ước quá lớn, cam_ray_from_img trả None)."""
     p0, n, e1, e2 = plane
     im = rec.images[image_id]
     cam = im.camera
@@ -157,7 +158,10 @@ def footprint(rec, image_id: int, plane) -> np.ndarray | None:
     w, h = cam.width, cam.height
     out = []
     for u, v in ((0, 0), (w, 0), (w, h), (0, h)):
-        ray = r_wc @ np.asarray(cam.cam_ray_from_img([float(u), float(v)]))
+        ray = cam.cam_ray_from_img([float(u), float(v)])
+        if ray is None:
+            return None
+        ray = r_wc @ np.asarray(ray)
         denom = float(np.dot(n, ray))
         if abs(denom) < 1e-9:
             return None
