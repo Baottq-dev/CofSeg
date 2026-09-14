@@ -125,7 +125,7 @@ def frame_overlap(H: np.ndarray, shape_a, shape_b) -> tuple[float, float, float,
     return min(overlap_ab, 1.0), min(overlap_ba, 1.0), shift, scale
 
 
-def _sane_homography(H, shape_a, scale: float) -> bool:
+def sane_homography(H, shape_a, scale: float) -> bool:
     # Cùng độ cao thì tỉ lệ ~1; khung chiếu sang phải còn là tứ giác lồi.
     # Vi phạm là RANSAC bám vào cấu trúc lặp của tán.
     if not (0.5 <= scale <= 2.0):
@@ -154,7 +154,7 @@ def pair_overlap(
     if H is None:
         return PairResult(n, n_in, _NAN, _NAN, _NAN, _NAN, status="verified")
     ab, ba, shift, scale = frame_overlap(H, shape_a, shape_b)
-    if not _sane_homography(H, shape_a, scale):
+    if not sane_homography(H, shape_a, scale):
         return PairResult(n, n_in, _NAN, _NAN, shift, scale, status="verified")
     return PairResult(n, n_in, ab, ba, shift, scale, status="ok")
 
