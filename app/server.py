@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
+from app import flower as fl
 from app.annotator import SamAnnotator
 
 CFG = yaml.safe_load(open("configs/config.yaml", encoding="utf-8"))
@@ -34,8 +35,8 @@ _current = None   # tên ảnh đang set_image
 
 # --- Chuẩn hoá đường dẫn nhãn (theo BASE, gồm cả tên field) & mật độ hoa ---
 DEFAULT_CONF_THR = 0.25   # placeholder: polygon vẽ tay không có ngưỡng detector
-FLOWER_THRESHOLDS = (0.02, 0.10, 0.30)   # tỉ lệ phủ hoa -> mức 0/1/2/3
-FLOWER_NAMES = ("no_flower", "few_flowers", "many_flowers", "very_many_flowers")
+FLOWER_THRESHOLDS = fl.THRESHOLDS   # tỉ lệ phủ hoa -> mức 0/1/2/3
+FLOWER_NAMES = fl.NAMES
 
 
 # --- đọc/ghi ảnh chịu được đường dẫn Unicode (Windows tiếng Việt) ---
@@ -65,16 +66,7 @@ def _imwrite(path, img):
 
 def _flower_label(ratio):
     # ratio: tỉ lệ diện tích hoa / tán (0-1) -> (mức 0-3, tên mức).
-    t1, t2, t3 = FLOWER_THRESHOLDS
-    if ratio < t1:
-        lvl = 0
-    elif ratio < t2:
-        lvl = 1
-    elif ratio < t3:
-        lvl = 2
-    else:
-        lvl = 3
-    return lvl, FLOWER_NAMES[lvl]
+    return fl.level(ratio)
 
 
 def _as_level(cid):
@@ -107,34 +99,11 @@ def _json_path(name):
     return os.path.join(OUT_DIR, _full_rel(name).replace("/", "__") + ".json")
 
 
-_KERNEL = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-
-
 def _flower_counts(img_bgr, poly, sat_max, val_min):
     # Theo README mục 6 của bộ dữ liệu: TRÍCH XUẤT vùng polygon rồi mới đếm ->
-    # blur/HSV/opening chạy TRONG từng tán, không phải trên cả ảnh.
-    # Trả về (số pixel hoa, tổng pixel) của 1 tán.
-    h, w = img_bgr.shape[:2]
-    pts = np.round(np.array(poly, dtype=np.float64).reshape(-1, 2)).astype(np.int32)
-    # Kẹp bbox vào trong ảnh: polygon vẽ tay có thể vượt ra ngoài khung.
-    x0 = max(0, int(pts[:, 0].min()))
-    x1 = min(w, int(pts[:, 0].max()) + 1)
-    y0 = max(0, int(pts[:, 1].min()))
-    y1 = min(h, int(pts[:, 1].max()) + 1)
-    if x1 <= x0 or y1 <= y0:
-        return 0, 0
-    pm = np.zeros((y1 - y0, x1 - x0), np.uint8)
-    cv2.fillPoly(pm, [pts - np.array([x0, y0], np.int32)], 1)
-    total = int(pm.sum())
-    if total == 0:
-        return 0, 0
-    crop = img_bgr[y0:y1, x0:x1]
-    region = cv2.bitwise_and(crop, crop, mask=pm)   # chỉ giữ pixel trong tán
-    blur = cv2.GaussianBlur(region, (3, 3), 0)      # khử nhiễu
-    hsv = cv2.cvtColor(blur, cv2.COLOR_BGR2HSV)
-    flower = ((hsv[:, :, 1] < sat_max) & (hsv[:, :, 2] > val_min)).astype(np.uint8)
-    flower = cv2.morphologyEx(flower, cv2.MORPH_OPEN, _KERNEL)  # morphological opening
-    return int(np.count_nonzero((flower > 0) & (pm > 0))), total
+    # blur/HSV/opening chạy TRONG từng tán, không phải trên cả ảnh. Thuật toán
+    # nằm ở app/flower.py để scripts dùng chung. Trả về (số pixel hoa, tổng pixel).
+    return fl.hsv_counts(img_bgr, poly, sat_max, val_min)
 
 
 def _poly_area(poly):
