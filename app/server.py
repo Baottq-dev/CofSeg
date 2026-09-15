@@ -113,7 +113,9 @@ class FlowerParams(BaseModel):
     sat_max: int = 50        # HSV: pixel hoa có S < sat_max
     val_min: int = 180       # HSV: pixel hoa có V > val_min
     method: str = "hsv"      # "hsv" | "otsu"
-    channel: str = "min2"    # Otsu: v | v2 | min2 (xem app/flower.py)
+    channel: str = "white"   # Otsu: white | min2 | v2 | v (xem app/flower.py)
+    s_max: int = 50          # Otsu kênh white: cổng màu theo pixel S < s_max
+    class_s_max: float = 0.0 # Otsu: S trung bình của lớp chọn phải < ngưỡng, 0 = tắt
     sep_min: float = 0.0     # Otsu: độ tách tối thiểu, 0 = tắt
     area_min: int = 0        # Otsu: bỏ blob nhỏ hơn (px²), 0 = tắt
     area_max: int = 0        # Otsu: bỏ blob lớn hơn (px²), 0 = tắt
@@ -130,12 +132,13 @@ def _check_params(req):
 
 
 def _otsu_kwargs(req):
-    return dict(channel=req.channel, sep_min=req.sep_min, area_min=req.area_min,
-                area_max=req.area_max, elong_max=req.elong_max, clip_rule=req.clip_rule)
+    return dict(channel=req.channel, s_max=req.s_max, class_s_max=req.class_s_max,
+                sep_min=req.sep_min, area_min=req.area_min, area_max=req.area_max,
+                elong_max=req.elong_max, clip_rule=req.clip_rule)
 
 
 _OTSU_KEYS = ("flower_pixels", "ratio", "label", "channel", "threshold", "threshold1",
-              "separability", "n_blobs", "n_blobs_kept", "rejected")
+              "separability", "class_s", "n_blobs", "n_blobs_kept", "rejected")
 
 
 def _both(img, poly, req):
@@ -146,7 +149,8 @@ def _both(img, poly, req):
     o = fl.otsu_blob(img, poly, **_otsu_kwargs(req))
     if o is None:
         o = dict(flower_pixels=0, ratio=0.0, label=0, channel=req.channel, threshold=None,
-                 threshold1=None, separability=0.0, n_blobs=0, n_blobs_kept=0, rejected="empty")
+                 threshold1=None, separability=0.0, class_s=None, n_blobs=0, n_blobs_kept=0,
+                 rejected="empty")
     otsu = {k: o.get(k) for k in _OTSU_KEYS}
     otsu["total_pixels"] = int(tpx)
     return hsv, otsu
@@ -381,8 +385,8 @@ class FlowerReq(FlowerParams):
 def _otsu_brief(o):
     # Phần client cần để hiện tooltip; % thay vì tỉ lệ 0-1.
     return dict(ratio=round(100.0 * o["ratio"], 2), thr=o["threshold"], thr1=o["threshold1"],
-                sep=o["separability"], n_blobs=o["n_blobs"], n_kept=o["n_blobs_kept"],
-                rejected=o["rejected"], channel=o["channel"])
+                sep=o["separability"], class_s=o.get("class_s"), n_blobs=o["n_blobs"],
+                n_kept=o["n_blobs_kept"], rejected=o["rejected"], channel=o["channel"])
 
 
 @app.post("/api/flower")
@@ -499,9 +503,9 @@ def load(name: str):
                 if isinstance(o, dict):
                     otsu_r.append(pct(o.get("ratio")))
                     otsu_i.append(dict(thr=o.get("threshold"), thr1=o.get("threshold1"),
-                                       sep=o.get("separability"), n_blobs=o.get("n_blobs"),
-                                       n_kept=o.get("n_blobs_kept"), rejected=o.get("rejected"),
-                                       channel=o.get("channel")))
+                                       sep=o.get("separability"), class_s=o.get("class_s"),
+                                       n_blobs=o.get("n_blobs"), n_kept=o.get("n_blobs_kept"),
+                                       rejected=o.get("rejected"), channel=o.get("channel")))
                 else:
                     otsu_r.append(None)
                     otsu_i.append(None)

@@ -7,15 +7,25 @@
 #                    ngưỡng tuyệt đối (ảnh sáng/tối khác nhau tự nhận ngưỡng khác
 #                    nhau); KHÔNG chữa chói (vẫn chỉ nhìn độ sáng).
 #
-# Kênh cho Otsu (tham số `channel`) — đo trên 207 tán ngày 15/09/2026:
-#   v     Otsu một lần trên V, đúng đề cương §6. HỎNG trên dữ liệu này: histogram
-#         V của mọi tán đều hai đỉnh (lá nắng / lá bóng), Otsu cắt ở T≈125–140 và
-#         tán không hoa ra 40% "hoa"; độ tách η≈0,74 ở mọi tán nên không chặn được.
-#   v2    Otsu hai tầng trên V: lần 1 tách nắng/bóng, lần 2 trên phần sáng.
-#         Tán không hoa còn 16%.
-#   min2  Otsu hai tầng trên min(R,G,B): pixel trắng có cả ba kênh cao, lá xanh
-#         dù nắng vẫn thấp ở kênh xanh dương. Tán không hoa 6%, tán nhiều hoa 13%
-#         — biến thể duy nhất cùng bậc với HSV, nên là mặc định.
+# Kênh cho Otsu (tham số `channel`) — đo trên 634 tán, 42 ảnh, ngày 15–16/09/2026,
+# mốc so là nhãn HSV (không phải sự thật, chỉ để định hướng) và soi mắt 12 tán:
+#   white Cổng màu của HSV (S < s_max) + ngưỡng sáng TỰ THÍCH NGHI: min(R,G,B) >
+#         t₁, với t₁ là Otsu tầng 1 trên min(R,G,B) của chính tán (ranh nắng/bóng,
+#         ≈ 65–90 ở ruộng tối, > 100 ở ruộng sáng). Tán HSV mức 0 ra trung vị
+#         1,5%, mức 2 ra 18%, Spearman 0,98 với HSV; bắt được chuỗi hoa trong
+#         bóng và cụm hoa nhỏ mà V > 180 bỏ sót. MẶC ĐỊNH.
+#   min2  Otsu hai tầng trên min(R,G,B): pixel trắng có cả ba kênh cao. Tán không
+#         hoa vẫn ra 6%: lớp sáng nó chọn là lá nắng (S ≈ 70). Cần class_s_max.
+#   v2    Otsu hai tầng trên V. Tán không hoa còn 16%.
+#   v     Otsu một lần trên V, đúng đề cương §6. HỎNG: histogram V của mọi tán đều
+#         hai đỉnh (lá nắng / lá bóng), Otsu cắt ở T≈125–140, tán không hoa ra
+#         40% "hoa"; độ tách η≈0,74 ở mọi tán nên không chặn được.
+#
+# Vì sao Otsu thuần không thắng HSV: nó là phương pháp TƯƠNG ĐỐI, tán nào cũng tìm
+# ra "một lớp sáng hơn", và không có thông tin lớp đó có màu trắng hay không. S
+# trung bình của lớp Otsu chọn: tán HSV mức 0 ≈ 73, mức 1 ≈ 36, mức 2 ≈ 17, mức 3
+# ≈ 8 — đó là thông tin tách hoa khỏi lá nắng, và `class_s_max` dùng nó làm cổng
+# ở mức lớp cho mọi kênh (min2 + cổng 45: tán mức 0 về 0 ở 97% trường hợp).
 #
 # Cả hai chạy TRONG polygon (cắt bbox + mask), cùng blur 3×3 và opening 3×3, cùng
 # ngưỡng mức 0,02 / 0,10 / 0,30 — để hai con số so được với nhau.
@@ -105,7 +115,7 @@ def separability(vals, thr):
     return float(w0 * w1 * (lo.mean() - hi.mean()) ** 2 / tot)
 
 
-CHANNELS = ("v", "v2", "min2")
+CHANNELS = ("white", "min2", "v2", "v")
 MIN_BRIGHT = 50       # tầng 2 cần ít nhất ngần này pixel sáng, không thì coi là không hoa
 
 
@@ -115,16 +125,20 @@ def _otsu(vals):
     return float(thr)
 
 
-def otsu_blob(img_bgr, poly, channel="min2", sep_min=0.0, area_min=0, area_max=0,
-              elong_max=0.0, clip_rule=False, want_mask=False):
+def otsu_blob(img_bgr, poly, channel="white", s_max=50, class_s_max=0.0, sep_min=0.0,
+              area_min=0, area_max=0, elong_max=0.0, clip_rule=False, want_mask=False):
     # Trả dict: flower_pixels, total_pixels, ratio, label, channel, threshold
-    # (ngưỡng cuối), threshold1 (ngưỡng tầng 1, None với "v"), separability (η của
-    # tầng cuối), n_blobs, n_blobs_kept, rejected (None | "low_separability" |
-    # "too_few_bright"); thêm mask (0/1 cỡ crop) và offset khi want_mask. None nếu
-    # polygon rỗng.
+    # (ngưỡng sáng cuối), threshold1 (ngưỡng tầng 1 với v2/min2, None với v/white),
+    # separability (η của tầng quyết định), class_s (S trung bình của lớp được
+    # chọn — thấp là trắng, cao là lá nắng), n_blobs, n_blobs_kept, rejected (None |
+    # "low_separability" | "too_few_bright" | "green_class"); thêm mask (0/1 cỡ crop)
+    # và offset khi want_mask. None nếu polygon rỗng.
     #
-    # Mỗi luật lọc blob là một tham số, giá trị 0/False = tắt. Mặc định tắt hết:
-    # theo đề cương, không luật nào được bật trước khi có nhãn blob (B3) chấm nó.
+    # s_max: cổng màu theo pixel của kênh white (cùng nghĩa với sat_max của HSV).
+    # class_s_max: cổng màu ở mức LỚP cho mọi kênh — lớp chọn ra có S trung bình
+    # vượt ngưỡng thì là lá nắng, trả 0; 0 = tắt. Mỗi luật lọc blob là một tham số,
+    # giá trị 0/False = tắt. Mặc định tắt hết: theo đề cương, không luật nào được
+    # bật trước khi có nhãn blob (B3) chấm nó.
     if channel not in CHANNELS:
         raise ValueError(f"channel phải là một trong {CHANNELS}, không phải {channel!r}")
     cp = crop_polygon(img_bgr, poly)
@@ -132,8 +146,8 @@ def otsu_blob(img_bgr, poly, channel="min2", sep_min=0.0, area_min=0, area_max=0
         return None
     crop, pm, offset, total = cp
     hsv = _hsv_in(crop, pm)
-    v = hsv[:, :, 2]
-    if channel == "min2":
+    sat, v = hsv[:, :, 1], hsv[:, :, 2]
+    if channel in ("min2", "white"):
         chan = cv2.GaussianBlur(cv2.bitwise_and(crop, crop, mask=pm), (3, 3), 0).min(axis=2)
     else:
         chan = v
@@ -142,7 +156,7 @@ def otsu_blob(img_bgr, poly, channel="min2", sep_min=0.0, area_min=0, area_max=0
     # thành một đỉnh giả ở 0 và kéo ngưỡng xuống.
     out = dict(flower_pixels=0, total_pixels=total, ratio=0.0, label=0,
                channel=channel, threshold=None, threshold1=None, separability=0.0,
-               n_blobs=0, n_blobs_kept=0, rejected=None)
+               class_s=None, n_blobs=0, n_blobs_kept=0, rejected=None)
 
     def _reject(why):
         out["rejected"] = why
@@ -150,7 +164,7 @@ def otsu_blob(img_bgr, poly, channel="min2", sep_min=0.0, area_min=0, area_max=0
             out["mask"], out["offset"] = np.zeros_like(pm), offset
         return out
 
-    if channel == "v":
+    if channel in ("v", "white"):
         thr = _otsu(vals)
         eta = separability(vals, thr)
         out.update(threshold=thr, separability=round(eta, 4))
@@ -167,7 +181,14 @@ def otsu_blob(img_bgr, poly, channel="min2", sep_min=0.0, area_min=0, area_max=0
     if sep_min > 0 and eta < sep_min:
         return _reject("low_separability")
 
-    m = ((chan > thr) & (pm > 0)).astype(np.uint8)
+    sel = (chan > thr) & (pm > 0)
+    if channel == "white":
+        sel &= sat < s_max          # cổng màu theo pixel, như HSV
+    # S trung bình của lớp được chọn: ghi luôn để hiệu chỉnh class_s_max về sau.
+    out["class_s"] = round(float(sat[sel].mean()), 1) if sel.any() else None
+    if class_s_max > 0 and out["class_s"] is not None and out["class_s"] > class_s_max:
+        return _reject("green_class")
+    m = sel.astype(np.uint8)
     m = cv2.morphologyEx(m, cv2.MORPH_OPEN, KERNEL)
     n, labels, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
     keep = np.zeros(n, bool)
@@ -199,7 +220,7 @@ def otsu_blob(img_bgr, poly, channel="min2", sep_min=0.0, area_min=0, area_max=0
 
 # ------------------------------------------------------------------ lớp phủ
 def render_mask(img_bgr, polys, method, sat_max=50, val_min=180, **otsu_kw):
-    # otsu_kw: channel, sep_min, area_min, area_max, elong_max, clip_rule.
+    # otsu_kw: channel, s_max, class_s_max, sep_min, area_min, area_max, elong_max, clip_rule.
     # Mask 0/1 cỡ cả ảnh: hợp pixel hoa của mọi polygon theo một phương pháp.
     h, w = img_bgr.shape[:2]
     full = np.zeros((h, w), np.uint8)

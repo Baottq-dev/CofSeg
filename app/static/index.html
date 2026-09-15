@@ -110,7 +110,7 @@
   .hsvbox input[type=checkbox]{width:auto}
   .hsvbox .chk{justify-content:flex-start;gap:6px;color:var(--text)}
   .hsvbox .grp{display:flex;flex-direction:column;gap:6px}
-  .hsvbox .grp[hidden]{display:none}
+  .hsvbox .grp[hidden],.hsvbox label[hidden]{display:none}
   .hsvbox .btn{margin-top:2px}
   .cls .cdel{border:0;background:transparent;color:var(--muted2);cursor:pointer;font-size:12px}
   .cls .cdel:hover{color:#f7a5a5}
@@ -249,7 +249,9 @@
         <label>Value &gt; <input id="valMin" type="number" value="180" min="0" max="255"/></label>
       </div>
       <div id="otsuParams" class="grp" hidden>
-        <label>Kênh <select id="ochan" title="min2: Otsu hai tầng trên min(R,G,B) — mặc định. v2: hai tầng trên V. v: một lần trên V (đề cương §6, tách nắng/bóng chứ không tách hoa)"><option value="min2">min(R,G,B) 2 tầng</option><option value="v2">V 2 tầng</option><option value="v">V 1 lần</option></select></label>
+        <label>Kênh <select id="ochan" title="white: cổng màu S của HSV + ngưỡng sáng tự thích nghi theo tán (Otsu trên min(R,G,B)) — mặc định. min2: Otsu hai tầng trên min(R,G,B). v2: hai tầng trên V. v: một lần trên V (đề cương §6, tách nắng/bóng chứ không tách hoa)"><option value="white">Trắng: S &lt; s &amp; sáng theo tán</option><option value="min2">min(R,G,B) 2 tầng</option><option value="v2">V 2 tầng</option><option value="v">V 1 lần</option></select></label>
+        <label id="sMaxRow" title="Kênh white: pixel hoa phải có S < ngưỡng này (cùng nghĩa Saturation của HSV)">S &lt; <input id="sMax" type="number" min="0" max="255" value="50"/></label>
+        <label title="Lớp pixel chọn ra có S trung bình vượt ngưỡng này là lá nắng → 0; 0 = tắt. Đo: tán không hoa ≈ 73, tán nhiều hoa ≈ 17">S lớp ≤ <input id="classSMax" type="number" step="5" min="0" max="255" value="0"/></label>
         <label title="Độ tách η tối thiểu của tầng Otsu cuối; 0 = tắt">Độ tách ≥ <input id="sepMin" type="number" step="0.05" min="0" max="1" value="0"/></label>
         <label title="Bỏ blob nhỏ hơn (px²); 0 = tắt">Blob ≥ px² <input id="areaMin" type="number" min="0" value="0"/></label>
         <label title="Bỏ blob lớn hơn (px²); 0 = tắt">Blob ≤ px² <input id="areaMax" type="number" min="0" value="0"/></label>
@@ -358,7 +360,7 @@ let satMax=50,valMin=180;
 // Phương pháp đếm hoa đang HIỂN THỊ và tham số Otsu. Cả hai kết quả luôn được
 // server tính và lưu; `fmethod` chỉ quyết định con số nào lên màn hình và vào
 // trường đầu của polygon khi lưu (label_method ghi lại điều đó).
-let fmethod='hsv',otsuP={channel:'min2',sep_min:0,area_min:0,area_max:0,elong_max:0,clip_rule:false};
+let fmethod='hsv',otsuP={channel:'white',s_max:50,class_s_max:0,sep_min:0,area_min:0,area_max:0,elong_max:0,clip_rule:false};
 let showMask=false,maskImg=null,maskTimer=null,maskToken=0,maskUrl=null;
 function flowerParams(){return Object.assign({sat_max:satMax,val_min:valMin,method:fmethod},otsuP);}
 function loadFlowerPrefs(){try{const s=JSON.parse(localStorage.getItem('cofseg_flower'));if(!s)return;
@@ -416,16 +418,22 @@ $('addCls').onclick=autoAll;$('autoAll').onclick=autoAll;
 $('satMax').oninput=()=>{satMax=parseInt($('satMax').value)||50;};
 $('valMin').oninput=()=>{valMin=parseInt($('valMin').value)||180;};
 function syncFlowerUI(){$('fmethod').value=fmethod;$('hsvParams').hidden=(fmethod!=='hsv');$('otsuParams').hidden=(fmethod!=='otsu');
- $('ochan').value=otsuP.channel;$('sepMin').value=otsuP.sep_min;$('areaMin').value=otsuP.area_min;$('areaMax').value=otsuP.area_max;$('elongMax').value=otsuP.elong_max;$('clipRule').checked=!!otsuP.clip_rule;$('showMask').checked=showMask;}
+ $('ochan').value=otsuP.channel;$('sMax').value=otsuP.s_max;$('classSMax').value=otsuP.class_s_max;$('sMaxRow').hidden=(otsuP.channel!=='white');
+ $('sepMin').value=otsuP.sep_min;$('areaMin').value=otsuP.area_min;$('areaMax').value=otsuP.area_max;$('elongMax').value=otsuP.elong_max;$('clipRule').checked=!!otsuP.clip_rule;$('showMask').checked=showMask;}
 // Đổi phương pháp hiển thị: vùng nào đã có số của phương pháp mới thì đổi ngay
 // (nhãn auto đổi theo, nhãn tay giữ nguyên); vùng chưa có thì gọi server tính.
 $('fmethod').onchange=()=>{fmethod=$('fmethod').value;saveFlowerPrefs();syncFlowerUI();
  if(!inst.length){draw();return;}
  pushHist();const miss=[];
- inst.forEach((r,i)=>{const v=r.pcts?r.pcts[fmethod]:null;if(v==null){miss.push(i);return;}r.pct=v;if(!r.manual)r.cls=densOf(v);});
+ inst.forEach((r,i)=>{const v=r.pcts?r.pcts[fmethod]:null;
+  // Số Otsu đã lưu có thể tính bằng kênh khác kênh đang chọn -> tính lại thay vì hiện số cũ.
+  const stale=(fmethod==='otsu'&&r.od&&r.od.channel&&r.od.channel!==otsuP.channel);
+  if(v==null||stale){miss.push(i);return;}r.pct=v;if(!r.manual)r.cls=densOf(v);});
  persist();renderRegions();renderClasses();draw();
  if(miss.length)computeFlower(miss,false);};
-$('ochan').onchange=()=>{otsuP.channel=$('ochan').value;saveFlowerPrefs();};
+$('ochan').onchange=()=>{otsuP.channel=$('ochan').value;saveFlowerPrefs();$('sMaxRow').hidden=(otsuP.channel!=='white');};
+$('sMax').oninput=()=>{otsuP.s_max=parseInt($('sMax').value)||0;saveFlowerPrefs();};
+$('classSMax').oninput=()=>{otsuP.class_s_max=parseFloat($('classSMax').value)||0;saveFlowerPrefs();};
 $('sepMin').oninput=()=>{otsuP.sep_min=parseFloat($('sepMin').value)||0;saveFlowerPrefs();};
 $('areaMin').oninput=()=>{otsuP.area_min=parseInt($('areaMin').value)||0;saveFlowerPrefs();};
 $('areaMax').oninput=()=>{otsuP.area_max=parseInt($('areaMax').value)||0;saveFlowerPrefs();};
@@ -456,7 +464,7 @@ function renderRegions(){const box=$('regions');box.innerHTML='';$('rcount').tex
   cn.title=r.manual?'Mức do bạn gán tay — máy sẽ không ghi đè. Bấm ⚡ để phân loại lại tự động.':'Mức do '+methodName()+' tự phân loại';
   const pc=document.createElement('span');pc.className='rpct';pc.textContent=(r.pct==null?'—':'🌸 '+r.pct.toFixed(1)+'%');
   const ps=r.pcts||{},od=r.od;
-  pc.title='Tỉ lệ pixel hoa ('+methodName()+')\nHSV '+pctTxt(ps.hsv)+' · Otsu '+pctTxt(ps.otsu)+(od?' ['+(od.channel||'')+' T='+(od.thr==null?'—':Math.round(od.thr))+(od.thr1!=null?' T1='+Math.round(od.thr1):'')+' η='+(od.sep==null?'—':(+od.sep).toFixed(2))+' '+(od.n_kept==null?'':od.n_kept+'/'+od.n_blobs+' blob')+(od.rejected?' '+od.rejected:'')+']':'');
+  pc.title='Tỉ lệ pixel hoa ('+methodName()+')\nHSV '+pctTxt(ps.hsv)+' · Otsu '+pctTxt(ps.otsu)+(od?' ['+(od.channel||'')+' T='+(od.thr==null?'—':Math.round(od.thr))+(od.thr1!=null?' T1='+Math.round(od.thr1):'')+' η='+(od.sep==null?'—':(+od.sep).toFixed(2))+(od.class_s!=null?' S lớp='+Math.round(od.class_s):'')+' '+(od.n_kept==null?'':od.n_kept+'/'+od.n_blobs+' blob')+(od.rejected?' '+od.rejected:'')+']':'');
   head.title='#'+r.id+' · '+(r.poly.length/2)+' đỉnh';
   head.appendChild(dot);head.appendChild(idb);head.appendChild(cn);head.appendChild(pc);
   head.onclick=()=>{sel=i;setMode('select');tidySel(i);renderRegions();draw();};
