@@ -2,7 +2,7 @@
 
     python scripts/recompute_flower.py --dry-run --limit 5
     python scripts/recompute_flower.py
-    python scripts/recompute_flower.py --field field_3 --channel v2
+    python scripts/recompute_flower.py --field field_3 --channel min2 --class-s-max 45
 
 Việc làm với mỗi file định dạng mới (có `polygons`):
 
@@ -66,7 +66,9 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--dry-run", action="store_true", help="tính và in tổng kết, không ghi")
     ap.add_argument("--no-backup", action="store_true")
-    ap.add_argument("--channel", choices=fl.CHANNELS, default="min2")
+    ap.add_argument("--channel", choices=fl.CHANNELS, default="white")
+    ap.add_argument("--s-max", type=int, default=50, help="kênh white: cổng màu S < s_max")
+    ap.add_argument("--class-s-max", type=float, default=0.0, help="cổng S trung bình của lớp chọn, 0 = tắt")
     ap.add_argument("--sep-min", type=float, default=0.0)
     ap.add_argument("--area-min", type=int, default=0)
     ap.add_argument("--area-max", type=int, default=0)
@@ -74,8 +76,8 @@ def main() -> int:
     ap.add_argument("--clip-rule", action="store_true")
     a = ap.parse_args()
 
-    otsu_kw = dict(channel=a.channel, sep_min=a.sep_min, area_min=a.area_min,
-                   area_max=a.area_max, elong_max=a.elong_max, clip_rule=a.clip_rule)
+    otsu_kw = dict(channel=a.channel, s_max=a.s_max, class_s_max=a.class_s_max, sep_min=a.sep_min,
+                   area_min=a.area_min, area_max=a.area_max, elong_max=a.elong_max, clip_rule=a.clip_rule)
     labels = Path(a.labels)
     files = sorted(labels.glob("*.json"))
     if a.field:
@@ -116,11 +118,13 @@ def main() -> int:
             o = fl.otsu_blob(img, poly, **otsu_kw)
             if o is None:
                 o = dict(flower_pixels=0, ratio=0.0, label=0, channel=a.channel, threshold=None,
-                         threshold1=None, separability=0.0, n_blobs=0, n_blobs_kept=0, rejected="empty")
+                         threshold1=None, separability=0.0, class_s=None, n_blobs=0, n_blobs_kept=0,
+                         rejected="empty")
             p["otsu"] = dict(flower_pixels=o["flower_pixels"], total_pixels=int(tpx), ratio=o["ratio"],
                              label=o["label"], channel=o["channel"], threshold=o["threshold"],
                              threshold1=o["threshold1"], separability=o["separability"],
-                             n_blobs=o["n_blobs"], n_blobs_kept=o["n_blobs_kept"], rejected=o["rejected"])
+                             class_s=o["class_s"], n_blobs=o["n_blobs"], n_blobs_kept=o["n_blobs_kept"],
+                             rejected=o["rejected"])
             if "label_method" not in p:
                 # Trước 17/07/2026 chưa có cờ tay/máy (label_source thiếu): mọi mức
                 # đều do HSV gán. Chỉ nhãn tay mới không có phương pháp máy.
