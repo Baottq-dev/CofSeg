@@ -1,0 +1,19 @@
+# Finetune YOLOv8s-seg trên bộ tán cà phê — đại diện thứ hai của họ YOLO.
+#
+# Vì sao có cả v8 lẫn 26: cùng một đầu mặt nạ prototype (lưới imgsz/4), khác
+# nhau ở phần phát hiện — v8 dùng NMS, 26 không NMS (đầu-cuối). Đặt hai bản
+# cạnh nhau cho thấy phần "đầu-cuối" có đổi gì ở đường biên hay không, trong
+# khi trần độ phân giải mặt nạ là như nhau.
+#
+# Toàn bộ khối train: kế thừa từ yolo26s.yaml — cùng độ phân giải, cùng tăng
+# cường cho ảnh nadir, cùng tắt mosaic. Chỉ khác trọng số. Với v8, conf/iou lúc
+# val và predict CÓ tác dụng (NMS); với 26 chúng gần như không.
+#
+# Độ phân giải không cố định ở đây: ghi đè lúc chạy, tên thư mục run lấy giá trị thật.
+#     python scripts/train.py --config configs/train/yolov8s.yaml --imgsz 1024 --batch 4
+#     python scripts/train.py --config configs/train/yolov8s.yaml --imgsz 2048 --batch 1
+
+base: yolo26s.yaml
+name: yolov8s-seg
+# Thiếu file thì ultralytics tự tải bản phát hành về đúng đường dẫn này.
+model: weights/yolov8s-seg.pt
