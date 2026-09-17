@@ -1,37 +1,75 @@
-"""Chấm một model đã huấn luyện trên một split, bằng chỉ số đường biên.
+"""Chấm model đã huấn luyện trên một split, bằng chính bộ đánh giá của ultralytics.
 
-    python scripts/evaluate.py --weights runs/train/<...>/ultralytics/weights/best.pt
+    python scripts/evaluate.py --weights runs/train/<...>/weights/best.pt
     python scripts/evaluate.py --weights <...>/best.pt --split test --imgsz 1024
-    python scripts/evaluate.py --weights <...>/best.pt --limit 10   # chạy thử
+    python scripts/evaluate.py --weights <...>/best.pt --split val
 
-Vì sao tồn tại thay vì dùng thẳng `yolo val`: đo trên chính bộ này, mặt nạ co
-vào 5 px vẫn cho AP75 = 0.953 trong khi Boundary IoU chỉ còn 0.233; và hai lần
-train ở 640 với 1024 chênh nhau đúng 0.006 mAP dù trần đường biên khác hẳn.
-mAP không nhìn thấy thứ dự án này quan tâm.
+Đây là `model.val()` — đúng thứ `yolo val` chạy — nên bảng số liệu in ra trùng
+với mọi báo cáo YOLO khác và không thể trôi lệch khi ultralytics đổi cách tính.
+Script chỉ thêm: neo kết quả vào bố cục runs/ của dự án, chép nguyên văn màn
+hình vào run.log, và ghi lại môi trường để tái lập.
 
-Script không biết YOLO tồn tại: nó tra sổ đăng ký model theo tên trong --model.
+Mặc định `save_json` bật, nên predictions.json (định dạng COCO results) luôn có
+để chấm lại bằng công cụ khác.
+
+Mọi tham số của val đều truyền thẳng được:
+
+    python scripts/evaluate.py --weights <...>/best.pt --conf 0.001 --rect
 """
 
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import sys
+import traceback
 from pathlib import Path
+
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from canopyseg import artifacts  # noqa: E402
 from canopyseg import console  # noqa: E402
-from canopyseg import models  # noqa: F401,E402 - nạp để đăng ký model
 from canopyseg import runlog  # noqa: E402
-from canopyseg.datasets import CocoDataset  # noqa: E402
-from canopyseg.evaluation import coco_eval  # noqa: E402
-from canopyseg.evaluation import evaluate_split, format_report, write_csv  # noqa: E402
-from canopyseg.evaluation.report import summarize  # noqa: E402
-from canopyseg.registry import available, resolve  # noqa: E402
+from canopyseg.evaluation import validate  # noqa: E402
 
 console.setup()
+
+# Script tự đặt bốn khoá này để kết quả rơi đúng thư mục run.
+LOCKED = {"data", "project", "name", "exist_ok"}
+
+
+def parse_extra(tokens: list[str]) -> dict:
+    """Đối số lạ -> tham số cho val(), kiểm tên theo danh sách sống của ultralytics."""
+    from ultralytics.cfg import get_cfg
+
+    valid = set(vars(get_cfg()))
+    out: dict = {}
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if not tok.startswith("--"):
+            raise SystemExit(f"Không hiểu đối số {tok!r}.")
+        body = tok[2:]
+        if "=" in body:
+            key, raw = body.split("=", 1)
+        elif i + 1 < len(tokens) and not tokens[i + 1].startswith("--"):
+            key, raw = body, tokens[i + 1]
+            i += 1
+        else:
+            key, raw = body, "true"
+        key = key.replace("-", "_")
+        if key in LOCKED:
+            raise SystemExit(f"--{key} bị khoá: script tự đặt để kết quả vào đúng run dir.")
+        if key not in valid:
+            near = difflib.get_close_matches(key, sorted(valid), n=3, cutoff=0.6)
+            hint = f" Ý bạn là: {', '.join('--' + n for n in near)}?" if near else ""
+            raise SystemExit(f"val() không có tham số {key!r}.{hint}")
+        out[key] = yaml.safe_load(raw)
+        i += 1
+    return out
 
 
 def main() -> int:
@@ -39,94 +77,61 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--weights", required=True, help="đường dẫn tới best.pt / last.pt")
-    ap.add_argument("--model", default="yolo_seg", help=f"loại model {available('model')}")
-    ap.add_argument("--data", default="data/export/dataset_v1")
+    ap.add_argument("--data", default="data/export/dataset_v1/data.yaml")
     ap.add_argument("--split", default="test", choices=["train", "val", "test"])
     ap.add_argument("--imgsz", type=int, default=1024)
-    ap.add_argument("--conf", type=float, default=0.25)
-    ap.add_argument("--iou", type=float, default=0.7, help="ngưỡng NMS của model")
-    ap.add_argument("--match-iou", type=float, default=0.5,
-                    help="ngưỡng IoU để coi một dự đoán là khớp với vùng thật")
-    ap.add_argument("--band-ratio", type=float, default=0.02,
-                    help="bề rộng vành biên, theo tỉ lệ cạnh tán")
-    ap.add_argument("--nsd-tau", type=float, default=2.0,
-                    help="dung sai NSD tính bằng px")
-    ap.add_argument("--dilation-ratio", type=float, default=0.02,
-                    help="vành Boundary AP, theo tỉ lệ đường chéo ảnh "
-                         "(0.02 là giá trị trong bài báo)")
-    ap.add_argument("--min-area", type=float, default=50.0)
-    ap.add_argument("--limit", type=int, default=None, help="chỉ chấm N ảnh đầu")
+    ap.add_argument("--batch", type=int, default=4)
+    # max_det=300 (mặc định của ultralytics) làm tràn VRAM ở khâu val: nó phóng
+    # TẤT CẢ mặt nạ về đúng độ phân giải gốc 2560x1440 trước khi chấm, tức
+    # 300 x 2560 x 1440 x 4 byte ~ 4.4 GB cho một phép nội suy. Con số này
+    # không phụ thuộc batch, nên giảm batch không cứu được.
+    # Ảnh dày nhất của bộ này có 48 vùng, nên 100 đã dư gấp đôi.
+    ap.add_argument("--max-det", type=int, default=100,
+                    help="số vật thể tối đa mỗi ảnh (mặc định ultralytics 300 gây OOM)")
     ap.add_argument("--device", default=None)
     ap.add_argument("--runs", default="runs")
     ap.add_argument("--name", default=None)
-    a = ap.parse_args()
+    a, extra = ap.parse_known_args()
 
     weights = Path(a.weights)
     if not weights.exists():
         raise SystemExit(f"Không thấy trọng số: {weights}")
+    data = Path(a.data)
+    if not data.exists():
+        raise SystemExit(
+            f"Không thấy {data}. Chạy scripts/prepare_yolo_dataset.py trước."
+        )
 
-    name = a.name or f"{weights.parent.parent.parent.name}_{a.split}"
-    run_dir = artifacts.create_run_dir(a.runs, "eval", name, f"i{a.imgsz}c{a.conf}")
+    kw = parse_extra(extra)
+    # Tên run nói rõ chấm trọng số nào, trên split nào, ở độ phân giải nào.
+    src = weights.parent.parent.parent.name
+    run_dir = artifacts.create_run_dir(
+        a.runs, "eval", a.name or src, f"{a.split}_i{a.imgsz}"
+    )
     artifacts.write_env(run_dir)
     (run_dir / "config.json").write_text(
-        json.dumps(vars(a), indent=2, ensure_ascii=False, default=str), encoding="utf-8"
+        json.dumps({**vars(a), **kw}, indent=2, ensure_ascii=False, default=str),
+        encoding="utf-8",
     )
     print(f"Lần chấm: {run_dir}")
 
     with runlog.capture(run_dir / "run.log"):
         try:
-            ds = CocoDataset(a.data, a.split, min_area=a.min_area)
-            print("Bộ dữ liệu:", json.dumps(ds.summary(), ensure_ascii=False))
-
-            model = resolve("model", a.model)(
-                str(weights), imgsz=a.imgsz, conf=a.conf, iou=a.iou, device=a.device
+            if kw:
+                print("Ghi đè từ dòng lệnh:", json.dumps(kw, ensure_ascii=False))
+            out = validate(
+                weights, data, split=a.split, imgsz=a.imgsz, batch=a.batch,
+                max_det=a.max_det, device=a.device, run_dir=run_dir, **kw,
             )
-            print("Model:", json.dumps(model.describe, ensure_ascii=False, default=str))
-            print()
-
-            rows, info = evaluate_split(
-                model, ds,
-                iou_thr=a.match_iou, band_ratio=a.band_ratio,
-                nsd_tau=a.nsd_tau, limit=a.limit,
+            (run_dir / "metrics.json").write_text(
+                json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8"
             )
-
-            print("\nChấm theo chuẩn COCO (Mask AP + Boundary AP)...", flush=True)
-            coco = coco_eval.evaluate(
-                str(ds.ann_file), info["detections"], info["image_ids"],
-                dilation_ratio=a.dilation_ratio,
-            )
-
-            csv_path = write_csv(rows, run_dir / "per_region.csv")
-            write_csv(info["images"], run_dir / "per_image.csv")
-            summary = summarize(rows, info["images"])
-            summary["coco"] = {k: coco.get(k) for k in ("mask", "boundary", "dilation_ratio")}
-            (run_dir / "summary.json").write_text(
-                json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
-            # Giữ nguyên văn 12 dòng của COCOeval.summarize() để trích dẫn được.
-            if coco.get("mask_text"):
-                (run_dir / "cocoeval.txt").write_text(
-                    "== Mask AP ==\n" + coco["mask_text"]
-                    + "\n\n== Boundary AP ==\n" + coco["boundary_text"] + "\n",
-                    encoding="utf-8",
-                )
-
-            report = format_report(
-                rows, info["images"], coco=coco,
-                title=f"{weights.name} · split {a.split} · imgsz {a.imgsz} · conf {a.conf}",
-            )
-            (run_dir / "report.txt").write_text(report + "\n", encoding="utf-8")
-            print()
-            print(report)
-            print()
-            print(f"Thời gian suy luận: {info['total_seconds']}s")
-            print("Từng vùng:", csv_path)
-            print("Kết quả:", run_dir)
+            print("\nKết quả:", run_dir)
+            if out.get("predictions_json"):
+                print("Dự đoán (COCO results):", out["predictions_json"])
         except SystemExit:
             raise
         except BaseException:
-            import traceback
-
             traceback.print_exc()
             return 1
     return 0
