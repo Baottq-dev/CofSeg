@@ -13,14 +13,13 @@ Ba phương pháp:
 
     --method sift | orb   khớp đặc trưng trên ảnh đã co, kiểm bằng ma trận cơ
                           bản F, ước vết phủ bằng homography. Nhanh.
-    --method colmap       SfM đầy đủ (pycolmap): SIFT độ phân giải gốc, kiểm
-                          hình học F/E/H cho mọi cặp, rồi dựng mô hình 3D.
-                          Chậm hơn (~1,5 s/ảnh + ~0,1 s/cặp trên CPU) nhưng
-                          là cùng chuỗi mà Metashape/ODM chạy, và cho bốn tầng
-                          bằng chứng thay vì một (xem canopyseg/datasets/sfm.py).
-                          Tiêu cự cố định qua --focal-px vì ảnh không còn EXIF.
+    --method colmap       khớp ảnh của COLMAP (pycolmap): SIFT độ phân giải
+                          gốc, kiểm hình học F/E/H cho mọi cặp, rồi homography
+                          trên inlier để ước phần chồng. Chậm hơn (~1,5 s/ảnh
+                          + ~0,1 s/cặp trên CPU) nhưng kiểm quan hệ chắc hơn
+                          nhiều so với sift/orb (xem canopyseg/datasets/sfm.py).
                           --reuse RUN_DIR lấy lại đặc trưng + match của lần
-                          chạy cũ (phần chậm) và chỉ làm lại phần sau, vài giây.
+                          chạy cũ (phần chậm) và chỉ tính lại bảng cặp, vài giây.
                           Cài: pip install pycolmap
 
 Hai chế độ cặp:
@@ -37,9 +36,8 @@ Mỗi lần chạy ghi vào runs/overlap/<thời-điểm>_<ruộng>_<chế-độ
                    trạng thái — con số kèm bằng chứng
     summary.json   tổng hợp theo lần bay
     viz/           (sift/orb, với --viz K) ảnh ghép của K cặp chồng lấp nhất
-    colmap/        (colmap) database.db và sparse/<k>/ cho từng mô hình 3D:
-                   cameras/images/points3D.txt + points.ply (mở bằng MeshLab
-                   hay CloudCompare để nhìn tận mắt)
+    colmap/        (colmap) database.db cho từng lần bay: đặc trưng, match và
+                   inlier của mọi cặp — --reuse đọc lại từ đây
     run.log        toàn bộ màn hình
 
 Cách đọc kết quả sift/orb: cặp `ok` là chồng lấp thật kèm ước lượng phần
@@ -47,13 +45,9 @@ chồng; `verified` là chồng lấp thật nhưng không ước được phầ
 lành). `few_matches` / `no_geometry` là KHÔNG TÌM THẤY quan hệ — thường là
 không chồng lấp, nhưng tán lặp và bóng đổ khác chiều cũng gây ra như vậy.
 
-Cách đọc kết quả colmap: `status` xếp theo tầng bằng chứng, `overlap_from`
-nói con số overlap đến từ đâu.
+Cách đọc kết quả colmap: `status` xếp theo tầng bằng chứng.
 
-    footprint     cùng mô hình 3D, overlap từ tư thế camera + mặt đất
-    registered    cùng mô hình 3D nhưng không chiếu được vết phủ
-    homography    không vào mô hình; overlap từ homography trên inlier COLMAP
-                  (đã kiểm: lệch so với footprint trung vị 0,00, MAD 0,02)
+    homography    có quan hệ hình học; overlap từ homography trên inlier COLMAP
     verified      có quan hệ hình học nhưng H không lành, không ước được
     none          không tìm thấy quan hệ — trên dữ liệu này 99% cặp không
                   chồng lấp có đúng 0 inlier, nên `none` gần như là "không"
@@ -147,14 +141,11 @@ def main() -> int:
                     help="số đặc trưng mỗi ảnh (sift/orb: trên ảnh đã co; colmap: trên ảnh gốc)")
     ap.add_argument("--sfm-max-size", type=int, default=-1,
                     help="colmap: co ảnh về cạnh dài này trước khi trích (-1 = giữ nguyên)")
-    ap.add_argument("--focal-px", type=float, default=1707.0,
-                    help="colmap: tiêu cự cố định (px); 0 = để COLMAP tự ước (chỉ khi ảnh còn EXIF). "
-                         "Mặc định 1707 = ống 24 mm tương đương trên khung rộng 2560 px")
     ap.add_argument("--sfm-min-inliers", type=int, default=15,
                     help="colmap: số inlier tối thiểu để coi một cặp là có quan hệ")
     ap.add_argument("--reuse", default=None, metavar="RUN_DIR",
                     help="colmap: lấy database.db (đặc trưng + match, phần tốn 20-40 phút) từ lần chạy cũ; "
-                         "chỉ dựng lại mô hình và tính lại bảng cặp")
+                         "chỉ tính lại bảng cặp")
     ap.add_argument("--scale", type=float, default=0.5, help="co ảnh trước khi tìm đặc trưng")
     ap.add_argument("--ratio", type=float, default=0.8, help="ratio test của Lowe")
     ap.add_argument("--ransac-px", type=float, default=3.0, help="sift/orb: ngưỡng RANSAC cho ma trận cơ bản, px trên ảnh đã co")
@@ -189,11 +180,10 @@ def main() -> int:
 
 
 def run_sfm(a, field_dir: Path, flights: dict[str, list[Path]], run_dir: Path) -> int:
-    """SfM đầy đủ cho từng lần bay (hoặc cả ruộng), rồi quy về cùng bảng cặp."""
+    """Khớp ảnh COLMAP cho từng lần bay (hoặc cả ruộng), rồi quy về cùng bảng cặp."""
     all_files = [p for v in flights.values() for p in v]
     print(f"{a.field}: {len(flights)} lần bay, {len(all_files)} ảnh — COLMAP, "
-          f"{'ghép mọi cặp' if a.pairs == 'all' else 'ghép tuần tự'}, scope={a.scope}, "
-          f"f {'cố định %.0f px' % a.focal_px if a.focal_px else 'tự do'}")
+          f"{'ghép mọi cặp' if a.pairs == 'all' else 'ghép tuần tự'}, scope={a.scope}")
     groups = {"field": all_files} if a.scope == "field" else flights
     reuse = Path(a.reuse) if a.reuse else None
     rows, summary = [], {}
@@ -220,51 +210,26 @@ def run_sfm(a, field_dir: Path, flights: dict[str, list[Path]], run_dir: Path) -
         id_name, pairs = sfm.read_pairs(db)
         if {Path(n).as_posix() for n in id_name.values()} != set(names):
             raise SystemExit(f"Ảnh trong {db} không khớp với {field_dir}/{g}; bỏ --reuse hoặc chọn đúng lần chạy.")
-        models_by_k = sfm.map_models(db, field_dir, work / "sparse", focal_px=a.focal_px or None, log=log)
         hov = sfm.homography_overlaps(db, min_inliers=a.sfm_min_inliers)
-
-        # Ảnh nào nằm trong mô hình nào, và các cặp đã đăng ký cùng mô hình.
-        model_of: dict[int, int] = {}
-        mpairs: dict[tuple[int, int], dict] = {}
-        models = []
-        for k, rec in sorted(models_by_k.items()):
-            for i in rec.reg_image_ids():
-                model_of[i] = k
-            mpairs.update({key: dict(model=k, **v) for key, v in sfm.model_pairs(rec).items()})
-            ms = sfm.model_summary(rec)
-            ms["images"] = sorted(rec.images[i].name for i in rec.reg_image_ids())
-            models.append(ms)
-            print(f"  mô hình {k}: {ms['registered_images']} ảnh, {ms['points3D']} điểm, "
-                  f"track {ms['mean_track_length']:.1f}, sai số chiếu {ms['mean_reprojection_error_px']:.2f} px, "
-                  f"f {ms['focal_px']:.0f} px")
 
         ids = sorted(id_name)
         for i, j in itertools.combinations(ids, 2):
             p = pairs.get((i, j), {})
-            m = mpairs.get((i, j), {})
             h = hov.get((i, j))
             inl = p.get("verified_inliers", 0)
-            if "footprint_ab" in m:
-                status, src, ab, ba = "footprint", "footprint", m["footprint_ab"], m["footprint_ba"]
-            elif m:
-                status, src, ab, ba = "registered", "", 0.0, 0.0
-            elif h is not None:
-                status, src, ab, ba = "homography", "homography", h[0], h[1]
+            if h is not None:
+                status, ab, ba = "homography", h[0], h[1]
             elif inl >= a.sfm_min_inliers:
-                status, src, ab, ba = "verified", "", 0.0, 0.0
+                status, ab, ba = "verified", 0.0, 0.0
             else:
-                status, src, ab, ba = "none", "", 0.0, 0.0
-            if status == "registered" and h is not None:   # cùng mô hình nhưng thiếu vết phủ: lấy H
-                src, ab, ba = "homography", h[0], h[1]
+                status, ab, ba = "none", 0.0, 0.0
             fa, fb = by_name[id_name[i]], by_name[id_name[j]]
             rows.append(dict(
                 flight=g, a=fa.name, b=fb.name, gap_s=gap_seconds(fa, fb),
                 seq_gap=abs((frame_info(fa)[1] or 0) - (frame_info(fb)[1] or 0)),
                 raw_matches=p.get("raw_matches", 0), verified_inliers=inl,
-                geometry=p.get("geometry", ""), model=m.get("model", ""),
-                shared_points=m.get("shared_points", 0),
-                shared_ratio=round(m.get("shared_ratio", 0.0), 4),
-                overlap_ab=round(ab, 4), overlap_ba=round(ba, 4), overlap_from=src,
+                geometry=p.get("geometry", ""),
+                overlap_ab=round(ab, 4), overlap_ba=round(ba, 4),
                 status=status,
             ))
         rs = [r for r in rows if r["flight"] == g]
@@ -276,8 +241,7 @@ def run_sfm(a, field_dir: Path, flights: dict[str, list[Path]], run_dir: Path) -
         summary[g] = dict(
             images=len(files), pairs=len(rs),
             n_verified=sum(r["verified_inliers"] >= a.sfm_min_inliers for r in rs),
-            n_homography=sum(r["overlap_from"] == "homography" for r in rs),
-            n_registered_pairs=sum(r["status"] in ("registered", "footprint") for r in rs),
+            n_homography=sum(r["status"] == "homography" for r in rs),
             n_over_30=int((o >= 0.3).sum()), n_over_50=int((o >= 0.5).sum()),
             max_overlap=float(o.max()),
             consecutive_pairs=len(cr),
@@ -285,7 +249,6 @@ def run_sfm(a, field_dir: Path, flights: dict[str, list[Path]], run_dir: Path) -
             consecutive_median=float(np.median(co)),
             consecutive_median_overlapping=float(np.median(co[co >= 0.3])) if (co >= 0.3).any() else 0.0,
             images_with_neighbour_30=len(with_nb),
-            images_in_any_model=len(model_of), models=models,
         )
 
     if not rows:
@@ -297,12 +260,11 @@ def run_sfm(a, field_dir: Path, flights: dict[str, list[Path]], run_dir: Path) -
         w.writerows(rows)
 
     print()
-    print(f"{'lần bay':<14} {'ảnh':>5} {'cặp':>6} {'verified':>9} {'H-ước':>6} {'cùng mô hình':>13} "
-          f"{'≥30%':>6} {'≥50%':>6} {'max':>6}  ảnh có tư thế / mô hình")
+    print(f"{'lần bay':<14} {'ảnh':>5} {'cặp':>6} {'verified':>9} {'H-ước':>6} "
+          f"{'≥30%':>6} {'≥50%':>6} {'max':>6}")
     for g, s in summary.items():
         print(f"{g:<14} {s['images']:>5} {s['pairs']:>6} {s['n_verified']:>9} {s['n_homography']:>6} "
-              f"{s['n_registered_pairs']:>13} {s['n_over_30']:>6} {s['n_over_50']:>6} {s['max_overlap']:>6.0%}  "
-              f"{s['images_in_any_model']}/{s['images']} trong {len(s['models'])} mô hình")
+              f"{s['n_over_30']:>6} {s['n_over_50']:>6} {s['max_overlap']:>6.0%}")
 
     print()
     print(f"Cặp liền kề theo thứ tự chụp (chồng lấp dọc):")
@@ -327,7 +289,7 @@ def run_sfm(a, field_dir: Path, flights: dict[str, list[Path]], run_dir: Path) -
 
     (run_dir / "summary.json").write_text(
         json.dumps(dict(field=a.field, pairs_mode=a.pairs, scope=a.scope, method="colmap",
-                        focal_px=a.focal_px, reuse=str(reuse) if reuse else None,
+                        reuse=str(reuse) if reuse else None,
                         n_images=len(all_files), n_pairs=len(rows), flights=summary),
                    indent=2, ensure_ascii=False),
         encoding="utf-8",
