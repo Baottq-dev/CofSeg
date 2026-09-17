@@ -20,17 +20,15 @@ Mọi tham số của val đều truyền thẳng được:
 from __future__ import annotations
 
 import argparse
-import difflib
 import json
 import sys
 import traceback
 from pathlib import Path
 
-import yaml
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from canopyseg import artifacts  # noqa: E402
+from canopyseg import cli  # noqa: E402
 from canopyseg import console  # noqa: E402
 from canopyseg import runlog  # noqa: E402
 from canopyseg.evaluation import validate  # noqa: E402
@@ -45,31 +43,7 @@ def parse_extra(tokens: list[str]) -> dict:
     """Đối số lạ -> tham số cho val(), kiểm tên theo danh sách sống của ultralytics."""
     from ultralytics.cfg import get_cfg
 
-    valid = set(vars(get_cfg()))
-    out: dict = {}
-    i = 0
-    while i < len(tokens):
-        tok = tokens[i]
-        if not tok.startswith("--"):
-            raise SystemExit(f"Không hiểu đối số {tok!r}.")
-        body = tok[2:]
-        if "=" in body:
-            key, raw = body.split("=", 1)
-        elif i + 1 < len(tokens) and not tokens[i + 1].startswith("--"):
-            key, raw = body, tokens[i + 1]
-            i += 1
-        else:
-            key, raw = body, "true"
-        key = key.replace("-", "_")
-        if key in LOCKED:
-            raise SystemExit(f"--{key} bị khoá: script tự đặt để kết quả vào đúng run dir.")
-        if key not in valid:
-            near = difflib.get_close_matches(key, sorted(valid), n=3, cutoff=0.6)
-            hint = f" Ý bạn là: {', '.join('--' + n for n in near)}?" if near else ""
-            raise SystemExit(f"val() không có tham số {key!r}.{hint}")
-        out[key] = yaml.safe_load(raw)
-        i += 1
-    return out
+    return cli.parse_overrides(tokens, set(vars(get_cfg())), LOCKED, what="val()")
 
 
 def main() -> int:

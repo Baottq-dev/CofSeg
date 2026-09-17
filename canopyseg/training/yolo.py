@@ -48,6 +48,20 @@ class YoloTrainer(Trainer):
         self.data_yaml = Path(cfg["data"]["yaml"])
         self.train_args: dict = {**AERIAL_DEFAULTS, **(cfg.get("train") or {})}
 
+    # -------------------------------------------------------------------- tham số
+    @classmethod
+    def param_defaults(cls) -> dict | None:
+        """Danh sách sống của ultralytics, không chép tay để khỏi lệch phiên bản."""
+        try:
+            from ultralytics.cfg import get_cfg
+        except ImportError:
+            return None
+        return dict(vars(get_cfg()))
+
+    @classmethod
+    def locked_params(cls) -> frozenset[str]:
+        return frozenset({"data", "project", "name", "exist_ok"})
+
     # -------------------------------------------------------------------- đặt tên
     #: Tham số đưa vào tên thư mục, kèm tiền tố ngắn. Ba cái này quyết định cả
     #: chất lượng lẫn chi phí của lần chạy, và cũng chính là ba cái hay bị ghi

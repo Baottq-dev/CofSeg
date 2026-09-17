@@ -15,24 +15,24 @@ thay vì im lặng bỏ qua rồi để bạn chờ ba tiếng mới biết tham
 Vẫn giữ --set cho các khoá lồng nhau ngoài nhóm train, vd --set data.yaml=...
 
 Script này KHÔNG biết YOLO tồn tại. Nó đọc khoá `trainer` trong config, tra sổ
-đăng ký, rồi gọi ba phương thức của hợp đồng. Thêm Mask R-CNN hay model tự viết
-= thêm một file trong canopyseg/training/, script giữ nguyên.
+đăng ký, rồi gọi ba phương thức của hợp đồng. Danh sách tham số hợp lệ và các
+khoá bị khoá cũng do trainer khai (Trainer.param_defaults / locked_params), nên
+thêm Mask R-CNN hay model tự viết = thêm một file trong canopyseg/training/,
+script giữ nguyên.
 """
 
 from __future__ import annotations
 
 import argparse
-import difflib
 import json
 import sys
 import traceback
 from pathlib import Path
 
-import yaml
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from canopyseg import artifacts  # noqa: E402
+from canopyseg import cli  # noqa: E402
 from canopyseg import config as cfgmod  # noqa: E402
 from canopyseg import console  # noqa: E402
 from canopyseg import runlog  # noqa: E402
@@ -40,60 +40,6 @@ from canopyseg import training  # noqa: F401,E402 - nạp để đăng ký train
 from canopyseg.registry import available, resolve  # noqa: E402
 
 console.setup()
-
-# Trainer tự đặt bốn khoá này để kết quả rơi đúng thư mục run; đè lên chúng sẽ
-# làm hỏng chính chỗ ghi kết quả, nên chặn ngay ở dòng lệnh cho rõ ràng.
-LOCKED = {"data", "project", "name", "exist_ok"}
-
-
-def trainer_param_names(trainer_kind: str) -> set[str] | None:
-    """Tập tham số hợp lệ của trainer, để bắt lỗi gõ sai. None = không kiểm được."""
-    if trainer_kind == "yolo":
-        try:
-            from ultralytics.cfg import get_cfg
-
-            return set(vars(get_cfg()))
-        except ImportError:
-            return None
-    return None
-
-
-def parse_hparams(tokens: list[str], valid: set[str] | None) -> dict:
-    """Biến các đối số lạ thành ghi đè cho khối `train:` của config."""
-    out: dict = {}
-    i = 0
-    while i < len(tokens):
-        tok = tokens[i]
-        if not tok.startswith("--"):
-            raise SystemExit(
-                f"Không hiểu đối số {tok!r}. Siêu tham số phải có dạng --ten giatri."
-            )
-        body = tok[2:]
-        if "=" in body:
-            key, raw = body.split("=", 1)
-        elif i + 1 < len(tokens) and not tokens[i + 1].startswith("--"):
-            key, raw = body, tokens[i + 1]
-            i += 1
-        else:
-            # Cờ trần: --amp nghĩa là --amp true.
-            key, raw = body, "true"
-        key = key.replace("-", "_")
-
-        if key in LOCKED:
-            raise SystemExit(
-                f"--{key} bị khoá: trainer tự đặt nó để kết quả rơi đúng thư mục run. "
-                f"Đổi tên lần chạy bằng --name, đổi bộ dữ liệu bằng --set data.yaml=..."
-            )
-        if valid is not None and key not in valid:
-            near = difflib.get_close_matches(key, sorted(valid), n=3, cutoff=0.6)
-            hint = f" Ý bạn là: {', '.join('--' + n for n in near)}?" if near else ""
-            raise SystemExit(
-                f"Trainer không có tham số {key!r}.{hint}\n"
-                f"Xem toàn bộ tham số: --list-params"
-            )
-        out[key] = yaml.safe_load(raw)
-        i += 1
-    return out
 
 
 def main() -> int:
@@ -135,34 +81,30 @@ def main() -> int:
     cfg = cfgmod.load(a.config, a.overrides)
     if "trainer" not in cfg:
         raise SystemExit(f"config thiếu khoá 'trainer'. Hiện có: {available('trainer')}")
+    trainer_cls = resolve("trainer", cfg["trainer"])
+    locked = trainer_cls.locked_params()
 
-    valid = trainer_param_names(cfg["trainer"])
     if a.list_params:
-        if valid is None:
-            raise SystemExit(f"Không liệt kê được tham số cho trainer {cfg['trainer']!r}.")
-        from ultralytics.cfg import get_cfg
-
-        d = vars(get_cfg())
-        print(f"{len(d)} tham số trainer {cfg['trainer']!r} nhận (khoá cứng: {sorted(LOCKED)}):\n")
-        for k in sorted(d):
-            mark = "  [khoá]" if k in LOCKED else ""
-            print(f"  --{k:<20} mặc định {d[k]!r}{mark}")
+        d = trainer_cls.param_defaults()
+        if d is None:
+            raise SystemExit(f"Trainer {cfg['trainer']!r} không liệt kê tham số của nó.")
+        print(f"{len(d)} tham số trainer {cfg['trainer']!r} nhận (khoá cứng: {sorted(locked)}):\n")
+        print(cli.describe_params(d, locked))
         return 0
 
     # Siêu tham số dòng lệnh thắng config, vì chúng cụ thể hơn.
-    hp = parse_hparams(extra, valid)
+    hp = cli.parse_overrides(extra, trainer_cls.param_names(), locked, what="trainer")
     if hp:
         cfg.setdefault("train", {}).update(hp)
 
     if a.print_config:
-        merged = resolve("trainer", cfg["trainer"])(cfg, Path(".")).train_args
+        merged = trainer_cls(cfg, Path(".")).train_args
         print("Tham số cuối cùng đưa vào trainer:\n")
         for k in sorted(merged):
             src = "  <-- dòng lệnh" if k in hp else ""
             print(f"  {k:<18} {merged[k]!r}{src}")
         return 0
 
-    trainer_cls = resolve("trainer", cfg["trainer"])
     name = a.name or cfg.get("name") or Path(a.config).stem
     # Nhãn sinh từ tham số ĐÃ GỘP (config + dòng lệnh), nên tên thư mục luôn
     # mô tả đúng thứ vừa chạy kể cả khi bạn ghi đè imgsz hay batch.

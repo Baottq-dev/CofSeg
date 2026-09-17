@@ -29,6 +29,28 @@ class Trainer(ABC):
         """
         return ""
 
+    # ------------------------------------------------------------------ tham số
+    @classmethod
+    def param_defaults(cls) -> dict | None:
+        """Tên -> mặc định của mọi tham số mà khối `train:` nhận.
+
+        scripts/train.py dùng nó để bắt lỗi gõ sai tên và để in --list-params.
+        None nghĩa là trainer không liệt kê được (mọi tên đều được nhận) — đó là
+        một lựa chọn phải có chủ đích, vì gõ sai sẽ không có gì báo.
+        """
+        return None
+
+    @classmethod
+    def param_names(cls) -> set[str] | None:
+        d = cls.param_defaults()
+        return None if d is None else set(d)
+
+    @classmethod
+    def locked_params(cls) -> frozenset[str]:
+        """Khoá trainer tự đặt để kết quả rơi đúng thư mục run; ghi đè từ dòng
+        lệnh sẽ làm hỏng chính chỗ ghi kết quả nên bị chặn ngay."""
+        return frozenset()
+
     # ------------------------------------------------------------------ vòng đời
     def prepare(self) -> dict:
         """Kiểm dữ liệu trước khi đụng tới GPU.
