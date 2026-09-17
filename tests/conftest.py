@@ -70,8 +70,14 @@ def tiny_dataset(tmp_path, square_polygon):
         {"id": i + 1, "file_name": n, "width": IMG_W, "height": IMG_H}
         for i, n in enumerate(names)
     ]
+    # Ảnh thật (nhiễu ngẫu nhiên) chứ không phải file rỗng: bộ đọc cho model
+    # detection phải giải mã được chúng. Cỡ nhỏ để test chạy trong vài mili giây.
+    import cv2
+
+    rng = np.random.default_rng(0)
     for n in names:
-        (root / "images" / "train" / n).write_bytes(b"")  # nội dung không cần thiết
+        img = rng.integers(0, 255, (IMG_H, IMG_W, 3), dtype=np.uint8)
+        cv2.imwrite(str(root / "images" / "train" / n), img)
 
     def ann(aid, iid, x, y, s):
         poly = square_polygon(x, y, s)
