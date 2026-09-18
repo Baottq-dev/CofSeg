@@ -1,0 +1,9 @@
+# SAM 2.1 với box THẬT — cận trên của họ promptable, không phải hệ thống thật.
+#     python scripts/evaluate.py --config configs/eval/sam2_oracle.yaml            # large
+#     python scripts/evaluate.py --config configs/eval/sam2_oracle.yaml --size t --limit 5
+base: _base.yaml
+name: sam2-oracle
+model:
+  name: sam2_oracle
+  size: l                      # t | s | b+ | l  (checkpoint mặc định trong weights/)
+  box_batch: 16

@@ -1,0 +1,18 @@
+# Hai giai đoạn: YOLO tìm box -> SAM 2.1 vẽ mặt nạ theo box.
+#     python scripts/evaluate.py --config configs/eval/two_stage_yolo_sam2.yaml --set model.detector.weights=<best.pt>
+base: _base.yaml
+name: yolo26s-to-sam2
+model:
+  name: two_stage
+  detector:
+    name: yolo_seg
+    weights: runs/train/CHANGE_ME/ultralytics/weights/best.pt
+    imgsz: 1024
+    conf: 0.05
+    iou: 0.7
+    max_det: 100
+  prompter:
+    size: l
+    box_batch: 16
+  # SAM trả rỗng cho một box thì giữ mặt nạ YOLO, để số dự đoán không đổi.
+  fallback: true

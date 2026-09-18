@@ -1,0 +1,14 @@
+# SAM 2.1 tự động (AMG) — zero-shot thật: không nhãn, không phát hiện.
+# Trả cả đất/bóng/hàng cây; lọc diện tích là cách duy nhất không cần nhãn.
+base: _base.yaml
+name: sam2-auto
+model:
+  name: sam2_auto
+  size: l
+  points_per_side: 32
+  pred_iou_thresh: 0.8
+  stability_score_thresh: 0.95
+  min_mask_region_area: 100
+  # Tán nhỏ nhất trong nhãn ~128 px cạnh (16k px2); dưới đó là mảnh vụn.
+  min_area: 10000
+  max_area: null

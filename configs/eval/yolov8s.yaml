@@ -1,0 +1,3 @@
+# YOLOv8s-seg qua đường chấm chung. Trọng số: --set model.weights=<best.pt>
+base: yolo26s.yaml
+name: yolov8s-seg

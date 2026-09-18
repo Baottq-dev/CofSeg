@@ -1,0 +1,11 @@
+# Mask R-CNN R50-FPN (torchvision). Trọng số: --set model.weights=<best.pt>
+#     python scripts/evaluate.py --config configs/eval/maskrcnn_r50.yaml --set model.weights=runs/train/<...>/weights/best.pt
+base: _base.yaml
+name: maskrcnn-r50
+model:
+  name: maskrcnn
+  weights: runs/train/CHANGE_ME/weights/best.pt
+  # imgsz mặc định lấy từ checkpoint (độ phân giải đã huấn luyện); ghi đè bằng --imgsz.
+  conf: 0.05
+  max_det: 100
+  mask_thr: 0.5

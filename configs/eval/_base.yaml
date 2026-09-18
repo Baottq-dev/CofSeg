@@ -1,0 +1,19 @@
+# Khối chung cho mọi config đánh giá. Các file cạnh bên chỉ ghi khối model:.
+#
+# data.split ghi đè bằng --split; số ảnh bằng --limit (chạy thử).
+data:
+  root: data/export/dataset_v1
+  split: test
+  # Cùng ngưỡng với configs/dataset/dataset_v1.yaml.
+  min_area: 50.0
+
+eval:
+  # Ngưỡng IoU mặt nạ để một dự đoán được coi là khớp với vùng thật (bảng
+  # từng vùng). AP vẫn quét đủ 0.50:0.95 theo lệ COCO, không phụ thuộc số này.
+  iou_thr: 0.5
+  # Vành Boundary IoU từng vùng: 2% cạnh hình vuông cùng diện tích tán.
+  band_ratio: 0.02
+  # Dung sai NSD, px.
+  nsd_tau: 2.0
+  # Vành Boundary AP: 2% đường chéo ẢNH (Cheng et al. 2021) ~ 59 px ở 2560x1440.
+  dilation_ratio: 0.02
