@@ -4,6 +4,7 @@ Import ở đây để registry biết chúng tồn tại. Thêm họ mới = th
 """
 
 from .base import Prediction, SegmentationModel
-from . import maskrcnn, yolo_seg  # noqa: F401 - import để @register chạy
+from .build import build_model, model_param_names
+from . import compose, maskrcnn, sam_prompt, yolo_seg  # noqa: F401 - import để @register chạy
 
-__all__ = ["Prediction", "SegmentationModel"]
+__all__ = ["Prediction", "SegmentationModel", "build_model", "model_param_names"]
