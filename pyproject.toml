@@ -23,4 +23,8 @@ markers = [
     "slow: chạy lâu hơn vài giây",
     "weights: cần file trọng số đã huấn luyện trong weights/",
 ]
-filterwarnings = ["error::DeprecationWarning:canopyseg.*"]
+filterwarnings = [
+    "error::DeprecationWarning:canopyseg.*",
+    # pycocotools 2.0.x còn gọi __array__ kiểu cũ trên numpy 2; không phải việc của ta.
+    "ignore::DeprecationWarning:pycocotools.*",
+]

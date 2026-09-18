@@ -5,7 +5,7 @@
   predictions.json  định dạng COCO results — nạp được bằng COCO.loadRes(),
                     nên chấm lại bằng bất kỳ công cụ nào cũng ra cùng số
   cocoeval.txt      nguyên văn 12 dòng của COCOeval.summarize()
-  metrics.json      12 con số đó ở dạng máy đọc được
+  coco_metrics.json 12 con số đó ở dạng máy đọc được
   per_region.csv    một hàng mỗi vùng, để tự phân tích
 
 Con số duy nhất được in ra màn hình là đầu ra gốc của pycocotools.
@@ -40,21 +40,19 @@ def write_predictions(detections: list[dict], path: str | Path) -> Path:
 
 
 def write_coco_results(coco: dict, run_dir: str | Path) -> tuple[Path, Path]:
-    """cocoeval.txt (nguyên văn) và metrics.json (máy đọc)."""
+    """cocoeval.txt (nguyên văn) và coco_metrics.json (máy đọc)."""
     run_dir = Path(run_dir)
     txt = run_dir / "cocoeval.txt"
-    txt.write_text(
-        "Mask AP\n" + (coco.get("mask_text") or "")
-        + "\n\nBoundary AP (dilation_ratio="
-        + str(coco.get("dilation_ratio")) + ")\n"
-        + (coco.get("boundary_text") or "") + "\n",
-        encoding="utf-8",
-    )
-    js = run_dir / "metrics.json"
+    body = "Mask AP\n" + (coco.get("mask_text") or coco.get("error") or "")
+    if coco.get("boundary_text"):
+        body += ("\n\nBoundary AP (dilation_ratio=" + str(coco.get("dilation_ratio")) + ")\n"
+                 + coco["boundary_text"])
+    txt.write_text(body + "\n", encoding="utf-8")
+    js = run_dir / "coco_metrics.json"
     js.write_text(
         json.dumps(
             {"mask": coco.get("mask"), "boundary": coco.get("boundary"),
-             "dilation_ratio": coco.get("dilation_ratio")},
+             "dilation_ratio": coco.get("dilation_ratio"), "error": coco.get("error")},
             indent=2,
         ),
         encoding="utf-8",

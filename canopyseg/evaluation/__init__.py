@@ -1,24 +1,33 @@
 """Chấm model trên một split.
 
-Với model của ultralytics, phép chấm chuẩn là chính `model.val()` của nó —
-xem canopyseg/evaluation/native.py. Không viết lại bộ đo đó: nó là thứ `yolo
-val` chạy, nên số liệu trùng với mọi báo cáo YOLO khác.
+Hai đường, cùng một bộ dữ liệu:
 
-Phần còn lại trong gói này là thứ ultralytics KHÔNG cung cấp: Boundary AP
-(Cheng et al., CVPR 2021) và các chỉ số biên từng vùng. Chúng đọc lại chính
-file predictions.json mà `val(save_json=True)` xuất ra, nên không thay thế mà
-chỉ bổ sung cho phép chấm chuẩn.
+- `evaluate_split` + `coco_eval`: đường CHUNG cho mọi model trong sổ đăng ký
+  (YOLO, Mask R-CNN, SAM, model ghép, file dự đoán từ máy khác). Mask AP và
+  Boundary AP chấm bằng pycocotools — bản tham chiếu mà detectron2, mmdet,
+  torchvision và chính ultralytics (khi save_json trên COCO) gọi bên dưới —
+  cộng các chỉ số biên từng vùng mà không bộ nào cung cấp.
+
+- `validate` (native.py): `model.val()` của ultralytics, chỉ cho YOLO. Giữ để
+  đối chiếu với mọi báo cáo YOLO khác; số của nó và số COCOeval chênh nhau vài
+  phần nghìn do cách nội suy đường PR, không phải do model.
 """
 
+from . import coco_eval
 from .matching import Match, align_masks, match_instances
 from .native import validate
-from .report import write_csv, write_predictions
+from .report import write_coco_results, write_csv, write_predictions
+from .runner import evaluate_split, summarize
 
 __all__ = [
+    "coco_eval",
+    "evaluate_split",
+    "summarize",
     "validate",
     "Match",
     "align_masks",
     "match_instances",
     "write_csv",
     "write_predictions",
+    "write_coco_results",
 ]
