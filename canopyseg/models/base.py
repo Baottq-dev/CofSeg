@@ -37,6 +37,44 @@ class Prediction:
     def area(self) -> float:
         return float(np.count_nonzero(self.mask))
 
+    @property
+    def bbox_xyxy(self) -> tuple[int, int, int, int] | None:
+        """(x0, y0, x1, y1) trong toạ độ ảnh gốc, bao trọn điểm ảnh cuối
+        (x1, y1 là điểm ảnh cuối cùng có mặt nạ, không phải mép ngoài).
+        None nếu mặt nạ rỗng.
+
+        Nhớ trong meta: hàm ghép cặp và các model hai giai đoạn gọi lại nhiều
+        lần cho cùng một dự đoán, quét lại cả mặt nạ mỗi lần là lãng phí.
+        """
+        if "bbox" in self.meta:
+            return self.meta["bbox"]
+        rows = np.flatnonzero(self.mask.any(axis=1))
+        cols = np.flatnonzero(self.mask.any(axis=0))
+        box = None
+        if rows.size and cols.size:
+            ox, oy = self.origin
+            box = (int(cols[0] + ox), int(rows[0] + oy),
+                   int(cols[-1] + ox), int(rows[-1] + oy))
+        self.meta["bbox"] = box
+        return box
+
+    def cropped(self) -> "Prediction":
+        """Cùng dự đoán nhưng mặt nạ cắt sát bbox, origin dời theo.
+
+        Mặt nạ đầy đủ 2560x1440 cho mỗi vật thể là 3.7 MB; các model trả mặt
+        nạ toàn khung (SAM, AMG) đi qua đây trước khi ra ngoài.
+        """
+        box = self.bbox_xyxy
+        if box is None:
+            return self
+        x0, y0, x1, y1 = box
+        ox, oy = self.origin
+        sub = self.mask[y0 - oy : y1 - oy + 1, x0 - ox : x1 - ox + 1]
+        meta = dict(self.meta)
+        meta["bbox"] = box
+        return Prediction(mask=np.ascontiguousarray(sub), origin=(x0, y0),
+                          score=self.score, polygon=self.polygon, meta=meta)
+
 
 class SegmentationModel(ABC):
     """Hợp đồng. Đừng thêm phương thức riêng của một họ model vào đây."""

@@ -34,22 +34,8 @@ class Match:
 
 
 def prediction_bbox(pred: Prediction) -> tuple[int, int, int, int] | None:
-    """(x0, y0, x1, y1) trong toạ độ ảnh gốc. None nếu mặt nạ rỗng.
-
-    Kết quả được nhớ trong pred.meta: hàm ghép gọi lại nhiều lần cho cùng một
-    dự đoán, và quét toàn bộ mặt nạ mỗi lần là lãng phí.
-    """
-    if "bbox" in pred.meta:
-        return pred.meta["bbox"]
-    rows = np.flatnonzero(pred.mask.any(axis=1))
-    cols = np.flatnonzero(pred.mask.any(axis=0))
-    box = None
-    if rows.size and cols.size:
-        ox, oy = pred.origin
-        box = (int(cols[0] + ox), int(rows[0] + oy),
-               int(cols[-1] + ox), int(rows[-1] + oy))
-    pred.meta["bbox"] = box
-    return box
+    """(x0, y0, x1, y1) trong toạ độ ảnh gốc. None nếu mặt nạ rỗng."""
+    return pred.bbox_xyxy
 
 
 def _bbox_iou(a, b) -> float:
