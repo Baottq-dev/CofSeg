@@ -401,17 +401,20 @@ function renderClasses(){const box=$('classes');box.innerHTML='';
  $('stCls').textContent=classes.length;}
 // force = người dùng chủ ý bấm ⚡ -> bỏ cờ tay và phân loại lại. Các lần gọi
 // ngầm (tạo vùng mới, nắn viền) luôn cập nhật % nhưng KHÔNG động vào nhãn tay.
-async function computeFlower(idxs,force){if(!current)return;idxs=idxs.filter(i=>inst[i]);if(!idxs.length)return;
- const who=current,polys=idxs.map(i=>inst[i].poly);
+// Giữ THAM CHIẾU vùng qua await, không giữ chỉ số: xoá một vùng trong lúc server
+// đang đếm thì chỉ số trượt, kết quả gán nhầm sang vùng kế. Vùng không còn
+// trong inst (đã xoá, hoặc Ctrl+Z thay cả mảng) thì bỏ qua kết quả của nó.
+async function computeFlower(idxs,force){if(!current)return;const targets=idxs.map(i=>inst[i]).filter(Boolean);if(!targets.length)return;
+ const who=current,polys=targets.map(r=>r.poly);
  try{const r=await(await fetch('/api/flower',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({name:who,polygons:polys},flowerParams()))})).json();
   if(current!==who)return;
   if(r.error){alert('Không đếm được hoa: '+r.error);return;}
-  (r.ratios||[]).forEach((rt,k)=>{const i=idxs[k];if(!inst[i])return;
-   inst[i].pcts={hsv:(r.hsv&&r.hsv[k]!=null)?r.hsv[k]:null,otsu:(r.otsu&&r.otsu[k])?r.otsu[k].ratio:null};
-   inst[i].od=(r.otsu&&r.otsu[k])||null;
-   inst[i].pct=rt;
-   if(force)inst[i].manual=false;
-   if(!inst[i].manual)inst[i].cls=densOf(rt);});
+  (r.ratios||[]).forEach((rt,k)=>{const t=targets[k];if(!t||inst.indexOf(t)<0)return;
+   t.pcts={hsv:(r.hsv&&r.hsv[k]!=null)?r.hsv[k]:null,otsu:(r.otsu&&r.otsu[k])?r.otsu[k].ratio:null};
+   t.od=(r.otsu&&r.otsu[k])||null;
+   t.pct=rt;
+   if(force)t.manual=false;
+   if(!t.manual)t.cls=densOf(rt);});
   persist();renderRegions();renderClasses();draw();}catch(e){alert('Không đếm được hoa (đã khởi động lại server chưa?): '+e);}}
 function autoAll(){if(!inst.length){alert('Chưa có vùng nào để phân loại.');return;}pushHist();computeFlower(inst.map((_,i)=>i),true);}
 $('addCls').onclick=autoAll;$('autoAll').onclick=autoAll;
@@ -454,7 +457,11 @@ async function fetchMask(){if(!showMask||!current||!ready||!inst.length){maskImg
  catch(e){maskImg=null;draw();}}
 syncFlowerUI();
 function regionArea(r){const p=r.poly,n=p.length/2;let a=0;for(let i=0;i<n;i++){const j=(i+1)%n;a+=p[i*2]*p[j*2+1]-p[j*2]*p[i*2+1];}return Math.abs(a)/2;}
-function renderRegions(){const box=$('regions');box.innerHTML='';$('rcount').textContent=inst.length;
+// Dựng lại cả danh sách thì scrollTop về 0: ảnh 30-48 vùng, bấm 👁/⚡/đổi lớp ở
+// hàng dưới là hàng đó bay khỏi tầm nhìn, trông như vùng đã mất. Giữ lại vị
+// trí cuộn; riêng khi VÙNG ĐƯỢC CHỌN đổi (bấm trên canvas) thì cuộn tới nó.
+let lastSelRow=-1;
+function renderRegions(){const box=$('regions');const st=box.scrollTop;box.innerHTML='';$('rcount').textContent=inst.length;
  inst.forEach((r,i)=>{const c=clsById(r.cls)||{name:'?',color:'#888'};
   const row=document.createElement('div');row.className='region'+(i===sel?' sel':'');
   const head=document.createElement('div');head.className='rhead';
@@ -482,7 +489,10 @@ function renderRegions(){const box=$('regions');box.innerHTML='';$('rcount').tex
   const bD=document.createElement('button');bD.className='del';bD.textContent='🗑';bD.title='Xoá vùng';
   bD.onclick=()=>{pushHist();inst.splice(i,1);if(sel===i)sel=-1;else if(sel>i)sel--;persist();draw();renderRegions();};
   act.appendChild(selc);act.appendChild(bF);act.appendChild(bV);act.appendChild(bD);
-  row.appendChild(head);row.appendChild(act);box.appendChild(row);});}
+  row.appendChild(head);row.appendChild(act);box.appendChild(row);});
+ box.scrollTop=st;
+ if(sel>=0&&sel!==lastSelRow){const el=box.children[sel];if(el&&el.scrollIntoView)el.scrollIntoView({block:'nearest'});}
+ lastSelRow=sel;}
 // Thống kê bám theo thư mục đang chọn: đang gán dở một nhánh thì cần biết còn
 // bao nhiêu ảnh của NHÁNH ĐÓ, chứ tổng toàn bộ không giúp gì.
 function renderStats(){
@@ -997,7 +1007,11 @@ cv.addEventListener('mousemove',e=>{
   if(cv.style.cursor!==cur)cv.style.cursor=cur;
   const moved=(!g!==!ghost)||(g&&ghost&&(g.x!==ghost.x||g.y!==ghost.y));
   if(hv!==hovPt||moved){hovPt=hv;ghost=g;draw();}}});
-cv.addEventListener('mouseup',async e=>{
+// Nhả chuột bắt trên WINDOW, không phải canvas: kéo đỉnh ra tới panel bên rồi
+// nhả thì canvas không nhận mouseup, dragPt/origPoly còn nguyên, rê chuột về là
+// cả cụm đỉnh chạy theo con trỏ. Với vùng đã ẩn thì không thấy gì cho tới khi
+// hiện lại và hình đã méo. Pan chuột giữa cũng kẹt y hệt.
+window.addEventListener('mouseup',async e=>{
  if(pan){pan=null;cv.style.cursor=(mode==='select')?'grab':'crosshair';return;}
  if(mode==='sam-box'&&boxStart){const xy=toImg(e),x=xy[0],y=xy[1],b=[cX(Math.min(boxStart[0],x)),cY(Math.min(boxStart[1],y)),cX(Math.max(boxStart[0],x)),cY(Math.max(boxStart[1],y))];boxStart=null;
   if(Math.abs(b[2]-b[0])>5&&Math.abs(b[3]-b[1])>5){pushHist();await samCall('/api/sam/box',{name:current,box:b});}else draw();return;}
