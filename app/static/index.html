@@ -64,7 +64,9 @@
   .thumb img{width:52px;height:34px;object-fit:cover;border-radius:4px;background:#000;flex:none}
   .tname{font-size:11px;color:#aeb9ca;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
   .thumb.active .tname{color:#fff}
-  .thumb.done .tname:after{content:" ✔";color:var(--green)}
+  /* Dấu đặt TRƯỚC tên: tên ảnh DJI dài luôn bị cắt "..." nên dấu để sau không bao giờ thấy. */
+  .thumb.done .tname:before{content:"✔ ";color:var(--green)}
+  .thumb.empty .tname:before{content:"∅ ";color:#aeb9ca}
   #main{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg)}
   #bar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:9px 12px;background:var(--panel);border-bottom:1px solid var(--border)}
   .sambadge{display:inline-flex;align-items:center;gap:6px;background:rgba(34,197,94,.14);color:var(--green);border:1px solid rgba(34,197,94,.4);padding:6px 10px;border-radius:8px;font-weight:700;font-size:12px}
@@ -82,6 +84,8 @@
   .tbtn.danger{color:#f7a5a5}
   .tbtn.danger:hover{background:rgba(239,68,68,.16)}
   .tbtn.icon{padding:7px 9px;font-size:15px;line-height:1}
+  .tbtn.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .tbtn:disabled{opacity:.45;cursor:not-allowed}
   #zlbl{min-width:44px;text-align:center;font-size:12px;color:var(--text)}
   .dd{position:relative;margin-left:2px}
   .dd .save{background:var(--green);color:#04210f;border:0;font-weight:700;padding:8px 12px;border-radius:7px;cursor:pointer;font-size:12.5px}
@@ -232,6 +236,7 @@
       <div class="divider"></div>
       <button id="undo" class="tbtn">↶ Hoàn tác</button>
       <button id="clear" class="tbtn danger">🗑 Xoá hết</button>
+      <button id="noTree" class="tbtn" title="Ảnh này đã xem và không có cây cà phê. Được lưu như một nhãn rỗng và đi vào bộ xuất như ảnh nền.">∅ Không có cây</button>
       <button id="save" class="save">📦 Xuất data</button>
     </div>
     <div id="wrap"><canvas id="cv"></canvas></div>
@@ -325,6 +330,7 @@
       <div><span>Kéo vùng trống = di chuyển ảnh · lăn chuột = phóng to</span></div>
       <div><span>Rê lên cạnh = hiện điểm mờ ⊕, bấm vào là thêm điểm và kéo được ngay</span></div>
       <div><span>Nháy đúp khi Vẽ tay = đóng vùng</span></div>
+      <div><span>∅ Không có cây = ảnh đã xem, không có tán; vẫn được lưu và xuất như ảnh nền (thumbnail hiện ∅)</span></div>
     </div>
     <div class="fbfoot"><button id="helpOk" class="btn" style="width:auto">Đóng</button></div>
   </div>
@@ -376,6 +382,10 @@ function clsColor(id){const c=clsById(id);return c?c.color:'#f97316';}
 let imgs=[],labeledSet=new Set(),current=null,img=new Image(),curFolder='',pathFilter='';
 let baseFit=1,zoom=1,scale=1,ox=0,oy=0;
 let inst=[],store={},hist=[],saveTimer=null,rid=1,selToken=0,dirty=false,ready=false;
+// Ảnh "đã xem, không có cây": nhãn rỗng được LƯU (khác với chưa gán) để ảnh
+// nền đi vào bộ xuất. emptyMark = ảnh hiện tại; emptyStore = theo ảnh, cùng
+// vòng đời với store; emptySet = server báo ảnh nào đang có nhãn rỗng.
+let emptyMark=false,emptyStore={},emptySet=new Set();
 let mode='sam-click',sel=-1,dragPt=-1,dragVi=-1,dragStart=null,origPoly=null,softD=null,dragSoft=true,hovPt=-1,ghost=null,draft=[],boxStart=null,mouse=null,pan=null;
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d'),wrap=document.getElementById('wrap');
 const $=id=>document.getElementById(id);
@@ -502,7 +512,7 @@ function renderStats(){
  $('stUnlab').textContent=Math.max(0,total-lab);$('stCls').textContent=classes.length;
  const sub=pathFilter?(' · '+pathFilter):' · tất cả';
  document.querySelectorAll('#leftcol .stat .slbl')[0].textContent='Total Images'+sub;}
-async function loadLabeled(){try{const d=await(await fetch('/api/labeled?t='+Date.now(),{cache:'no-store'})).json();labeledSet=new Set(d.labeled||[]);}catch(e){labeledSet=new Set();}renderStats();}
+async function loadLabeled(){try{const d=await(await fetch('/api/labeled?t='+Date.now(),{cache:'no-store'})).json();labeledSet=new Set(d.labeled||[]);emptySet=new Set(d.empty||[]);}catch(e){labeledSet=new Set();emptySet=new Set();}renderStats();}
 async function loadFolders(){try{const d=await(await fetch('/api/folders',{cache:'no-store'})).json();
  curFolder=d.current||'';const s=$('folder');s.innerHTML='';
  const o0=document.createElement('option');o0.value='';o0.textContent='📁 Tất cả các field';s.appendChild(o0);
@@ -530,7 +540,7 @@ async function preview(v){const sc=scopeOf(v);
  return PREV[sc];}
 function fmtCnt(p){if(!p)return '—';
  // Không vùng nào bị loại lúc xuất nữa: mọi polygon đã vẽ đều là một tán.
- return p.images_labeled+'/'+p.images_total+' ảnh · '+p.annotations+' vùng';}
+ return p.images_labeled+'/'+p.images_total+' ảnh · '+p.annotations+' vùng'+(p.images_empty?' · '+p.images_empty+' ảnh nền':'');}
 async function refreshCounts(){
  $('scRowDir').querySelector('.exn').textContent='Thư mục đang chọn'+(pathFilter?(' · '+pathFilter):' · tất cả');
  $('scRowImg').querySelector('.exn').textContent='Ảnh hiện tại'+(current?(' · '+current.split('/').pop()):'');
@@ -675,11 +685,11 @@ function renderThumbs(){const box=$('thumbs');box.innerHTML='';
  // Hiện số ĐANG LỌC, không phải tổng — bản cũ luôn ghi tổng nên chọn thư mục
  // 67 ảnh vẫn thấy 118.
  $('nimg').textContent=(list.length===imgs.length)?imgs.length:(list.length+' / '+imgs.length);
- list.forEach(p=>{const row=document.createElement('div');row.className='thumb'+(p===current?' active':'')+(isDone(p)?' done':'');row.dataset.n=p;
+ list.forEach(p=>{const row=document.createElement('div');row.className='thumb'+(p===current?' active':'')+(isDone(p)?' done':'')+(emptySet.has(p)?' empty':'');row.dataset.n=p;
   const im=document.createElement('img');im.loading='lazy';im.src='/api/thumb/'+enc(p);
   const nm=document.createElement('div');nm.className='tname';nm.textContent=p.split('/').pop();nm.title=p;
   row.appendChild(im);row.appendChild(nm);row.onclick=()=>selectImg(p);box.appendChild(row);});}
-function updateThumbActive(){document.querySelectorAll('#thumbs .thumb').forEach(t=>{t.classList.toggle('active',t.dataset.n===current);t.classList.toggle('done',isDone(t.dataset.n));});}
+function updateThumbActive(){document.querySelectorAll('#thumbs .thumb').forEach(t=>{t.classList.toggle('active',t.dataset.n===current);t.classList.toggle('done',isDone(t.dataset.n));t.classList.toggle('empty',emptySet.has(t.dataset.n));});}
 async function loadImgs(){imgs=await(await fetch('/api/images',{cache:'no-store'})).json();
  await loadLabeled();renderPTree();renderThumbs();renderStats();
  if(imgs.length)selectImg(imgs[0]);else{inst=[];current=null;draw();renderRegions();}}
@@ -688,23 +698,24 @@ function pickCls(id){return clsById(id)?id:activeCls;}
 function mergeCats(cats){if(!cats)return;let ch=false;cats.forEach(c=>{if(c&&c.id!=null&&!clsById(c.id)){classes.push({id:c.id,name:c.name||('Lớp '+c.id),color:c.color||'#888'});if(c.id>clsMax)clsMax=c.id;ch=true;}});if(ch){saveClasses();renderClasses();renderStats();}}
 async function selectImg(t){if(current&&ready&&dirty){flush();}if(current&&ready){store[current]=inst.map(cloneR);}
  const tok=++selToken;
- current=t;ready=false;dirty=false;draft=[];sel=-1;dragPt=-1;hovPt=-1;ghost=null;hist=[];inst=[];updateThumbActive();
+ current=t;ready=false;dirty=false;draft=[];sel=-1;dragPt=-1;hovPt=-1;ghost=null;hist=[];inst=[];emptyMark=false;updateThumbActive();
  maskImg=null;maskToken++;clearTimeout(maskTimer);
  img=new Image();img.onload=()=>{if(tok===selToken){sizeCanvas();resetView();renderRegions();}};
  img.src='/api/image/'+enc(t)+'?t='+Date.now();
  // Ẩn/hiện là trạng thái xem của LẦN đang mở, không theo ảnh: quay lại ảnh cũ
  // mọi vùng đều hiện, khỏi phải nhớ đã ẩn gì ở đâu.
- if(store[t]){inst=store[t].map(cloneR);inst.forEach(r=>{r.vis=true;});}
+ if(store[t]){inst=store[t].map(cloneR);inst.forEach(r=>{r.vis=true;});emptyMark=!!emptyStore[t];}
  else{let d=null;try{d=await(await fetch('/api/load/'+enc(t)+'?t='+Date.now(),{cache:'no-store'})).json();}catch(e){d=null;}
   if(tok!==selToken)return;
   if(d){mergeCats(d.categories);inst=(d.polygons||[]).map((pp,k)=>{const h=(d.hsv_ratios&&d.hsv_ratios[k]!=null)?d.hsv_ratios[k]:((d.ratios&&d.ratios[k]!=null)?d.ratios[k]:null);
     const o=(d.otsu_ratios&&d.otsu_ratios[k]!=null)?d.otsu_ratios[k]:null;const pcts={hsv:h,otsu:o};
     // Mở lại ảnh: hiện % của phương pháp đang chọn; nhãn giữ như đã lưu.
     return {poly:pp.slice(),cls:pickCls(d.classes&&d.classes[k]),vis:true,id:rid++,pct:pcts[fmethod],manual:!!(d.manual&&d.manual[k]),pcts:pcts,od:(d.otsu_info&&d.otsu_info[k])||null};});}else inst=[];
-  store[t]=inst.map(cloneR);}
+  emptyMark=!!(d&&d.empty&&!inst.length);
+  store[t]=inst.map(cloneR);emptyStore[t]=emptyMark;}
  if(tok!==selToken)return;
- ready=true;$('count').textContent=inst.length+' Vùng';renderRegions();draw();renderClasses();scheduleMask();}
-function payload(){return JSON.stringify(Object.assign({name:current,width:img.width||0,height:img.height||0,polygons:inst.map(r=>r.poly),classes:inst.map(r=>r.cls),manual:inst.map(r=>!!r.manual),categories:classes},flowerParams()));}
+ ready=true;$('count').textContent=countText();syncEmptyBtn();renderRegions();draw();renderClasses();scheduleMask();}
+function payload(){return JSON.stringify(Object.assign({name:current,width:img.width||0,height:img.height||0,polygons:inst.map(r=>r.poly),classes:inst.map(r=>r.cls),manual:inst.map(r=>!!r.manual),categories:classes,empty:(emptyMark&&!inst.length)},flowerParams()));}
 // Chỉ báo lưu. Bản cũ gọi fetch rồi bỏ qua kết quả, nên server có báo lỗi cũng
 // không ai thấy — kể cả khi nó không đọc được ảnh và không tính được mật độ hoa.
 function svst(cls,txt,title){const el=$('svst');if(!el)return;
@@ -721,9 +732,20 @@ async function saveNow(){if(!current||!ready)return;dirty=false;
 function scheduleSave(){if(!current)return;dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(saveNow,700);}
 function flush(){clearTimeout(saveTimer);if(dirty)saveNow();}
 function beacon(){if(!current||!ready||!dirty)return;try{navigator.sendBeacon('/api/save',new Blob([payload()],{type:'application/json'}));dirty=false;}catch(e){}}
-function stash(){if(current)store[current]=inst.map(cloneR);}
-function persist(){stash();scheduleSave();if(current){if(inst.length)labeledSet.add(current);else labeledSet.delete(current);}renderStats();updateThumbActive();renderClasses();scheduleMask();}
-function refresh(){$('count').textContent=inst.length+' Vùng';persist();renderRegions();draw();}
+function stash(){if(current){store[current]=inst.map(cloneR);emptyStore[current]=emptyMark;}}
+// Vẽ được một vùng là ảnh hết "không có cây"; xoá hết vùng thì về chưa gán
+// chứ không tự thành không-có-cây — cờ đó phải do người bấm.
+function persist(){if(inst.length)emptyMark=false;stash();scheduleSave();
+ if(current){if(inst.length||emptyMark)labeledSet.add(current);else labeledSet.delete(current);
+  if(emptyMark&&!inst.length)emptySet.add(current);else emptySet.delete(current);}
+ renderStats();updateThumbActive();renderClasses();syncEmptyBtn();scheduleMask();}
+function countText(){return inst.length+' Vùng'+((emptyMark&&!inst.length)?' · không có cây':'');}
+function syncEmptyBtn(){const b=$('noTree');if(!b)return;const on=emptyMark&&!inst.length;
+ b.classList.toggle('on',on);b.disabled=!current||!ready||inst.length>0;
+ b.title=inst.length?'Ảnh đang có '+inst.length+' vùng — xoá hết trước nếu muốn đánh dấu không có cây':
+  (on?'Đang đánh dấu không có cây. Bấm lại để bỏ (ảnh trở về chưa gán).':'Ảnh này đã xem và không có cây cà phê. Được lưu như một nhãn rỗng và đi vào bộ xuất như ảnh nền.');}
+$('noTree').onclick=()=>{if(!current||!ready||inst.length)return;emptyMark=!emptyMark;persist();$('count').textContent=countText();};
+function refresh(){$('count').textContent=countText();persist();renderRegions();draw();}
 function pushHist(){hist.push(JSON.stringify(inst));if(hist.length>60)hist.shift();}
 function undo(){if(!hist.length)return;inst=JSON.parse(hist.pop());sel=-1;dragPt=-1;hovPt=-1;refresh();}
 function addRegion(poly){inst.push({poly:poly,cls:activeCls,vis:true,id:rid++,pct:null,manual:false,pcts:null,od:null});return inst.length-1;}
