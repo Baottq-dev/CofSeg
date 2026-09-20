@@ -70,7 +70,7 @@ class MaskRCNNTrainer(Trainer):
         super().__init__(cfg, run_dir)
         self.train_args: dict = {**MASKRCNN_DEFAULTS, **(cfg.get("train") or {})}
         d = cfg.get("data") or {}
-        self.root = Path(d.get("root", "data/export/dataset_v1"))
+        self.root = Path(d.get("root", "data/export/f4"))
         self.train_split = d.get("train", "train")
         self.val_split = d.get("val", "val")
         self.min_area = float(d.get("min_area", 0.0))

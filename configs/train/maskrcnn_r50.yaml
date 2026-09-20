@@ -18,10 +18,13 @@ name: maskrcnn-r50
 trainer: maskrcnn
 
 data:
-  root: data/export/dataset_v1
+  # Một fold do scripts/make_fold.py cắt ra theo configs/dataset/folds.yaml.
+  # Đổi fold: --set data.root=data/export/f2. Tên fold KHÔNG vào tên run,
+  # nên ghi nó vào --name hoặc đọc lại từ dataset_check.json của run.
+  root: data/export/f4
   train: train
   val: val
-  # Cùng ngưỡng với configs/dataset/dataset_v1.yaml: loại đúng một nhãn hỏng 1.4 px2.
+  # Bộ có đúng một nhãn hỏng 1.4 px2 (bbox 19.2 x 2.4); ngưỡng này loại nó.
   min_area: 50.0
   # limit: 8   # chỉ để chạy khói; bỏ trống khi huấn luyện thật
 
@@ -56,7 +59,7 @@ train:
 
   # ---- chấm val ----
   # Mỗi epoch chấm mask AP trên val bằng pycocotools (val <= 120 ảnh, ~1 phút).
-  # best.pt theo AP; nhớ rằng val chỉ có 20 ảnh của một field ở dataset_v1.
+  # best.pt theo AP trên val = một ruộng nội suy (field_2 hoặc field_4, ~100 ảnh).
   val_every: 1
   val_conf: 0.05
   patience: 0
