@@ -329,6 +329,10 @@ class SaveReq(FlowerParams):
     manual: list = []        # True = mức hoa do người gán tay -> máy không ghi đè
     categories: list = []    # [{id, name, color}, ...] danh sách lớp của dự án
     confs: list = []         # confidence từng polygon (SAM/detector); mặc định 1.0
+    # True = người gán đã XEM ảnh và xác nhận không có tán nào. Khác với
+    # "chưa gán": file nhãn vẫn được ghi (polygons rỗng) để ảnh này đi vào bộ
+    # xuất như ảnh nền. Không có cờ mà polygons rỗng thì xoá file như trước.
+    empty: bool = False
     # sat_max/val_min/method/tham số Otsu: từ FlowerParams — tính lại lúc lưu.
 
 
@@ -364,17 +368,37 @@ def get_thumb(name: str, w: int = 96):
     return Response(content=buf.tobytes(), media_type="image/jpeg")
 
 
+def _is_empty_label(data):
+    # Nhãn "đã xem, không có cây": cờ empty, hoặc file định dạng mới mà không
+    # còn polygon nào (chỉ /api/save với empty=True mới ghi ra file như thế).
+    if not isinstance(data, dict):
+        return False
+    return bool(data.get("empty")) or (
+        isinstance(data.get("polygons"), list) and not data["polygons"])
+
+
+def _empty_label_file(jp):
+    try:
+        return _is_empty_label(json.load(open(jp, encoding="utf-8")))
+    except Exception:
+        return False
+
+
 @app.get("/api/labeled")
 def labeled():
-    # Danh sách ảnh đã có nhãn (đã lưu) — để thống kê & đánh dấu.
+    # Danh sách ảnh đã có nhãn (đã lưu) — để thống kê & đánh dấu. `empty` là
+    # tập con: đã xem và xác nhận không có tán, để thumbnail hiện khác ✔.
     root = Path(ROOT)
     names = [p.relative_to(root).as_posix()
              for p in root.rglob("*") if p.suffix.lower() in EXTS]
-    done = []
+    done, empty = [], []
     for n in names:
-        if os.path.exists(_json_path(n)):
+        jp = _json_path(n)
+        if os.path.exists(jp):
             done.append(n)
-    return {"labeled": done, "total": len(names)}
+            if _empty_label_file(jp):
+                empty.append(n)
+    return {"labeled": done, "empty": empty, "total": len(names)}
 
 
 class FlowerReq(FlowerParams):
@@ -478,7 +502,7 @@ def load(name: str):
     fp = _json_path(name)
     if not os.path.exists(fp):
         return {"polygons": [], "classes": [], "ratios": [], "manual": [],
-                "categories": []}
+                "categories": [], "empty": False}
     data = json.load(open(fp, encoding="utf-8"))
     polys, cls, ratios, manual = [], [], [], []
     hsv_r, otsu_r, otsu_i = [], [], []
@@ -523,7 +547,8 @@ def load(name: str):
     return {"polygons": polys, "classes": cls, "ratios": ratios,
             "manual": manual, "categories": data.get("categories", []),
             "hsv_ratios": hsv_r, "otsu_ratios": otsu_r, "otsu_info": otsu_i,
-            "flower_method": data.get("flower_method", "hsv")}
+            "flower_method": data.get("flower_method", "hsv"),
+            "empty": _is_empty_label(data)}
 
 
 @app.post("/api/save")
@@ -540,6 +565,20 @@ def save(req: SaveReq):
             cls.append(req.classes[i] if i < len(req.classes) else None)
             man.append(bool(req.manual[i]) if i < len(req.manual) else False)
     if not polys:
+        if req.empty:
+            # Ảnh đã xem, không có cây: ghi file nhãn RỖNG. Ảnh nền có mặt trong
+            # bộ xuất (COCO không annotation, YOLO .txt rỗng, mask toàn 0) thì
+            # model mới bị phạt khi vẽ tán lên đất trống, và sai số đếm trên
+            # ảnh không cây mới đo được. Không có gì để tính hoa nên không đọc ảnh.
+            doc = dict(path=rel, field=_field_of(rel),
+                       img_w=req.width, img_h=req.height,
+                       n_canopy=0, empty=True, conf_thr=DEFAULT_CONF_THR,
+                       flower_method=req.method, polygons=[],
+                       flower_stats=dict(no_flower=0, few_flowers=0,
+                                         many_flowers=0, very_many_flowers=0,
+                                         avg_ratio=0.0, max_ratio=0.0))
+            json.dump(doc, open(out, "w", encoding="utf-8"), ensure_ascii=False)
+            return {"saved": out, "count": 0, "empty": True}
         # Không còn vùng nào -> xoá file cũ để ảnh không bị đánh dấu "đã nhãn".
         if os.path.exists(out):
             os.remove(out)
@@ -887,7 +926,7 @@ def _export_dataset(items, req):
 
     for sp in (["all"] if no_split else list(SPLITS)):
         sp_items = splits.get(sp) or []
-        summary[sp] = {"images": 0, "annotations": 0}
+        summary[sp] = {"images": 0, "annotations": 0, "empty_images": 0}
         if not sp_items:
             continue
         sub = "" if no_split else sp
@@ -916,6 +955,8 @@ def _export_dataset(items, req):
             per_image.append((name, rel, w, h, recs))
             summary[sp]["images"] += 1
             summary[sp]["annotations"] += len(recs)
+            if not recs:
+                summary[sp]["empty_images"] += 1
         if not per_image:
             continue
 
@@ -982,6 +1023,12 @@ def _export_dataset(items, req):
         # masks/corrected/, lấy ra lúc nào cũng được.
         flower_note=("khong xuat; xem data/masks/corrected/*.json neu can"),
         instance_mask_values="0=background, 1..N = từng tán, khớp thứ tự COCO",
+        # Ảnh đã xem mà không có tán: vẫn nằm trong images/ với COCO entry
+        # không annotation, YOLO .txt rỗng (ultralytics coi là background
+        # image), mask toàn 0. Đếm riêng để báo cáo ghi được số ảnh nền.
+        empty_images_note=("images with a reviewed empty label are exported as "
+                           "background: COCO image without annotations, empty "
+                           "YOLO label file, all-zero mask"),
         problems=problems)
     json.dump(meta, open(os.path.join(root_out, "meta.json"), "w",
                          encoding="utf-8"), ensure_ascii=False, indent=2)
@@ -1013,6 +1060,7 @@ def export_preview(scope: str = ""):
     sc = (scope or "").strip("/")
     total = 0
     labeled = 0
+    empty = 0
     regions = 0
     folders = {}
     for p in sorted(root.rglob("*")):
@@ -1031,10 +1079,12 @@ def export_preview(scope: str = ""):
         except Exception:
             continue
         regions += len(recs)
+        if not recs:
+            empty += 1
         g = _group_key(name)
         folders[g] = folders.get(g, 0) + 1
     return {"scope": sc, "images_total": total, "images_labeled": labeled,
-            "annotations": regions,
+            "annotations": regions, "images_empty": empty,
             "folders": [{"key": k, "images": folders[k]}
                         for k in sorted(folders)]}
 
