@@ -467,12 +467,18 @@ function renderRegions(){const box=$('regions');box.innerHTML='';$('rcount').tex
   pc.title='Tỉ lệ pixel hoa ('+methodName()+')\nHSV '+pctTxt(ps.hsv)+' · Otsu '+pctTxt(ps.otsu)+(od?' ['+(od.channel||'')+' T='+(od.thr==null?'—':Math.round(od.thr))+(od.thr1!=null?' T1='+Math.round(od.thr1):'')+' η='+(od.sep==null?'—':(+od.sep).toFixed(2))+(od.class_s!=null?' S lớp='+Math.round(od.class_s):'')+' '+(od.n_kept==null?'':od.n_kept+'/'+od.n_blobs+' blob')+(od.rejected?' '+od.rejected:'')+']':'');
   head.title='#'+r.id+' · '+(r.poly.length/2)+' đỉnh';
   head.appendChild(dot);head.appendChild(idb);head.appendChild(cn);head.appendChild(pc);
-  head.onclick=()=>{sel=i;setMode('select');tidySel(i);renderRegions();draw();};
+  // Chọn từ danh sách thì vùng phải hiện: vùng được chọn luôn nhìn thấy được.
+  head.onclick=()=>{if(!r.vis){pushHist();r.vis=true;}sel=i;setMode('select');tidySel(i);renderRegions();draw();};
   const act=document.createElement('div');act.className='ract';
   const selc=document.createElement('select');selc.title='Gán mức mật độ thủ công';classes.forEach(cc=>{const o=document.createElement('option');o.value=cc.id;o.textContent=cc.name;if(cc.id===r.cls)o.selected=true;selc.appendChild(o);});
   selc.onchange=()=>{pushHist();r.cls=parseInt(selc.value);r.manual=true;persist();draw();renderRegions();};
-  const bF=document.createElement('button');bF.textContent='⚡';bF.title='Đếm hoa & tự phân loại vùng này';bF.onclick=()=>computeFlower([i],true);
-  const bV=document.createElement('button');bV.textContent=r.vis?'👁':'🚫';bV.title='Ẩn/hiện';bV.onclick=()=>{r.vis=!r.vis;draw();renderRegions();};
+  const bF=document.createElement('button');bF.textContent='⚡';bF.title='Đếm hoa & tự phân loại vùng này';bF.onclick=()=>{pushHist();computeFlower([i],true);};
+  // Ẩn/hiện đi vào lịch sử: trước đây Ctrl+Z ngay sau khi ẩn hoàn tác thao tác
+  // TRƯỚC ĐÓ (thường là chính lần SAM click tạo ra vùng) -> vùng mất thật.
+  // Ẩn vùng đang chọn thì bỏ chọn luôn, để phím Delete và chuột trên canvas
+  // không còn nhắm vào thứ không nhìn thấy.
+  const bV=document.createElement('button');bV.textContent=r.vis?'👁':'🚫';bV.title=r.vis?'Ẩn vùng này (chỉ trên màn hình, vẫn lưu)':'Hiện lại vùng này';
+  bV.onclick=()=>{pushHist();r.vis=!r.vis;if(!r.vis&&sel===i){sel=-1;dragPt=-1;hovPt=-1;ghost=null;}draw();renderRegions();};
   const bD=document.createElement('button');bD.className='del';bD.textContent='🗑';bD.title='Xoá vùng';
   bD.onclick=()=>{pushHist();inst.splice(i,1);if(sel===i)sel=-1;else if(sel>i)sel--;persist();draw();renderRegions();};
   act.appendChild(selc);act.appendChild(bF);act.appendChild(bV);act.appendChild(bD);
@@ -676,7 +682,9 @@ async function selectImg(t){if(current&&ready&&dirty){flush();}if(current&&ready
  maskImg=null;maskToken++;clearTimeout(maskTimer);
  img=new Image();img.onload=()=>{if(tok===selToken){sizeCanvas();resetView();renderRegions();}};
  img.src='/api/image/'+enc(t)+'?t='+Date.now();
- if(store[t]){inst=store[t].map(cloneR);}
+ // Ẩn/hiện là trạng thái xem của LẦN đang mở, không theo ảnh: quay lại ảnh cũ
+ // mọi vùng đều hiện, khỏi phải nhớ đã ẩn gì ở đâu.
+ if(store[t]){inst=store[t].map(cloneR);inst.forEach(r=>{r.vis=true;});}
  else{let d=null;try{d=await(await fetch('/api/load/'+enc(t)+'?t='+Date.now(),{cache:'no-store'})).json();}catch(e){d=null;}
   if(tok!==selToken)return;
   if(d){mergeCats(d.categories);inst=(d.polygons||[]).map((pp,k)=>{const h=(d.hsv_ratios&&d.hsv_ratios[k]!=null)?d.hsv_ratios[k]:((d.ratios&&d.ratios[k]!=null)?d.ratios[k]:null);
@@ -935,7 +943,9 @@ cv.addEventListener('mousedown',async e=>{
  else if(mode==='sam-box'){boxStart=[x,y];}
  else if(mode==='draw'){draft.push(cX(x),cY(y));draw();}
  else if(mode==='select'){
-  if(sel>=0&&inst[sel]){const k=hitVertex(inst[sel].poly,x,y);
+  // Chỉ vùng ĐANG HIỆN mới nhận chuột: vùng ẩn mà vẫn được chọn thì click gần
+  // đỉnh vô hình là kéo méo nó, chuột phải là xoá đỉnh nó, không thấy gì hết.
+  if(sel>=0&&inst[sel]&&inst[sel].vis){const k=hitVertex(inst[sel].poly,x,y);
    if(k>=0){if(e.button===2){pushHist();inst[sel].poly.splice(k,2);if(inst[sel].poly.length<6){inst.splice(sel,1);sel=-1;}persist();renderRegions();draw();return;}
     pushHist();
     // beginDrag chèn điểm CHỈ dưới bút và bám đúng đỉnh vừa bấm (bản cũ dò lại
@@ -979,7 +989,7 @@ cv.addEventListener('mousemove',e=>{
   draw();}
  else if(mode==='sam-box'&&boxStart){draw();}
  else if(mode==='draw'&&draft.length){draw();}
- else if(mode==='select'){const hv=(sel>=0&&inst[sel])?hitVertex(inst[sel].poly,mouse[0],mouse[1]):-1;
+ else if(mode==='select'){const hv=(sel>=0&&inst[sel]&&inst[sel].vis)?hitVertex(inst[sel].poly,mouse[0],mouse[1]):-1;
   // Đỉnh thật được ưu tiên; chỉ khi trượt hết mới tìm điểm trên cạnh.
   const g=(hv<0&&sel>=0&&inst[sel]&&inst[sel].vis)?
    hitEdge(inst[sel].poly,mouse[0],mouse[1]):null;
@@ -998,10 +1008,16 @@ cv.addEventListener('mouseup',async e=>{
 cv.addEventListener('mouseleave',()=>{if(!pan&&dragPt<0){hovPt=-1;ghost=null;if(mode==='select')cv.style.cursor='crosshair';draw();}});
 cv.addEventListener('dblclick',()=>{if(mode==='draw'&&draft.length>=6){pushHist();const ni=addRegion(draft.slice());draft=[];sel=inst.length-1;refresh();computeFlower([ni]);}});
 cv.addEventListener('contextmenu',e=>e.preventDefault());
+// Phím tắt chỉ dành cho canvas. Đang gõ trong ô tìm kiếm / ô số Otsu / dropdown
+// lớp thì trả phím về cho ô đó: trước đây gõ "0" là reset zoom, "-" là zoom
+// out, Delete là xoá vùng đang chọn (kể cả vùng đang ẩn, không thấy nó mất).
+function typing(e){const t=e.target,tag=t&&t.tagName;
+ return tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||(t&&t.isContentEditable);}
 window.addEventListener('keydown',e=>{
+ if(typing(e))return;
  if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){e.preventDefault();undo();return;}
  if(e.key==='Escape'){draft=[];draw();}
- if(e.key==='Delete'&&sel>=0){pushHist();inst.splice(sel,1);sel=-1;refresh();}
+ if(e.key==='Delete'&&sel>=0&&inst[sel]&&inst[sel].vis){pushHist();inst.splice(sel,1);sel=-1;refresh();}
  if(e.key==='+'||e.key==='=')zoomAt(cv.width/2,cv.height/2,1.25);
  if(e.key==='-')zoomAt(cv.width/2,cv.height/2,0.8);
  if(e.key==='0')resetView();});
