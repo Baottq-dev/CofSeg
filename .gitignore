@@ -154,3 +154,5 @@ docs/
 predictions/
 weights/
 data/iachim_dataset_export/predictions/
+# Checkout của repo ngoài (Mask2Former, ...) do scripts/remote/setup.sh kéo về
+third_party/

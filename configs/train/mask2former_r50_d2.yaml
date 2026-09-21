@@ -1,0 +1,22 @@
+# Mask2Former R50 (repo gốc facebookresearch/Mask2Former trên detectron2).
+#
+# Cùng backbone R50 với hai model R-CNN; khác ở cơ chế query và mask toàn
+# ảnh ở stride 4. Trọng số khởi đầu: COCO instance R50 của MODEL_ZOO repo.
+# Recipe gốc (AdamW 1e-4 @ batch 16, backbone x0.1, clip gradient, LSJ
+# 0.1-2.0 cắt ô IMAGE_SIZE) giữ nguyên trong Trainer của train_net.py; ở đây
+# chỉ đặt số lớp, số query, độ phân giải, lịch theo epoch.
+#
+# Cần checkout repo + op MSDeformAttn đã biên dịch (scripts/remote/setup.sh):
+#     model.repo: third_party/Mask2Former
+base: maskrcnn_r50_d2.yaml
+name: mask2former-r50-d2
+model:
+  arch: mask2former
+  repo: third_party/Mask2Former
+train:
+  # Query-based hội tụ chậm hơn R-CNN; recipe COCO là 50 epoch trên 118k ảnh,
+  # với ~600 ảnh train thì 100 epoch (~15k iteration ở batch 4) là mức khởi đầu.
+  epochs: 100
+  # >= số tán tối đa một ảnh (48); 100 là mặc định của recipe.
+  num_queries: 100
+  # LSJ của recipe gốc tự lật ngang; flipud/rot90 không áp cho mapper này.

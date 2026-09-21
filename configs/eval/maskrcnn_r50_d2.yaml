@@ -1,0 +1,12 @@
+# Mask R-CNN R50-FPN (detectron2). Trọng số: --set model.weights=<best.pth>
+# Cần detectron2; ở máy không có nó, chấm predictions.json của run bằng
+# configs/eval/coco_predictions.yaml.
+base: _base.yaml
+name: maskrcnn-r50-d2
+model:
+  name: detectron2
+  arch: maskrcnn
+  # d2_config.yaml cạnh best.pth giữ imgsz và mọi khoá của lần huấn luyện.
+  weights: runs/train/CHANGE_ME/weights/best.pth
+  conf: 0.05
+  max_det: 100
