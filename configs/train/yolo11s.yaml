@@ -1,0 +1,20 @@
+# Finetune YOLO11s-seg trên bộ tán cà phê — đại diện nhóm real-time của bảng.
+#
+# Vai trò: trả lời "đưa model lên drone bay trực tiếp thì mất bao nhiêu độ
+# chính xác so với mốc Mask R-CNN". Đầu mặt nạ prototype (lưới imgsz/4) như
+# v8 và 26; khác ở phần phát hiện (v11 vẫn NMS như v8, 26 thì không). Cùng
+# cỡ "s" với hai bản kia để cỡ model không trộn vào so sánh; cần số cho phần
+# cứng nhúng thật thì thêm một file y hệt với model: weights/yolo11n-seg.pt.
+#
+# Toàn bộ khối train kế thừa từ yolo26s.yaml — cùng độ phân giải, cùng tăng
+# cường cho ảnh nadir, cùng tắt mosaic. Chỉ khác trọng số. Với v11, conf/iou
+# lúc val và predict CÓ tác dụng (NMS).
+#
+# Độ phân giải ghi đè lúc chạy, tên thư mục run lấy giá trị thật:
+#     python scripts/train.py --config configs/train/yolo11s.yaml --imgsz 1024 --batch 4
+#     python scripts/train.py --config configs/train/yolo11s.yaml --set data.yaml=data/export/f2/data.yaml
+
+base: yolo26s.yaml
+name: yolo11s-seg
+# Thiếu file thì ultralytics tự tải bản phát hành về đúng đường dẫn này.
+model: weights/yolo11s-seg.pt
