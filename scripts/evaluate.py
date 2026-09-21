@@ -72,6 +72,9 @@ def run_config(a, extra: list[str]) -> int:
     limit = a.limit if a.limit is not None else ev.get("limit")
 
     run_name = a.name or cfg.get("name") or Path(a.config).stem
+    # config.yaml của lần chấm phải ghi đúng tên đã dùng (--name thắng file),
+    # vì summarize_folds.py đọc tên "<model>_<fold>" từ đó.
+    cfg["name"] = run_name
     tag = data["split"] + (f"_i{cfg['model']['imgsz']}" if "imgsz" in cfg["model"] else "")
     run_dir = artifacts.create_run_dir(a.runs, "eval", run_name, tag)
     artifacts.write_env(run_dir)
