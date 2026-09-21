@@ -52,3 +52,16 @@ def test_yolo_trainer_declares_ultralytics_params():
     assert names is not None and {"imgsz", "batch", "epochs", "mask_ratio"} <= names
     assert YoloTrainer.locked_params() == {"data", "project", "name", "exist_ok"}
     assert YoloTrainer.locked_params() <= names
+
+
+def test_memory_wall_scales_with_the_card(monkeypatch):
+    """0.88 x VRAM: tái tạo đúng vách 7.0 GB đo trên card 8 GB, và không còn là
+    hằng số sai khi chạy trên card 24 GB."""
+    from canopyseg.training import memory
+
+    monkeypatch.setattr(memory, "total_gb", lambda device=0: 8.0)
+    assert memory.wall_gb() == 7.0
+    monkeypatch.setattr(memory, "total_gb", lambda device=0: 24.0)
+    assert memory.wall_gb() == 21.1
+    monkeypatch.setattr(memory, "total_gb", lambda device=0: None)
+    assert memory.wall_gb() is None

@@ -29,6 +29,7 @@ from ..evaluation.coco_eval import evaluate as coco_evaluate
 from ..evaluation.coco_eval import predictions_to_coco
 from ..models.maskrcnn import MaskRCNNModel, build_maskrcnn, save_checkpoint
 from ..registry import register
+from . import memory
 from .base import Trainer
 
 #: Toàn bộ tham số khối `train:` nhận, kèm mặc định. Đây cũng là danh sách mà
@@ -59,9 +60,7 @@ MASKRCNN_DEFAULTS: dict = {
     "log_every": 20,
 }
 
-#: Vách bộ nhớ thực nghiệm trên card 8 GB này: vượt qua thì driver tràn sang
-#: RAM hệ thống và chậm đi hàng trăm lần mà không báo OOM (xem trainer YOLO).
-MEMORY_WALL_GB = 7.0
+# Vách bộ nhớ (0.88 x VRAM, đo trên card 8 GB: 7.0 GB) nằm ở training/memory.py.
 
 
 @register("trainer", "maskrcnn")
@@ -219,15 +218,16 @@ class MaskRCNNTrainer(Trainer):
             torch.cuda.empty_cache()
         per_batch = peak
         batch = int(a["batch"])
+        wall = memory.wall_gb()
         return {
             "supported": True,
             "imgsz": int(a["imgsz"]),
             "batch": batch,
             "peak_gb": round(per_batch, 2),
-            "under_wall": per_batch < MEMORY_WALL_GB,
-            "wall_gb": MEMORY_WALL_GB,
+            "under_wall": per_batch < wall,
+            "wall_gb": wall,
             # Ngoại suy tuyến tính theo batch; chỉ là gợi ý, xác nhận bằng chạy thật.
-            "suggested_batch": max(1, int(batch * MEMORY_WALL_GB / max(per_batch, 1e-6))),
+            "suggested_batch": max(1, int(batch * wall / max(per_batch, 1e-6))),
             "objects_in_probe": n_obj,
             "seconds": round(time.time() - t0, 1),
             "note": "đỉnh đo trên 2 iteration; batch dày vùng hơn sẽ cao hơn một chút",

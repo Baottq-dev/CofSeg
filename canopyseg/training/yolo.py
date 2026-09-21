@@ -25,6 +25,7 @@ import json
 from pathlib import Path
 
 from ..registry import register
+from . import memory
 from .base import Trainer
 
 # Mặc định riêng cho ảnh UAV nadir, đè lên mặc định của ultralytics.
@@ -114,7 +115,8 @@ class YoloTrainer(Trainer):
         RAM hệ thống: 1536/batch 2 chạy 1.25 it/s, còn 1280/batch 4 tụt xuống
         179 s/it — chậm 220 lần mà không có lỗi nào. Nên coi con số ở đây là
         cận trên lạc quan và LUÔN xác nhận bằng một lần chạy ngắn có nhìn cột
-        GPU_mem; ngưỡng an toàn thực nghiệm trên card 8 GB này là ~7.0 GB.
+        GPU_mem; ngưỡng an toàn là 0.88 x VRAM (7.0 GB trên card 8 GB này),
+        xem training/memory.py.
         """
         import torch
         from ultralytics import YOLO
@@ -145,9 +147,10 @@ class YoloTrainer(Trainer):
             # Hệ số 0.4 rút từ đo thật: autobatch nói 5, thực tế chạy được 2.
             "recommended_batch": max(1, int(int(batch) * 0.4)),
             "free_mb_before": round(free_before),
+            "wall_gb": memory.wall_gb(),
             "note": (
                 "suggested chỉ tính chiều thuận nên lạc quan ~2.5 lần; "
-                "xác nhận bằng một lần chạy ngắn, giữ GPU_mem dưới ~7.0G "
+                "xác nhận bằng một lần chạy ngắn, giữ GPU_mem dưới wall_gb "
                 "để không tràn sang RAM hệ thống"
             ),
         }

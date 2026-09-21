@@ -31,8 +31,9 @@ data:
 train:
   # ---- độ phân giải và batch ----
   # imgsz là CẠNH DÀI sau khi thu, cùng nghĩa với YOLO. Ảnh 2560x1440 -> 1024x576.
-  # Chưa đo vách bộ nhớ cho model này trên card 8 GB; chạy --probe trước, nó
-  # chạy thật hai iteration và báo đỉnh bộ nhớ so với vách 7.0 GB.
+  # Chạy --probe trước: nó chạy thật hai iteration và báo đỉnh bộ nhớ so với
+  # vách 0.88 x VRAM của card (7.0 GB trên 8 GB, ~21 GB trên 24 GB). Đo được
+  # trên 4060: 1024/batch 2 = 2.35 GB, gợi ý batch 5.
   imgsz: 1024
   batch: 2
   epochs: 50
