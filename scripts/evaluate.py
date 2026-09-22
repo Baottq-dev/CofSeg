@@ -151,7 +151,7 @@ def run_native(a, extra: list[str]) -> int:
         raise SystemExit(f"Không thấy trọng số: {weights}")
     data = Path(a.data)
     if not data.exists():
-        raise SystemExit(f"Không thấy {data}. Chạy scripts/prepare_yolo_dataset.py trước.")
+        raise SystemExit(f"Không thấy {data}. Cắt fold trước: scripts/make_fold.py --export <bản xuất> --all")
     kw = cli.parse_overrides(extra, set(vars(get_cfg())), NATIVE_LOCKED, what="val()")
     split = a.split or "test"
 

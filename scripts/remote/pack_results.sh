@@ -10,7 +10,11 @@ LIST=$(mktemp)
   ls preds/*.json 2>/dev/null
   ls runs/remote_*.log 2>/dev/null
   for r in runs/train/*/; do
-    for f in weights/best.pt weights/best.pth weights/d2_config.yaml results.csv config.yaml env.json \
+    # best.pt của YOLO nằm trong ultralytics/weights/ (ultralytics tự đặt);
+    # detectron2 và mmdet để ở weights/ kèm file config để dựng lại model ở nhà.
+    for f in weights/best.pt weights/best.pth ultralytics/weights/best.pt \
+             weights/d2_config.yaml weights/mmdet_config.py \
+             results.csv config.yaml env.json \
              dataset_check.json summary.json test_metrics.json predictions.json run.log; do
       [ -f "$r$f" ] && echo "$r$f"
     done

@@ -87,7 +87,7 @@ class YoloTrainer(Trainer):
 
         if not self.data_yaml.exists():
             raise FileNotFoundError(
-                f"Không thấy {self.data_yaml}. Chạy scripts/prepare_yolo_dataset.py trước."
+                f"Không thấy {self.data_yaml}. Cắt fold trước: scripts/make_fold.py --export <bản xuất> --all"
             )
         info = check_det_dataset(str(self.data_yaml), autodownload=False)
         out = {
