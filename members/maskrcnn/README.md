@@ -20,11 +20,27 @@ này** trên cùng một ruộng. Vì vậy hai thứ phải giữ nghiêm:
   cận dưới của trục biên trong bảng.
 - Xử lý từng ROI riêng, không biết cây bên cạnh → tán chạm nhau hay tràn mask.
 
+## Cách chạy
+
+```bash
+# khói trên máy Linux (bắt buộc làm trước lần chạy thật)
+bash scripts/remote/run_fold.sh f4 --smoke --only maskrcnn
+
+# một fold đầy đủ
+python scripts/train.py --config members/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --set data.root=data/export/f4 --workers 8
+
+# chấm lại ở nhà từ predictions.json mang về
+python scripts/evaluate.py --config configs/eval/coco_predictions.yaml --file preds/maskrcnn_f4.json --set data.root=data/export/f4 --split test
+```
+
+Recipe dùng chung ở `configs/train/_base_d2.yaml` (thuộc cả nhóm — sửa là đổi
+số của cả Cascade lẫn Mask2Former). Cascade: `--only cascade`.
+
 ## Trong thư mục này
 
 | | |
 |---|---|
-| `configs/` | config train/eval của model (thêm ở bước sau) |
+| `configs/train/`, `configs/eval/` | config của model |
 | `notes/` | nhật ký thí nghiệm: chạy gì, ra số gì, nhận xét |
 | `results/` | file kết quả nhỏ chép từ `runs/` (runs/ không vào git) |
 | `plugin.py` | (tuỳ chọn) code riêng của model này |

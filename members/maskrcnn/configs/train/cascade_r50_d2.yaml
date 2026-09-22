@@ -1,0 +1,12 @@
+# Cascade Mask R-CNN R50-FPN — model dự phòng của họ two-stage.
+#
+# Người phụ trách: VanNguyen (cùng họ với mốc 0). Cùng backbone, FPN, đầu mask
+# 28x28 và recipe với mốc 0; chỉ khác ba tầng box head IoU 0.5/0.6/0.7, nên
+# chênh lệch với mốc 0 chỉ do phần định vị.
+#
+# Không nằm trong bộ 4 model chính; chạy khi còn giờ:
+#     bash scripts/remote/run_fold.sh f4 --only cascade
+base: ../../../../configs/train/_base_d2.yaml
+name: cascade-r50-d2
+model:
+  arch: cascade

@@ -1,5 +1,5 @@
 # YOLO + SAM-refine (cắm thêm): giữ số dự đoán và score của YOLO, chỉ thay mặt
-# nạ. So với configs/eval/yolo26s.yaml trên cùng split cho Δ thuần của biên.
+# nạ. So với members/yolo11/configs/eval/yolo26s.yaml trên cùng split cho Δ thuần của biên.
 #     python scripts/evaluate.py --config configs/eval/refine_yolo_sam2.yaml --set model.base.weights=<best.pt>
 base: _base.yaml
 name: yolo26s-plus-sam2refine

@@ -1,0 +1,13 @@
+# Mask2Former R50 (repo gốc trên detectron2). Trọng số: --set model.weights=<best.pth>
+# Cần detectron2 + submodule third_party/Mask2Former; ở máy không có, chấm
+# predictions.json của run bằng configs/eval/coco_predictions.yaml.
+base: ../../../../configs/eval/_base.yaml
+name: mask2former-r50-d2
+model:
+  name: detectron2
+  arch: mask2former
+  repo: third_party/Mask2Former
+  # d2_config.yaml cạnh best.pth giữ imgsz và mọi khoá của lần huấn luyện.
+  weights: runs/train/CHANGE_ME/weights/best.pth
+  conf: 0.05
+  max_det: 100

@@ -21,11 +21,24 @@ chỉnh biên".
 - Cùng backbone R50 với Mask R-CNN và SOLOv2 → chênh lệch là do cơ chế.
 - Số query phải lớn hơn số tán tối đa một ảnh (48); để 100.
 
+## Cách chạy
+
+```bash
+bash scripts/remote/run_fold.sh f4 --smoke --only mask2former
+
+python scripts/train.py --config members/mask2former/configs/train/mask2former_r50_d2.yaml --set data.root=data/export/f4 --workers 8
+
+python scripts/evaluate.py --config configs/eval/coco_predictions.yaml --file preds/mask2former_f4.json --set data.root=data/export/f4 --split test
+```
+
+Recipe dùng chung ở `configs/train/_base_d2.yaml` (thuộc cả nhóm); file của
+model chỉ đặt arch, repo, 100 epoch và số query.
+
 ## Trong thư mục này
 
 | | |
 |---|---|
-| `configs/` | config train/eval (thêm ở bước sau) |
+| `configs/train/`, `configs/eval/` | config của model |
 | `notes/` | nhật ký thí nghiệm: chạy gì, ra số gì, nhận xét |
 | `results/` | file kết quả nhỏ chép từ `runs/` (runs/ không vào git) |
 | `plugin.py` | (tuỳ chọn) code riêng của model này |

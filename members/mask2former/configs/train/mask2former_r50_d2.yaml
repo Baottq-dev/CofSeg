@@ -1,14 +1,17 @@
 # Mask2Former R50 (repo gốc facebookresearch/Mask2Former trên detectron2).
 #
+# Người phụ trách: AnhVu. Recipe dùng chung ở configs/train/_base_d2.yaml.
+#
 # Cùng backbone R50 với hai model R-CNN; khác ở cơ chế query và mask toàn
 # ảnh ở stride 4. Trọng số khởi đầu: COCO instance R50 của MODEL_ZOO repo.
 # Recipe gốc (AdamW 1e-4 @ batch 16, backbone x0.1, clip gradient, LSJ
 # 0.1-2.0 cắt ô IMAGE_SIZE) giữ nguyên trong Trainer của train_net.py; ở đây
 # chỉ đặt số lớp, số query, độ phân giải, lịch theo epoch.
 #
-# Cần checkout repo + op MSDeformAttn đã biên dịch (scripts/remote/setup.sh):
-#     model.repo: third_party/Mask2Former
-base: maskrcnn_r50_d2.yaml
+# Cần submodule third_party/Mask2Former + op MSDeformAttn đã biên dịch
+# (scripts/remote/setup.sh):
+#     python scripts/train.py --config members/mask2former/configs/train/mask2former_r50_d2.yaml --set data.root=data/export/f4 --workers 8
+base: ../../../../configs/train/_base_d2.yaml
 name: mask2former-r50-d2
 model:
   arch: mask2former

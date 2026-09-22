@@ -28,7 +28,9 @@ def test_shipped_manifest_is_consistent():
     assert "sam2.1_hiera_large.pt" in W.select(doc, "annotator")
     assert len({s["url"] for s in files.values()}) == len(files)          # không hai tên một URL
     # Mọi config train trỏ vào weights/<file> thì file đó phải có trong bản kê.
-    for cfg in (ROOT / "configs" / "train").glob("*.yaml"):
+    train_cfgs = list((ROOT / "configs" / "train").glob("*.yaml"))
+    train_cfgs += ROOT.glob("members/*/configs/train/*.yaml")
+    for cfg in train_cfgs:
         model = (yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}).get("model")
         if isinstance(model, str) and model.startswith("weights/"):
             assert Path(model).name in files, f"{cfg.name}: {model} chưa khai trong weights.yaml"

@@ -1,6 +1,0 @@
-# Mask2Former R50 (repo gốc trên detectron2). Trọng số: --set model.weights=<best.pth>
-base: maskrcnn_r50_d2.yaml
-name: mask2former-r50-d2
-model:
-  arch: mask2former
-  repo: third_party/Mask2Former

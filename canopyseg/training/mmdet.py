@@ -1,11 +1,12 @@
 """Trainer mmdetection: SOLOv2 R50-FPN — cùng scripts/train.py, cùng khối
 `train:` với các trainer kia.
 
-    python scripts/train.py --config configs/train/solov2_r50_mm.yaml --set data.root=data/export/f4
-    python scripts/train.py --config configs/train/solov2_r50_mm.yaml --probe
+    python scripts/train.py --config members/solov2/configs/train/solov2_r50_mm.yaml --set data.root=data/export/f4
+    python scripts/train.py --config members/solov2/configs/train/solov2_r50_mm.yaml --probe
 
 Cách nối vào mmdet: nạp config zoo đóng gói trong gói mmdet (không clone repo),
-gộp phần ghi đè model ở configs/mmdet/<arch>_coffee.py, rồi tự sinh khối dữ
+gộp phần ghi đè model trong thư mục người phụ trách (ZOO[arch]["overrides"]),
+rồi tự sinh khối dữ
 liệu / lịch học / hook từ `train:` (build_overrides — thuần Python, có test).
 Vòng lặp là mmengine Runner; sau khi xong chấm test bằng checkpoint tốt nhất,
 ghi predictions.json (COCO results) và test_metrics.json cùng bố cục với
@@ -55,13 +56,14 @@ MM_DEFAULTS: dict = {
     "log_every": 20,
 }
 #: arch -> config zoo trong gói mmdet, checkpoint COCO (cùng URL trong
-#: configs/weights.yaml), file ghi đè model trong configs/mmdet/, lr gốc @ batch 16.
+#: configs/weights.yaml), file ghi đè model trong thư mục người phụ trách,
+#: lr gốc @ batch 16.
 ZOO = {
     "solov2": dict(
         config="solov2/solov2_r50_fpn_ms-3x_coco.py",
         checkpoint="https://download.openmmlab.com/mmdetection/v2.0/solov2/solov2_r50_fpn_3x_coco/"
                    "solov2_r50_fpn_3x_coco_20220512_125856-fed092d4.pth",
-        overrides="configs/mmdet/solov2_r50_coffee.py",
+        overrides="members/solov2/configs/mmdet/solov2_r50_coffee.py",
         lr=0.01,
     ),
 }
@@ -235,7 +237,7 @@ def iters_per_epoch(n_train: int, batch: int) -> int:
 
 
 def load_config(arch: str, overrides: dict, config_file: str | None = None):
-    """Config zoo + configs/mmdet/<arch>_coffee.py + overrides -> mmengine Config.
+    """Config zoo + file ghi đè của model + overrides -> mmengine Config.
 
     Cần mmengine (thuần Python, có ở nhà); không cần mmcv.
     """

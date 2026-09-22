@@ -18,11 +18,22 @@ trực tiếp thì độ chính xác giảm bao nhiêu** — so ms/ảnh và mAP
 - v11 là bản hiện hành, v8 là bản các bài trước hay dùng, cùng cơ chế mask;
   chạy cả hai nếu còn giờ (`yolo26s` cũng có sẵn config).
 
+## Cách chạy
+
+```bash
+python scripts/train.py --config members/yolo11/configs/train/yolo11s.yaml --set data.yaml=data/export/f4/data.yaml --imgsz 1024 --batch 4
+
+python scripts/evaluate.py --config members/yolo11/configs/eval/yolo11s.yaml --set model.weights=runs/train/<...>/ultralytics/weights/best.pt --set data.root=data/export/f4 --split test --imgsz 1024
+```
+
+Hai bản còn lại của họ YOLO (`yolo26s`, `yolov8s`) kế thừa cùng khối train,
+chỉ khác trọng số.
+
 ## Trong thư mục này
 
 | | |
 |---|---|
-| `configs/` | config train/eval (thêm ở bước sau) |
+| `configs/train/`, `configs/eval/` | config của model |
 | `notes/` | nhật ký thí nghiệm: chạy gì, ra số gì, nhận xét |
 | `results/` | file kết quả nhỏ chép từ `runs/` (runs/ không vào git) |
 | `plugin.py` | (tuỳ chọn) code riêng của model này |
