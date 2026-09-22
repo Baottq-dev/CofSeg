@@ -78,5 +78,10 @@ def test_project_trainers_and_models_are_registered():
     import canopyseg.models  # noqa: F401
     import canopyseg.training  # noqa: F401
 
-    assert "yolo" in registry.available("trainer")
-    assert "yolo_seg" in registry.available("model")
+    assert {"yolo", "maskrcnn", "detectron2", "mmdet"} <= set(registry.available("trainer"))
+    assert {"yolo_seg", "maskrcnn", "detectron2", "mmdet", "coco_predictions"} <= set(registry.available("model"))
+    # Hai họ Linux-only chỉ import framework bên trong hàm: registry phải biết
+    # chúng ở máy không có detectron2/mmcv, còn dựng thì phải báo thiếu gì.
+    from canopyseg.models.build import model_param_names
+    assert {"weights", "conf", "max_det", "device"} <= model_param_names("mmdet")
+    assert {"weights", "arch", "conf", "max_det"} <= model_param_names("detectron2")
