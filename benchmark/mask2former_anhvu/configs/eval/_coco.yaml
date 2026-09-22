@@ -1,0 +1,12 @@
+# File dự đoán COCO results (từ máy thuê: detectron2/mmdet, hoặc predictions.json
+# của ultralytics) đi qua đúng đường chấm chung.
+#     python benchmark/mask2former_anhvu/scripts/evaluate.py --config benchmark/mask2former_anhvu/configs/eval/_coco.yaml --file preds/cascade_r50_test.json --name cascade-r50
+# Ảnh trong file phải là cùng bộ xuất (cùng image_id) hoặc cùng tên file (ultralytics).
+base: _base.yaml
+name: coco-predictions
+model:
+  name: coco_predictions
+  file: CHANGE_ME.json
+  key: auto                 # auto | id | stem
+  conf: 0.0
+  max_det: 100
