@@ -50,16 +50,19 @@ def _dig(d: dict, path: tuple) -> float | None:
     return None if cur is None else float(cur)
 
 
-def collect(eval_root: str | Path, folds_yaml: str | Path) -> list[dict]:
+def collect(eval_root: str | Path | list, folds_yaml: str | Path) -> list[dict]:
     """Một hàng cho mỗi lần chấm nhận diện được: model, fold, ruộng, các số đo.
 
-    Cùng (model, fold) chấm nhiều lần thì lấy lần mới nhất (tên thư mục bắt
-    đầu bằng thời điểm nên sắp xếp chuỗi là đủ).
+    `eval_root` là một thư mục hoặc nhiều — mỗi thành viên ghi kết quả vào
+    runs/eval của thư mục mình (benchmark/<model>_<người>/runs/eval), nên bảng
+    chung phải quét được cả bốn. Cùng (model, fold) chấm nhiều lần thì lấy lần
+    mới nhất (tên thư mục bắt đầu bằng thời điểm nên sắp xếp chuỗi là đủ).
     """
     doc = yaml.safe_load(Path(folds_yaml).read_text(encoding="utf-8"))
     test_field = {name: spec["test"][0] for name, spec in doc["folds"].items()}
+    roots = [eval_root] if isinstance(eval_root, (str, Path)) else list(eval_root)
     rows: dict[tuple[str, str], dict] = {}
-    for run in sorted(Path(eval_root).glob("*/")):
+    for run in sorted((r for root in roots for r in Path(root).glob("*/")), key=lambda p: p.name):
         cfg_p, met_p = run / "config.yaml", run / "metrics.json"
         if not (cfg_p.exists() and met_p.exists()):
             continue
@@ -150,7 +153,7 @@ def write_csv(rows: list[dict], path: str | Path) -> Path:
     return path
 
 
-def build_report(eval_root: str | Path, folds_yaml: str | Path, reference: str = REFERENCE):
+def build_report(eval_root: str | Path | list, folds_yaml: str | Path, reference: str = REFERENCE):
     """(hàng theo ruộng, hàng trung bình nhóm, markdown)."""
     doc = yaml.safe_load(Path(folds_yaml).read_text(encoding="utf-8"))
     rows = add_reference_delta(collect(eval_root, folds_yaml), reference)

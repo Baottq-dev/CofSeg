@@ -7,15 +7,19 @@ Hướng dẫn chạy
 
 | Thư mục | Người phụ trách | Model | Vai trò |
 |---|---|---|---|
-| `members/maskrcnn/` | VanNguyen | Mask R-CNN R50-FPN | mốc số 0 của bảng |
-| `members/solov2/` | PhuongQuynh | SOLOv2 R50-FPN | box-free |
-| `members/yolo11/` | QuangBao | YOLOv11-Seg | một giai đoạn, real-time |
-| `members/mask2former/` | AnhVu | Mask2Former R50 | query / transformer |
+| `benchmark/maskrcnn_vannguyen/` | VanNguyen | Mask R-CNN R50-FPN | mốc số 0 của bảng |
+| `benchmark/solov2_phuongquynh/` | PhuongQuynh | SOLOv2 R50-FPN | box-free |
+| `benchmark/yolo11_quangbao/` | QuangBao | YOLOv11-Seg | một giai đoạn, real-time |
+| `benchmark/mask2former_anhvu/` | AnhVu | Mask2Former R50 | query / transformer |
 
-Config của mỗi model nằm trong thư mục người phụ trách
-(`members/<model>/configs/`), lõi dùng chung ở `canopyseg/` và `configs/`.
-Ai sửa được phần nào, bố cục một thư mục thành viên, quy ước nhánh/commit và
-cách commit đúng author khi dùng chung một máy: xem `members/README.md`.
+Mỗi thư mục `benchmark/` chứa TRỌN model của một người: code (bản sao lõi
+riêng trong `cofseg/`), config, script chạy, test, kết quả. Không thư mục nào
+import thư mục nào. Dùng chung chỉ còn dữ liệu (`data/`), trọng số
+(`weights/`), việc cắt fold và một env Python.
+
+Cái giá: bốn bản sao phần chấm điểm, lệch nhau là bảng so sánh mất nghĩa —
+`python benchmark/check_copies.py` kiểm điều đó. Bố cục, quy ước nhánh/commit
+và cách commit đúng author khi dùng chung một máy: xem `benchmark/README.md`.
 
 ## 0. Yêu cầu
 
@@ -93,16 +97,18 @@ python -m uvicorn app.server:app --host 0.0.0.0 --port 1801
 # cắt 6 fold từ một bản xuất chưa chia
 python scripts/make_fold.py --export data/export/all_v2 --all
 
-# huấn luyện một model (config nằm trong thư mục người phụ trách)
-python scripts/train.py --config members/yolo11/configs/train/yolo11s.yaml --set data.yaml=data/export/f4/data.yaml
+# một người chạy model của mình (train -> chấm -> chép kết quả)
+bash benchmark/yolo11_quangbao/run.sh f4 --smoke   # kiểm đường chạy trước
+bash benchmark/yolo11_quangbao/run.sh f4
 
 # cả bốn model trên một fold, máy Linux
-bash scripts/remote/run_fold.sh f4 --smoke      # kiểm đường chạy trước
 bash scripts/remote/run_fold.sh f4
 
-# chấm lại và dựng bảng model x ruộng
-python scripts/score_remote.py --preds preds --export data/export
-python scripts/summarize_folds.py --eval runs/eval
+# bốn bản chấm điểm có còn giống nhau không (số có so được không)
+python benchmark/check_copies.py
+
+# bảng model x ruộng từ kết quả của cả bốn thư mục
+python scripts/summarize_folds.py --eval benchmark/*/runs/eval
 ```
 
 Chi tiết cho máy lab / máy thuê: `scripts/remote/README_remote.md`.

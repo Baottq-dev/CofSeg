@@ -9,9 +9,9 @@ submodule trong `third_party/`); thư viện Linux-only (detectron2, mmcv) nằm
 trong `requirements.txt` với marker `sys_platform`; trọng số theo
 `configs/weights.yaml`. Không phải clone hay tải gì bằng tay.
 
-Config của từng model nằm trong thư mục người phụ trách
-(`members/<model>/configs/train/`); `run_fold.sh` đã trỏ sẵn, chỉ cần đổi khi
-chạy một config khác. Xem `members/README.md` để biết ai phụ trách model nào.
+Mỗi model nằm trọn trong một thư mục `benchmark/<model>_<người>/`: code riêng
+(`cofseg/`), config riêng, `run.sh` riêng. `run_fold.sh` chỉ gọi lần lượt bốn
+`run.sh` đó. Ai sửa model của mình thì sửa trong thư mục mình.
 
 ## 1. Ở máy nhà: chuẩn bị dữ liệu
 
@@ -31,15 +31,21 @@ chạy một config khác. Xem `members/README.md` để biết ai phụ trách 
     nohup bash scripts/remote/run_all.sh > runs/remote_all.log 2>&1 &   # 6 fold, f4 f2 trước
     bash scripts/remote/pack_results.sh          # -> results_<ngày>.tar mang về
 
-`run_fold.sh` chạy tuần tự 4 lệnh `scripts/train.py` (YOLO11s → Mask R-CNN →
-SOLOv2 → Mask2Former, mỗi cái `--workers 8`), dừng ngay khi một lệnh lỗi,
-và để lại `preds/<model>_<fold>.json` (COCO results của split test) + log
-`runs/remote_<fold>.log`. Cascade vẫn chạy được qua `--only cascade`.
+`run_fold.sh` gọi `benchmark/<...>/run.sh` của bốn thư mục theo thứ tự
+Mask R-CNN → SOLOv2 → YOLO11s → Mask2Former, dừng ngay khi một cái lỗi. Mỗi
+model để lại `preds/<model>_<fold>.json` (COCO results của split test), kết
+quả chấm trong `benchmark/<...>/results/`, log `runs/remote_<fold>.log`.
+Trước khi chạy nó gọi `benchmark/check_copies.py` để biết bốn bản chấm điểm
+còn giống nhau không.
+
+Chạy một model thôi thì gọi thẳng thư mục đó:
+
+    bash benchmark/solov2_phuongquynh/run.sh f4 --smoke
 
 Chạy lại một phần / đổi tham số:
 
     bash scripts/remote/run_fold.sh f2 --only solov2,mask2former
-    bash scripts/remote/run_fold.sh f4 --imgsz 2048 --batch 2 --epochs 30
+    bash scripts/remote/run_fold.sh f4 --epochs 30 --batch 2
     FOLDS="f3 f5" bash scripts/remote/run_all.sh --only maskrcnn
 
 Thời gian ước trên 4090 @1024, batch 4, ~600 ảnh train: YOLO11s ~1 h,
@@ -49,16 +55,22 @@ Mask R-CNN ~40 phút, SOLOv2 ~45 phút, Mask2Former (100 epoch) ~3 h → một f
 ## 3. Về máy nhà: chấm
 
     tar -xf results_<ngày>.tar
+    python benchmark/check_copies.py
+    python scripts/summarize_folds.py --eval benchmark/*/runs/eval
+
+Nếu muốn chấm lại mọi file dự đoán bằng MỘT vòng chấm duy nhất (bản gốc
+canopyseg/) thay vì bản của từng người:
+
     python scripts/score_remote.py --preds preds --export data/export
     python scripts/summarize_folds.py --eval runs/eval
 
 ## Chưa kiểm ở nhà
 
-`setup.sh`, ba model detectron2 và SOLOv2 (mmdet) chưa chạy thật trên Linux
-(máy phát triển là Windows, không dựng detectron2/mmcv). Lần đầu: chạy
-`setup.sh` từng khối, rồi `run_fold.sh f4 --smoke`, sửa tại chỗ nếu API lệch.
-Nhánh YOLO11 của `run_fold.sh` đã chạy thử ở nhà (1 epoch, 5 % ảnh, chấm 6
-ảnh test). Hai chỗ dễ vấp đã biết:
+`setup.sh`, Mask R-CNN, Mask2Former (detectron2) và SOLOv2 (mmdet) chưa chạy
+thật trên Linux (máy phát triển là Windows, không dựng detectron2/mmcv). Lần
+đầu: chạy `setup.sh` từng khối, rồi `run_fold.sh f4 --smoke`, sửa tại chỗ nếu
+API lệch — sửa trong thư mục của model đó. Nhánh YOLO11 đã chạy thử ở nhà
+(1 epoch, 5 % ảnh, chấm 6 ảnh test). Hai chỗ dễ vấp đã biết:
 
 - mmdet 3.3.0 khai `mmcv < 2.2` nhưng wheel dựng sẵn cho torch 2.4 là 2.2.0;
   `setup.sh` nới dòng kiểm đó. Nếu `from mmcv.ops import nms` vẫn lỗi thì

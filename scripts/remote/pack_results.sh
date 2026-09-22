@@ -9,7 +9,8 @@ LIST=$(mktemp)
 {
   ls preds/*.json 2>/dev/null
   ls runs/remote_*.log 2>/dev/null
-  for r in runs/train/*/; do
+  ls benchmark/*/results/* 2>/dev/null
+  for r in benchmark/*/runs/train/*/; do
     # best.pt của YOLO nằm trong ultralytics/weights/ (ultralytics tự đặt);
     # detectron2 và mmdet để ở weights/ kèm file config để dựng lại model ở nhà.
     for f in weights/best.pt weights/best.pth ultralytics/weights/best.pt \
@@ -19,7 +20,7 @@ LIST=$(mktemp)
       [ -f "$r$f" ] && echo "$r$f"
     done
   done
-  for r in runs/eval/*/; do
+  for r in benchmark/*/runs/eval/*/; do
     for f in metrics.json cocoeval.txt per_region.csv per_image.csv config.yaml; do
       [ -f "$r$f" ] && echo "$r$f"
     done

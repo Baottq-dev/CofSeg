@@ -34,9 +34,15 @@ def test_shipped_manifest_is_consistent():
         model = (yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}).get("model")
         if isinstance(model, str) and model.startswith("weights/"):
             assert Path(model).name in files, f"{cfg.name}: {model} chưa khai trong weights.yaml"
-    # Mask2Former và SOLOv2 trong bản kê phải đúng URL mà code dùng.
-    from canopyseg.models.detectron2 import ZOO
-    assert files["maskformer2_R50_bs16_50ep_coco.pkl"]["url"] == ZOO["mask2former"][1]
+    # URL trong bản kê phải khớp URL mà code của thành viên dùng; hai chỗ lệch
+    # nhau thì máy lab tải một bản, trainer nạp một bản khác.
+    for member, needle, name in (
+            ("mask2former_anhvu", "maskformer2_R50_bs16_50ep", "maskformer2_R50_bs16_50ep_coco.pkl"),
+            ("solov2_phuongquynh", "solov2_r50_fpn_3x_coco", "solov2_r50_fpn_3x_coco.pth")):
+        code = "".join(p.read_text(encoding="utf-8")
+                       for p in (ROOT / "benchmark" / member / "cofseg").rglob("*.py"))
+        assert needle in code, f"{member}: không thấy checkpoint {needle} trong code"
+        assert files[name]["url"].rsplit("/", 1)[-1] in code
 
 
 def _manifest(tmp_path, url, sha, name="a.pt", extra=None):

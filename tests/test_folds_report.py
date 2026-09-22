@@ -76,6 +76,20 @@ def test_delta_is_per_field_and_missing_reference_leaves_a_blank(tmp_path, folds
     assert out.read_text(encoding="utf-8").splitlines()[0].startswith("field,fold,model")
 
 
+def test_collect_merges_several_eval_dirs(tmp_path, folds_yaml):
+    """Mỗi thành viên ghi vào runs/eval của thư mục mình, nên bảng chung phải
+    quét nhiều gốc; trùng (model, fold) giữa hai gốc thì lấy lần mới hơn."""
+    a, b = tmp_path / "a", tmp_path / "b"
+    _run(a, "2026-09-30_100000", "maskrcnn_f1", 0.50)
+    _run(b, "2026-09-30_100100", "cascade_f1", 0.55)
+    _run(b, "2026-09-30_110000", "maskrcnn_f1", 0.60)      # mới hơn, đè bản ở a
+
+    rows = rep.collect([a, b], folds_yaml)
+    by = {r["model"]: r["mAP"] for r in rows}
+    assert by == {"maskrcnn": 0.6, "cascade": 0.55}
+    assert rep.collect(a, folds_yaml)[0]["mAP"] == 0.5     # một gốc vẫn chạy như cũ
+
+
 def test_run_names():
     assert rep.parse_run_name("mask2former_f4") == ("mask2former", "f4")
     assert rep.parse_run_name("yolo11s_f12") == ("yolo11s", "f12")

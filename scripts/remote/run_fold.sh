@@ -1,77 +1,49 @@
 #!/usr/bin/env bash
-# Huấn luyện 4 model chính trên một fold rồi gom dự đoán test về preds/.
+# Chạy cả bốn model của bảng benchmark trên một fold, tuần tự.
 #
 #     bash scripts/remote/run_fold.sh f4
 #     bash scripts/remote/run_fold.sh f4 --smoke                 # vài iteration, kiểm đường chạy
 #     bash scripts/remote/run_fold.sh f4 --only maskrcnn,solov2  # chạy lại một phần
-#     bash scripts/remote/run_fold.sh f4 --only cascade          # model ngoài bộ chính
-#     bash scripts/remote/run_fold.sh f4 --imgsz 2048 --batch 2 --epochs 30
+#     bash scripts/remote/run_fold.sh f4 --epochs 30 --batch 2
 #
-# Mỗi model một lệnh scripts/train.py, tuần tự, dừng ngay khi một lệnh lỗi.
-# Model xong thì preds/<model>_<fold>.json là file COCO results của split
-# TEST — thứ mang về máy nhà chấm bằng scripts/score_remote.py. Log: runs/remote_<fold>.log
+# Script này KHÔNG biết model nào chạy thế nào: nó gọi run.sh trong thư mục
+# của từng người (benchmark/<model>_<người>/run.sh), mỗi thư mục có bản code
+# riêng. Ai sửa model của mình thì sửa trong thư mục mình, file này không đổi.
 #
-# Bộ chính: yolo11s, maskrcnn (mốc 0), solov2, mask2former. cascade vẫn có
-# code/config, chạy khi gọi tên qua --only. Config của mỗi model nằm trong thư
-# mục người phụ trách (members/<model>/configs/), xem members/README.md.
+# Mỗi model xong để lại preds/<model>_<fold>.json (COCO results của split TEST)
+# và kết quả chấm trong benchmark/<...>/results/. Log: runs/remote_<fold>.log
 set -euo pipefail
-FOLD="${1:?tên fold, vd f4}"; shift
-WORKERS=8; ONLY="yolo11s,maskrcnn,solov2,mask2former"; SMOKE=0; IMGSZ=""
+FOLD="${1:?tên fold, vd f4}"; shift || true
+ONLY="maskrcnn,solov2,yolo11s,mask2former"
 EXTRA=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --smoke) SMOKE=1 ;;
-    --workers) WORKERS="$2"; shift ;;
     --only) ONLY="$2"; shift ;;
-    --imgsz) IMGSZ="$2"; EXTRA+=(--imgsz "$2"); shift ;;
-    *) EXTRA+=("$1") ;;          # --epochs 30, --batch 2, ... đi thẳng vào train.py
+    *) EXTRA+=("$1") ;;          # --smoke, --epochs 30, --batch 2, ... đi thẳng vào run.sh
   esac
   shift
 done
 
 cd "$(dirname "$0")/../.."
 eval "$(conda shell.bash hook)"; conda activate "${ENV_NAME:-cofseg}"
-ROOT="data/export/$FOLD"
-[ -f "$ROOT/annotations/instances_test.json" ] || { echo "Không thấy $ROOT: chạy prepare_data.sh trước"; exit 1; }
+[ -f "data/export/$FOLD/annotations/instances_test.json" ] || {
+  echo "Không thấy data/export/$FOLD: chạy prepare_data.sh trước"; exit 1; }
 mkdir -p preds runs
 LOG="runs/remote_${FOLD}.log"
 exec > >(tee -a "$LOG") 2>&1
-echo "== $(date '+%F %T') fold $FOLD  only=$ONLY  smoke=$SMOKE  workers=$WORKERS  extra=${EXTRA[*]:-}"
+echo "== $(date '+%F %T') fold $FOLD  only=$ONLY  extra=${EXTRA[*]:-}"
+
+# Bốn bản chấm điểm phải giống nhau thì Δ% mAP giữa các model mới có nghĩa.
+python benchmark/check_copies.py || echo "!! bản chấm điểm đã lệch — xem cảnh báo ở trên"
 
 want() { case ",$ONLY," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
-latest() { ls -td "$1"* 2>/dev/null | head -1; }
-
-# ---- YOLO11s (ultralytics) ---------------------------------------------------
-if want yolo11s; then
-  NAME="yolo11s-seg-$FOLD"
-  SM=(); [ $SMOKE = 1 ] && SM=(--epochs 1 --fraction 0.05)
-  python scripts/train.py --config members/yolo11/configs/train/yolo11s.yaml \
-    --set data.yaml="$ROOT/data.yaml" --workers "$WORKERS" --name "$NAME" "${EXTRA[@]}" "${SM[@]}"
-  RUN=$(latest "runs/train/*_${NAME}_")
-  BEST="$RUN/ultralytics/weights/best.pt"
-  [ -f "$BEST" ] || BEST="$RUN/ultralytics/weights/last.pt"
-  EV=(); [ -n "$IMGSZ" ] && EV=(--imgsz "$IMGSZ")
-  python scripts/evaluate.py --config members/yolo11/configs/eval/yolo11s.yaml \
-    --set model.weights="$BEST" --set data.root="$ROOT" --split test --name "yolo11s-$FOLD" "${EV[@]}"
-  cp "$(latest "runs/eval/*_yolo11s-${FOLD}_")/predictions.json" "preds/yolo11s_${FOLD}.json"
-  echo "== yolo11s xong: preds/yolo11s_${FOLD}.json"
-fi
-
-# ---- detectron2 (Mask R-CNN mốc 0, Mask2Former, Cascade) và mmdet (SOLOv2) ----
-# Cả hai trainer để lại cùng bố cục: predictions.json + test_metrics.json{segm}.
-run_cfg() {   # $1 = tên model trong preds, $2 = đường dẫn config train
-  NAME="$(basename "$2" .yaml)-$FOLD"
-  SM=(); [ $SMOKE = 1 ] && SM=(--set data.limit=16 --epochs 1)
-  python scripts/train.py --config "$2" \
-    --set data.root="$ROOT" --workers "$WORKERS" --name "$NAME" "${EXTRA[@]}" "${SM[@]}"
-  RUN=$(latest "runs/train/*_${NAME}_")
-  [ -f "$RUN/predictions.json" ] || { echo "$RUN không có predictions.json"; exit 1; }
-  cp "$RUN/predictions.json" "preds/$1_${FOLD}.json"
-  echo "== $1 xong: preds/$1_${FOLD}.json  ($(python -c "import json;d=json.load(open('$RUN/test_metrics.json'));print({k:round(v,1) for k,v in d.get('segm',{}).items() if k in ('AP','AP50','AP75')})"))"
+run() {   # $1 = tên ngắn, $2 = thư mục thành viên
+  echo "== $(date '+%F %T') $1 -> benchmark/$2"
+  bash "benchmark/$2/run.sh" "$FOLD" "${EXTRA[@]:-}"
 }
-want maskrcnn    && run_cfg maskrcnn    members/maskrcnn/configs/train/maskrcnn_r50_d2.yaml
-want solov2      && run_cfg solov2      members/solov2/configs/train/solov2_r50_mm.yaml
-want mask2former && run_cfg mask2former members/mask2former/configs/train/mask2former_r50_d2.yaml
-want cascade     && run_cfg cascade     members/maskrcnn/configs/train/cascade_r50_d2.yaml
+want maskrcnn    && run maskrcnn    maskrcnn_vannguyen
+want solov2      && run solov2      solov2_phuongquynh
+want yolo11s     && run yolo11s     yolo11_quangbao
+want mask2former && run mask2former mask2former_anhvu
 
 echo "== $(date '+%F %T') fold $FOLD xong. preds/:"; ls -1 preds/*_"$FOLD".json

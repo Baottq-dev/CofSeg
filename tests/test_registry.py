@@ -78,10 +78,9 @@ def test_project_trainers_and_models_are_registered():
     import canopyseg.models  # noqa: F401
     import canopyseg.training  # noqa: F401
 
-    assert {"yolo", "maskrcnn", "detectron2", "mmdet"} <= set(registry.available("trainer"))
-    assert {"yolo_seg", "maskrcnn", "detectron2", "mmdet", "coco_predictions"} <= set(registry.available("model"))
-    # Hai họ Linux-only chỉ import framework bên trong hàm: registry phải biết
-    # chúng ở máy không có detectron2/mmcv, còn dựng thì phải báo thiếu gì.
-    from canopyseg.models.build import model_param_names
-    assert {"weights", "conf", "max_det", "device"} <= model_param_names("mmdet")
-    assert {"weights", "arch", "conf", "max_det"} <= model_param_names("detectron2")
+    # Bốn model của bảng benchmark nằm trong benchmark/<model>_<người>/cofseg/,
+    # mỗi thư mục một sổ đăng ký riêng. Ở gốc chỉ còn đường chạy nhanh và
+    # nhánh promptable.
+    assert {"yolo", "maskrcnn"} <= set(registry.available("trainer"))
+    assert {"yolo_seg", "maskrcnn", "coco_predictions", "two_stage", "refine",
+            "sam2_auto", "sam2_oracle"} <= set(registry.available("model"))
