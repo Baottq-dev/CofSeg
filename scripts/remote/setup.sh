@@ -4,8 +4,8 @@
 #
 # Một env cho tất cả: torch 2.4.1+cu121 (mmcv chỉ có wheel tới 2.4), ultralytics
 # (YOLO11), detectron2 build từ source (Mask R-CNN, Cascade, Mask2Former),
-# mmcv/mmdet (SOLOv2), repo Mask2Former trong third_party/ với op MSDeformAttn
-# biên dịch tại chỗ. Mọi phiên bản ghim trong requirements.txt; dòng chỉ-Linux
+# mmcv/mmdet (SOLOv2), submodule Mask2Former trong third_party/ với op
+# MSDeformAttn biên dịch tại chỗ. Mọi phiên bản ghim trong requirements.txt; dòng chỉ-Linux
 # ở đó pip tự chọn theo hệ điều hành.
 #
 # CHƯA CHẠY THẬT trên máy Linux: kiểm từng khối bằng mắt lần đầu.
@@ -13,8 +13,7 @@ set -euo pipefail
 
 ENV_NAME="${ENV_NAME:-cofseg}"
 PY_VER="${PY_VER:-3.12}"        # scipy/scikit-image ghim trong requirements cần >= 3.12
-M2F_REF="${M2F_REF:-main}"
-M2F_DIR="third_party/Mask2Former"
+M2F_DIR="third_party/Mask2Former"    # submodule, commit ghim trong .gitmodules/index
 
 cd "$(dirname "$0")/../.."
 echo "== repo: $(pwd)"
@@ -49,13 +48,12 @@ if s2 != s:
 PY
 python -c "import mmcv, mmdet, mmengine; from mmcv.ops import nms; print('mmcv', mmcv.__version__, 'mmdet', mmdet.__version__, 'mmengine', mmengine.__version__)"
 
-# ---- Mask2Former: repo + op CUDA -------------------------------------------
-mkdir -p third_party
-if [ ! -d "$M2F_DIR/.git" ]; then
-  git clone https://github.com/facebookresearch/Mask2Former.git "$M2F_DIR"
-fi
-git -C "$M2F_DIR" checkout -q "$M2F_REF"
-( cd "$M2F_DIR/mask2former/modeling/pixel_decoder/ops" && sh make.sh )
+# ---- Mask2Former: submodule + op CUDA ----------------------------------------
+# Repo con đi theo git; chỉ cần init nếu clone không có --recurse-submodules.
+git submodule update --init "$M2F_DIR"
+git -C "$M2F_DIR" log -1 --format="Mask2Former @ %h (%ad)" --date=short
+# make.sh gốc gọi `setup.py install` (setuptools mới đã bỏ); pip build tại chỗ.
+pip install --no-build-isolation --no-deps "$M2F_DIR/mask2former/modeling/pixel_decoder/ops"
 python - <<'PY'
 import sys; sys.path.insert(0, "third_party/Mask2Former")
 from mask2former import add_maskformer2_config  # noqa

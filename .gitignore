@@ -154,5 +154,7 @@ docs/
 predictions/
 weights/
 data/iachim_dataset_export/predictions/
-# Checkout của repo ngoài (Mask2Former, ...) do scripts/remote/setup.sh kéo về
-third_party/
+# third_party/ là submodule (Mask2Former): nội dung do repo con quản, ở đây
+# chỉ bỏ qua sản phẩm build op CUDA nếu nó rơi ra ngoài repo con.
+third_party/**/build/
+third_party/**/*.egg-info/
