@@ -2,28 +2,51 @@ Hướng dẫn chạy
 
 ## 0. Yêu cầu
 
-- GPU NVIDIA có CUDA (khuyến nghị ≥ 12GB VRAM cho SAM2 hiera-large). Không có GPU vẫn chạy nhưng rất chậm (đặt `sam.device: cpu`).
-- Python 3.10, ~20GB đĩa trống cho weights + tiles.
-- Khuyến nghị Linux/WSL2 (rasterio & pycocotools dễ cài hơn Windows thuần).
+- GPU NVIDIA có CUDA (khuyến nghị ≥ 8 GB VRAM cho SAM2 hiera-large khi gán nhãn; benchmark cần 24 GB). Không có GPU vẫn chạy được annotator nhưng rất chậm (đặt `sam.device: cpu`).
+- Python 3.12 (các gói ghim trong `requirements.txt` chỉ có wheel cho ≥ 3.12), ~25 GB đĩa trống cho weights + dữ liệu.
+- Windows chạy được annotator và YOLO/Mask R-CNN (torchvision); Mask2Former, Cascade (detectron2) và SOLOv2 (mmdet) chỉ chạy trên Linux.
 
-## 1. Cài môi trường
+## 1. Lấy mã
+
+```
+git clone --recurse-submodules https://github.com/Baottq-dev/CofSeg.git CoffeeSeg
+cd CoffeeSeg
+# đã clone rồi mà thiếu third_party/Mask2Former:
+git submodule update --init
+```
+
+`third_party/` là submodule (Mask2Former), `requirements.txt` ghim mọi thư viện — dòng chỉ-Linux có marker `sys_platform`, pip tự bỏ qua trên Windows.
+
+## 2. Cài môi trường
+
+Máy nhà (Windows):
 
 ```
 conda create -n coffee python=3.12 -y
 conda activate coffee
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 pip install -r requirements.txt
-pip install "git+https://github.com/facebookresearch/sam2.git"
 pip install -e .
 ```
 
-## 2. Tải weights SAM2
+Máy lab / máy thuê (Linux, có `nvcc`) — một lệnh làm hết, kể cả detectron2, mmcv, op Mask2Former và trọng số:
 
 ```
-mkdir -p weights
-# tải 4 model sam 2.1 từ https://github.com/facebookresearch/sam2 -> đặt vào weights/
+bash scripts/remote/setup.sh
 ```
-## 3. tải data
+
+Chi tiết và cách chạy benchmark: `scripts/remote/README_remote.md`.
+
+## 3. Tải trọng số
+
+```
+python scripts/download_weights.py --group annotator    # SAM 2.1 hiera-L cho gán nhãn
+python scripts/download_weights.py                      # nhóm benchmark (4 model chính + Cascade)
+python scripts/download_weights.py --check --group all  # kiểm sha256 những gì đã có
+```
+
+Danh sách, URL và sha256 nằm trong `configs/weights.yaml`; file về `weights/` (ngoài git).
+
+## 4. Dữ liệu
 
 Giải nén thư mục iachim_dataset_export/ vào data/ <br>
 Cấu trúc thư mục data sẽ là
@@ -35,9 +58,14 @@ data/
 └─masks/
 ```
 
-## 3. chạy
+## 5. Chạy annotator
 
 ```
 python -m app.server -r      
 ```
 
+Cho nhiều người trong mạng truy cập (máy lab):
+
+```
+python -m uvicorn app.server:app --host 0.0.0.0 --port 1801
+```
