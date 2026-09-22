@@ -1,0 +1,21 @@
+# Ai review khi file nào bị đụng. GitHub tự gán reviewer theo bảng này khi mở
+# pull request (có hiệu lực khi bật branch protection cho main; người được gán
+# phải có quyền trên repo).
+#
+# Bảng phân công đầy đủ: members/README.md
+
+# Mỗi model một chủ
+/members/maskrcnn/      @vnguyen123
+/members/solov2/        @Phquynh2312
+/members/yolo11/        @Baottq-dev
+/members/mask2former/   @tranphuocanhvu2103
+
+# Lõi dùng chung: sửa là đổi số của cả bốn model, nên cả nhóm cùng xem
+/canopyseg/             @vnguyen123 @Phquynh2312 @Baottq-dev @tranphuocanhvu2103
+/scripts/               @vnguyen123 @Phquynh2312 @Baottq-dev @tranphuocanhvu2103
+/configs/               @vnguyen123 @Phquynh2312 @Baottq-dev @tranphuocanhvu2103
+/tests/                 @vnguyen123 @Phquynh2312 @Baottq-dev @tranphuocanhvu2103
+/requirements.txt       @vnguyen123 @Phquynh2312 @Baottq-dev @tranphuocanhvu2103
+
+# Annotator
+/app/                   @Baottq-dev

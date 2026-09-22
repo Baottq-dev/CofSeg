@@ -1,5 +1,20 @@
 Hướng dẫn chạy 
 
+## Phân công
+
+Đồ án 4 thành viên, mỗi người phụ trách một model; khung benchmark dùng chung
+để các con số so được với nhau.
+
+| Thư mục | Người phụ trách | Model | Vai trò |
+|---|---|---|---|
+| `members/maskrcnn/` | VanNguyen | Mask R-CNN R50-FPN | mốc số 0 của bảng |
+| `members/solov2/` | PhuongQuynh | SOLOv2 R50-FPN | box-free |
+| `members/yolo11/` | QuangBao | YOLOv11-Seg | một giai đoạn, real-time |
+| `members/mask2former/` | AnhVu | Mask2Former R50 | query / transformer |
+
+Ai sửa được phần nào, quy ước nhánh/commit, cách commit đúng author khi dùng
+chung một máy: xem `members/README.md`.
+
 ## 0. Yêu cầu
 
 - GPU NVIDIA có CUDA (khuyến nghị ≥ 8 GB VRAM cho SAM2 hiera-large khi gán nhãn; benchmark cần 24 GB). Không có GPU vẫn chạy được annotator nhưng rất chậm (đặt `sam.device: cpu`).

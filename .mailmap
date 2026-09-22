@@ -1,0 +1,7 @@
+# Chuẩn hoá tên hiển thị trong git log / git shortlog, không viết lại lịch sử.
+# Cú pháp:  Tên chuẩn <email chuẩn> [tên cũ] <email cũ>
+#
+# Tên chuẩn lấy theo bảng phân công ở members/README.md, để thầy map được
+# người <-> commit. Ai lỡ commit bằng tên hoặc email khác thì thêm một dòng ở
+# đây thay vì rebase.
+QuangBao <baottqdeveloper@gmail.com> Baottq-dev <baottqdeveloper@gmail.com>
