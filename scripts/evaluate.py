@@ -47,8 +47,13 @@ from canopyseg import runlog  # noqa: E402
 from canopyseg.datasets import CocoDataset  # noqa: E402
 from canopyseg.evaluation import coco_eval, evaluate_split, summarize, validate  # noqa: E402
 from canopyseg.evaluation.report import write_coco_results, write_csv, write_predictions  # noqa: E402
+from canopyseg import plugins  # noqa: E402
 from canopyseg.models import build_model, model_param_names  # noqa: E402
 from canopyseg.registry import available  # noqa: E402
+
+# Code riêng của từng thành viên (members/<model>/plugin.py) đăng ký thêm
+# trainer/model; nạp trước khi tra registry.
+plugins.load_members()
 
 console.setup()
 
