@@ -1,9 +1,9 @@
 # SOLOv2 R50-FPN cho tán cà phê — phần GHI ĐÈ lên config zoo của mmdet
 # (solov2/solov2_r50_fpn_ms-3x_coco.py, đóng gói sẵn trong gói mmdet).
 #
-# Đây không phải config mmdet hoàn chỉnh: canopyseg/training/mmdet.py nạp
+# Đây không phải config mmdet hoàn chỉnh: cofseg/training/mmdet.py nạp
 # config zoo rồi gộp file này lên, sau đó tự đặt dữ liệu (fold), độ phân giải,
-# lịch học, checkpoint theo khối `train:` của members/solov2/configs/train/solov2_r50_mm.yaml.
+# lịch học, checkpoint theo khối `train:` của configs/train/solov2_r50_mm.yaml.
 # Không dùng `_base_ = ['mmdet::...']` vì cú pháp đó cần pkg_resources, thứ
 # setuptools >= 81 đã bỏ.
 #

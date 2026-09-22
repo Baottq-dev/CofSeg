@@ -8,16 +8,16 @@
 # Chạy trên máy Linux có mmcv/mmdet (scripts/remote/setup.sh). Ở nhà
 # --print-config / --list-params chạy được; --probe và train cần mmcv.
 #
-#     python scripts/train.py --config members/solov2/configs/train/solov2_r50_mm.yaml --set data.root=data/export/f4 --workers 8
-#     python scripts/train.py --config members/solov2/configs/train/solov2_r50_mm.yaml --probe
-#     python scripts/train.py --config members/solov2/configs/train/solov2_r50_mm.yaml --set data.limit=16 --epochs 1   # khói
+#     python benchmark/solov2_phuongquynh/scripts/train.py --config benchmark/solov2_phuongquynh/configs/train/solov2_r50_mm.yaml --set data.root=data/export/f4 --workers 8
+#     python benchmark/solov2_phuongquynh/scripts/train.py --config benchmark/solov2_phuongquynh/configs/train/solov2_r50_mm.yaml --probe
+#     python benchmark/solov2_phuongquynh/scripts/train.py --config benchmark/solov2_phuongquynh/configs/train/solov2_r50_mm.yaml --set data.limit=16 --epochs 1   # khói
 
 name: solov2-r50-mm
 trainer: mmdet
 
 model:
   arch: solov2
-  # config: members/solov2/configs/mmdet/solov2_r50_coffee.py   # phần ghi đè model; mặc định theo arch
+  # config: benchmark/solov2_phuongquynh/configs/mmdet/solov2_r50_coffee.py   # phần ghi đè model; mặc định theo arch
   # weights: null  -> weights/solov2_r50_fpn_3x_coco.pth nếu đã tải (download_weights.py),
   #                   không thì URL model zoo (mmengine tự tải về cache).
 
