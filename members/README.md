@@ -23,7 +23,7 @@ chênh lệch giữa chúng là do cơ chế, không do backbone.
 |---|---|
 | `members/<model>/` | chỉ người phụ trách model đó |
 | `canopyseg/` — lõi dùng chung | cả nhóm, báo trước khi sửa |
-| `scripts/`, `configs/dataset/`, `configs/eval/_base.yaml`, `requirements.txt` | cả nhóm, báo trước khi sửa |
+| `scripts/`, `configs/` (fold, `_base.yaml`, `_base_d2.yaml`, `weights.yaml`), `requirements.txt` | cả nhóm, báo trước khi sửa |
 | `app/` — annotator | QuangBao |
 
 Lý do lõi không chia theo người: đổi một dòng trong cách tính Boundary AP hay
@@ -32,6 +32,25 @@ chạy lại, không tự sửa rồi im lặng.
 
 `.github/CODEOWNERS` ghi đúng bảng trên; GitHub sẽ tự gán người review theo
 thư mục bị đụng (có hiệu lực khi bật branch protection cho `main`).
+
+## Bố cục một thư mục thành viên
+
+```
+members/<model>/
+├─ README.md              model gì, vì sao chọn, cách chạy, trạng thái
+├─ configs/train/*.yaml   cấu hình huấn luyện
+├─ configs/eval/*.yaml    cấu hình chấm
+├─ notes/experiments.md   nhật ký: chạy gì, ra số gì, vì sao đổi tham số
+├─ results/               file kết quả nhỏ (runs/ không vào git)
+└─ plugin.py              (tuỳ chọn) code riêng: trainer, hook, tăng cường
+```
+
+`plugin.py` được `scripts/train.py` và `scripts/evaluate.py` nạp trước khi tra
+registry, nên `@register("trainer", "ten_cua_ban")` trong đó dùng được ngay
+từ `trainer:` của config. Đây là chỗ thử ý riêng mà không đụng `canopyseg/`.
+
+Ba model chạy qua detectron2 (Mask R-CNN, Cascade, Mask2Former) dùng chung
+recipe ở `configs/train/_base_d2.yaml` — sửa file đó là đổi số của cả ba.
 
 ## Quy ước làm chung
 

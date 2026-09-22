@@ -12,8 +12,10 @@ Hướng dẫn chạy
 | `members/yolo11/` | QuangBao | YOLOv11-Seg | một giai đoạn, real-time |
 | `members/mask2former/` | AnhVu | Mask2Former R50 | query / transformer |
 
-Ai sửa được phần nào, quy ước nhánh/commit, cách commit đúng author khi dùng
-chung một máy: xem `members/README.md`.
+Config của mỗi model nằm trong thư mục người phụ trách
+(`members/<model>/configs/`), lõi dùng chung ở `canopyseg/` và `configs/`.
+Ai sửa được phần nào, bố cục một thư mục thành viên, quy ước nhánh/commit và
+cách commit đúng author khi dùng chung một máy: xem `members/README.md`.
 
 ## 0. Yêu cầu
 
@@ -84,3 +86,23 @@ Cho nhiều người trong mạng truy cập (máy lab):
 ```
 python -m uvicorn app.server:app --host 0.0.0.0 --port 1801
 ```
+
+## 6. Chạy benchmark
+
+```
+# cắt 6 fold từ một bản xuất chưa chia
+python scripts/make_fold.py --export data/export/all_v2 --all
+
+# huấn luyện một model (config nằm trong thư mục người phụ trách)
+python scripts/train.py --config members/yolo11/configs/train/yolo11s.yaml --set data.yaml=data/export/f4/data.yaml
+
+# cả bốn model trên một fold, máy Linux
+bash scripts/remote/run_fold.sh f4 --smoke      # kiểm đường chạy trước
+bash scripts/remote/run_fold.sh f4
+
+# chấm lại và dựng bảng model x ruộng
+python scripts/score_remote.py --preds preds --export data/export
+python scripts/summarize_folds.py --eval runs/eval
+```
+
+Chi tiết cho máy lab / máy thuê: `scripts/remote/README_remote.md`.

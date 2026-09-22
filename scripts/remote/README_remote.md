@@ -9,6 +9,10 @@ submodule trong `third_party/`); thư viện Linux-only (detectron2, mmcv) nằm
 trong `requirements.txt` với marker `sys_platform`; trọng số theo
 `configs/weights.yaml`. Không phải clone hay tải gì bằng tay.
 
+Config của từng model nằm trong thư mục người phụ trách
+(`members/<model>/configs/train/`); `run_fold.sh` đã trỏ sẵn, chỉ cần đổi khi
+chạy một config khác. Xem `members/README.md` để biết ai phụ trách model nào.
+
 ## 1. Ở máy nhà: chuẩn bị dữ liệu
 
 1. Gán nốt nhãn (fold f4 test = field_4), khởi động lại app để có code mới.
