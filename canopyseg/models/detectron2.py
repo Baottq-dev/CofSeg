@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from ..registry import register
+from ..weights import local_for_url
 from .base import Prediction, SegmentationModel
 
 #: Tên kiến trúc -> (config trong model zoo hoặc trong repo Mask2Former,
@@ -98,7 +99,7 @@ def base_cfg(arch: str, repo: str | None = None, config_file: str | None = None,
         add_deeplab_config(cfg)
         add_maskformer2_config(cfg)
         cfg.merge_from_file(str(Path(repo) / (config_file or zoo_file)))
-        cfg.MODEL.WEIGHTS = weights or zoo_weights
+        cfg.MODEL.WEIGHTS = weights or _checkpoint(zoo_weights)
     elif arch == "pointrend":
         from detectron2.projects.point_rend import add_pointrend_config
 
@@ -109,8 +110,15 @@ def base_cfg(arch: str, repo: str | None = None, config_file: str | None = None,
         cfg.MODEL.WEIGHTS = weights
     else:
         cfg.merge_from_file(model_zoo.get_config_file(config_file or zoo_file))
-        cfg.MODEL.WEIGHTS = weights or model_zoo.get_checkpoint_url(zoo_file)
+        cfg.MODEL.WEIGHTS = weights or _checkpoint(model_zoo.get_checkpoint_url(zoo_file))
     return cfg, m2f
+
+
+def _checkpoint(url: str) -> str:
+    """Bản đã tải trong weights/ (configs/weights.yaml) nếu có, không thì URL
+    để detectron2 tự tải về cache."""
+    local = local_for_url(url)
+    return str(local) if local else url
 
 
 def class_opts(arch: str, num_queries: int = 100) -> list:

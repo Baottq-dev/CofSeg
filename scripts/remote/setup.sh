@@ -61,24 +61,7 @@ from mask2former.modeling.pixel_decoder.ops.modules import MSDeformAttn  # noqa:
 print("Mask2Former import OK")
 PY
 
-# ---- trọng số ----------------------------------------------------------------
-mkdir -p weights
-python - <<'PY'
-from ultralytics import YOLO
-YOLO("weights/yolo11s-seg.pt")           # tự tải nếu thiếu
-print("yolo11s-seg.pt OK")
-PY
-# Checkpoint COCO của detectron2 / Mask2Former tự tải về cache lúc train
-# (MODEL.WEIGHTS là URL). Kéo trước để lần train đầu không chờ mạng:
-python - <<'PY'
-from detectron2 import model_zoo
-from detectron2.utils.file_io import PathManager
-from canopyseg.models.detectron2 import ZOO
-for arch, (cfg, url) in ZOO.items():
-    if cfg is None:
-        continue
-    url = url or model_zoo.get_checkpoint_url(cfg)
-    print(arch, "->", PathManager.get_local_path(url))
-PY
+# ---- trọng số: theo configs/weights.yaml, kiểm sha256 -----------------------
+python scripts/download_weights.py --group benchmark
 
 echo "== xong. Tiếp: bash scripts/remote/prepare_data.sh all_v2.tar"

@@ -1,0 +1,87 @@
+# Trọng số không vào git (*.pt/*.pth/weights/ trong .gitignore). Tải về weights/:
+#     python scripts/download_weights.py                    # nhóm benchmark
+#     python scripts/download_weights.py --group all
+#     python scripts/download_weights.py --only solov2_r50_fpn_3x_coco.pth
+#
+# Mỗi file ghi sha256: tải xong kiểm; file đã có mà sai sha thì báo, không ghi
+# đè (trừ --force). Trainer detectron2/mmdet tra URL ở đây trước: có file trong
+# weights/ thì dùng, không thì tải lại từ URL về cache của framework.
+dir: weights
+
+groups:
+  # 4 model chính + Cascade (tùy chọn), đủ để chạy scripts/remote/run_fold.sh
+  benchmark:
+    - yolo11s-seg.pt
+    - mask_rcnn_R_50_FPN_3x_coco.pkl
+    - cascade_mask_rcnn_R_50_FPN_3x_coco.pkl
+    - maskformer2_R50_bs16_50ep_coco.pkl
+    - solov2_r50_fpn_3x_coco.pth
+  # app/ annotator (configs/config.yaml sam.checkpoint)
+  annotator:
+    - sam2.1_hiera_large.pt
+  sam_all:
+    - sam2.1_hiera_large.pt
+    - sam2.1_hiera_base_plus.pt
+    - sam2.1_hiera_small.pt
+    - sam2.1_hiera_tiny.pt
+  # model dự phòng trong ghi chú benchmark
+  backup:
+    - yolov8s-seg.pt
+    - yolo26s-seg.pt
+
+files:
+  yolo11s-seg.pt:
+    url: https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11s-seg.pt
+    sha256: 1caa81c0195412efa411b632bcfb8c184939dddb6ae41f6a80c41b211ff257c3
+    size_mb: 20
+    for: YOLO11s-seg COCO (configs/train/yolo11s.yaml)
+  mask_rcnn_R_50_FPN_3x_coco.pkl:
+    url: https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x/137849600/model_final_f10217.pkl
+    sha256: 9a737e290372f1f70994ebcbd89d8004dbb3ae30a605fd915a190fa4a782dd66
+    size_mb: 170
+    for: Mask R-CNN R50-FPN 3x COCO, detectron2 (configs/train/maskrcnn_r50_d2.yaml)
+  cascade_mask_rcnn_R_50_FPN_3x_coco.pkl:
+    url: https://dl.fbaipublicfiles.com/detectron2/Misc/cascade_mask_rcnn_R_50_FPN_3x/144998488/model_final_480dd8.pkl
+    sha256: ae0899c187f60af3d7d00b410766f267754d26dd596c98035dae91029dea8a77
+    size_mb: 275
+    for: Cascade Mask R-CNN R50-FPN 3x COCO, detectron2 (configs/train/cascade_r50_d2.yaml)
+  maskformer2_R50_bs16_50ep_coco.pkl:
+    url: https://dl.fbaipublicfiles.com/maskformer/mask2former/coco/instance/maskformer2_R50_bs16_50ep/model_final_3c8ec9.pkl
+    sha256: c18e6551f9c0e951e7ee3a63eb5402b901612e4e141965d4719d13c69a97ec2a
+    size_mb: 168
+    for: Mask2Former R50 COCO instance (configs/train/mask2former_r50_d2.yaml)
+  solov2_r50_fpn_3x_coco.pth:
+    url: https://download.openmmlab.com/mmdetection/v2.0/solov2/solov2_r50_fpn_3x_coco/solov2_r50_fpn_3x_coco_20220512_125856-fed092d4.pth
+    sha256: fed092d42be40a73a5ae4fabba19faef5a9f76f06688f3863e595ca6f2d060c6
+    size_mb: 178
+    for: SOLOv2 R50-FPN ms-3x COCO, mmdet (configs/train/solov2_r50_mm.yaml)
+  sam2.1_hiera_large.pt:
+    url: https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt
+    sha256: 2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318
+    size_mb: 857
+    for: SAM 2.1 hiera-L, annotator + nhánh promptable
+  sam2.1_hiera_base_plus.pt:
+    url: https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt
+    sha256: a2345aede8715ab1d5d31b4a509fb160c5a4af1970f199d9054ccfb746c004c5
+    size_mb: 309
+    for: SAM 2.1 hiera-B+
+  sam2.1_hiera_small.pt:
+    url: https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt
+    sha256: 6d1aa6f30de5c92224f8172114de081d104bbd23dd9dc5c58996f0cad5dc4d38
+    size_mb: 176
+    for: SAM 2.1 hiera-S
+  sam2.1_hiera_tiny.pt:
+    url: https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt
+    sha256: 7402e0d864fa82708a20fbd15bc84245c2f26dff0eb43a4b5b93452deb34be69
+    size_mb: 149
+    for: SAM 2.1 hiera-T
+  yolov8s-seg.pt:
+    url: https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8s-seg.pt
+    sha256: 0bac0770b55e5eb5b76a61bc535673288dcec36c2bc0cd25ee0d584c632f3413
+    size_mb: 23
+    for: YOLOv8s-seg COCO (dự phòng)
+  yolo26s-seg.pt:
+    url: https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26s-seg.pt
+    sha256: 3da1d83e31caec96f9300eb4064f4f62882c133c7c264d63dfe61a7c197837a4
+    size_mb: 22
+    for: YOLO26s-seg COCO (configs/train/yolo26s.yaml)
