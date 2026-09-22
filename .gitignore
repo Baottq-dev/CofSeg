@@ -77,6 +77,8 @@ dmypy.json
 
 # Training runs output (wandb, mlflow, tensorboard, etc.)
 runs/
+# Mỗi thư mục benchmark ghi kết quả vào runs/ của chính nó; chỉ results/ vào git.
+benchmark/*/runs/
 
 # Datasets (usually large; track with DVC or similar).
 # Anchored to the repo root: unanchored, these matched every directory at
