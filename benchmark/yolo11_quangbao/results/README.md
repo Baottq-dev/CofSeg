@@ -12,4 +12,4 @@ chúng đi theo `scripts/remote/pack_results.sh` và ở lại `runs/`, `weights
 
 Bảng tổng hợp cả bốn model dựng bằng:
 
-    python scripts/summarize_folds.py --eval runs/eval
+    python scripts/summarize_folds.py --eval benchmark/*/runs/eval

@@ -10,8 +10,8 @@
 # val và predict CÓ tác dụng (NMS); với 26 chúng gần như không.
 #
 # Độ phân giải không cố định ở đây: ghi đè lúc chạy, tên thư mục run lấy giá trị thật.
-#     python scripts/train.py --config members/yolo11/configs/train/yolov8s.yaml --imgsz 1024 --batch 4
-#     python scripts/train.py --config members/yolo11/configs/train/yolov8s.yaml --imgsz 2048 --batch 1
+#     python benchmark/yolo11_quangbao/scripts/train.py --config benchmark/yolo11_quangbao/configs/train/yolov8s.yaml --imgsz 1024 --batch 4
+#     python benchmark/yolo11_quangbao/scripts/train.py --config benchmark/yolo11_quangbao/configs/train/yolov8s.yaml --imgsz 2048 --batch 1
 
 base: yolo26s.yaml
 name: yolov8s-seg

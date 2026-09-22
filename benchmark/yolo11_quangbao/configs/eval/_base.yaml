@@ -1,0 +1,23 @@
+# Khối chung cho mọi config đánh giá. Các file cạnh bên chỉ ghi khối model:.
+#
+# data.split ghi đè bằng --split; số ảnh bằng --limit (chạy thử).
+#
+# root là MỘT fold do scripts/make_fold.py cắt ra (configs/dataset/folds.yaml).
+# Đổi fold bằng --set data.root=data/export/f2; split test của fold là ruộng
+# model chưa từng thấy, đó là con số để báo cáo.
+data:
+  root: data/export/f4
+  split: test
+  # Cùng ngưỡng với configs/train: loại đúng một nhãn hỏng 1.4 px2.
+  min_area: 50.0
+
+eval:
+  # Ngưỡng IoU mặt nạ để một dự đoán được coi là khớp với vùng thật (bảng
+  # từng vùng). AP vẫn quét đủ 0.50:0.95 theo lệ COCO, không phụ thuộc số này.
+  iou_thr: 0.5
+  # Vành Boundary IoU từng vùng: 2% cạnh hình vuông cùng diện tích tán.
+  band_ratio: 0.02
+  # Dung sai NSD, px.
+  nsd_tau: 2.0
+  # Vành Boundary AP: 2% đường chéo ẢNH (Cheng et al. 2021) ~ 59 px ở 2560x1440.
+  dilation_ratio: 0.02
