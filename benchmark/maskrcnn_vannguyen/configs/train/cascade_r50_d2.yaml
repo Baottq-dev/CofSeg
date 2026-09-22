@@ -6,7 +6,7 @@
 #
 # Không nằm trong bộ 4 model chính; chạy khi còn giờ:
 #     bash scripts/remote/run_fold.sh f4 --only cascade
-base: ../../../../configs/train/_base_d2.yaml
+base: _base_d2.yaml
 name: cascade-r50-d2
 model:
   arch: cascade

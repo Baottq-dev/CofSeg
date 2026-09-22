@@ -9,11 +9,11 @@
 # lr. Bản torchvision vẫn dùng để chạy sớm ở nhà (Windows); vào bảng thì dùng
 # bản này.
 #
-#     python scripts/train.py --config members/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --set data.root=data/export/f4 --workers 8
-#     python scripts/train.py --config members/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --probe
-#     python scripts/train.py --config members/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --set data.limit=16 --epochs 1   # khói
+#     python benchmark/maskrcnn_vannguyen/scripts/train.py --config benchmark/maskrcnn_vannguyen/configs/train/maskrcnn_r50_d2.yaml --set data.root=data/export/f4 --workers 8
+#     python benchmark/maskrcnn_vannguyen/scripts/train.py --config benchmark/maskrcnn_vannguyen/configs/train/maskrcnn_r50_d2.yaml --probe
+#     python benchmark/maskrcnn_vannguyen/scripts/train.py --config benchmark/maskrcnn_vannguyen/configs/train/maskrcnn_r50_d2.yaml --set data.limit=16 --epochs 1   # khói
 
-base: ../../../../configs/train/_base_d2.yaml
+base: _base_d2.yaml
 name: maskrcnn-r50-d2
 
 model:
