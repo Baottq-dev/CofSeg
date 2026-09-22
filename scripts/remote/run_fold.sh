@@ -3,15 +3,19 @@
 #
 #     bash scripts/remote/run_fold.sh f4
 #     bash scripts/remote/run_fold.sh f4 --smoke                 # vài iteration, kiểm đường chạy
-#     bash scripts/remote/run_fold.sh f4 --only maskrcnn,cascade # chạy lại một phần
+#     bash scripts/remote/run_fold.sh f4 --only maskrcnn,solov2  # chạy lại một phần
+#     bash scripts/remote/run_fold.sh f4 --only cascade          # model ngoài bộ chính
 #     bash scripts/remote/run_fold.sh f4 --imgsz 2048 --batch 2 --epochs 30
 #
-# Bốn lệnh scripts/train.py, tuần tự, dừng ngay khi một lệnh lỗi. Mỗi model
-# xong thì preds/<model>_<fold>.json là file COCO results của split TEST —
-# thứ mang về máy nhà chấm bằng scripts/score_remote.py. Log: runs/remote_<fold>.log
+# Mỗi model một lệnh scripts/train.py, tuần tự, dừng ngay khi một lệnh lỗi.
+# Model xong thì preds/<model>_<fold>.json là file COCO results của split
+# TEST — thứ mang về máy nhà chấm bằng scripts/score_remote.py. Log: runs/remote_<fold>.log
+#
+# Bộ chính: yolo11s, maskrcnn (mốc 0), solov2, mask2former. cascade vẫn có
+# code/config, chạy khi gọi tên qua --only.
 set -euo pipefail
 FOLD="${1:?tên fold, vd f4}"; shift
-WORKERS=8; ONLY="yolo11s,maskrcnn,cascade,mask2former"; SMOKE=0; IMGSZ=""
+WORKERS=8; ONLY="yolo11s,maskrcnn,solov2,mask2former"; SMOKE=0; IMGSZ=""
 EXTRA=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -52,8 +56,9 @@ if want yolo11s; then
   echo "== yolo11s xong: preds/yolo11s_${FOLD}.json"
 fi
 
-# ---- detectron2: Mask R-CNN (mốc 0), Cascade, Mask2Former ---------------------
-run_d2() {   # $1 = tên model trong preds, $2 = config train
+# ---- detectron2 (Mask R-CNN mốc 0, Mask2Former, Cascade) và mmdet (SOLOv2) ----
+# Cả hai trainer để lại cùng bố cục: predictions.json + test_metrics.json{segm}.
+run_cfg() {   # $1 = tên model trong preds, $2 = config train
   NAME="$2-$FOLD"
   SM=(); [ $SMOKE = 1 ] && SM=(--set data.limit=16 --epochs 1)
   python scripts/train.py --config "configs/train/$2.yaml" \
@@ -63,8 +68,9 @@ run_d2() {   # $1 = tên model trong preds, $2 = config train
   cp "$RUN/predictions.json" "preds/$1_${FOLD}.json"
   echo "== $1 xong: preds/$1_${FOLD}.json  ($(python -c "import json;d=json.load(open('$RUN/test_metrics.json'));print({k:round(v,1) for k,v in d.get('segm',{}).items() if k in ('AP','AP50','AP75')})"))"
 }
-want maskrcnn    && run_d2 maskrcnn    maskrcnn_r50_d2
-want cascade     && run_d2 cascade     cascade_r50_d2
-want mask2former && run_d2 mask2former mask2former_r50_d2
+want maskrcnn    && run_cfg maskrcnn    maskrcnn_r50_d2
+want solov2      && run_cfg solov2      solov2_r50_mm
+want mask2former && run_cfg mask2former mask2former_r50_d2
+want cascade     && run_cfg cascade     cascade_r50_d2
 
 echo "== $(date '+%F %T') fold $FOLD xong. preds/:"; ls -1 preds/*_"$FOLD".json

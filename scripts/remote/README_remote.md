@@ -1,9 +1,13 @@
-# Chạy benchmark trên máy thuê
+# Chạy benchmark trên máy lab / máy thuê
 
-Máy thuê Linux (Ubuntu, GPU 24 GB, CUDA toolkit có `nvcc`, có internet).
-Mọi lệnh chạy từ gốc repo. Máy thuê **chỉ huấn luyện và xuất dự đoán**; điểm
-số chấm lại ở máy nhà bằng `scripts/score_remote.py` để mọi model đi qua cùng
-một vòng chấm.
+Máy Linux (Ubuntu, GPU 24 GB, CUDA toolkit có `nvcc`, có internet). Mọi lệnh
+chạy từ gốc repo. Máy đó **chỉ huấn luyện và xuất dự đoán**; điểm số chấm lại
+ở máy nhà bằng `scripts/score_remote.py` để mọi model đi qua cùng một vòng chấm.
+
+Mã đi theo repo: `git clone --recurse-submodules <repo>` (Mask2Former là
+submodule trong `third_party/`); thư viện Linux-only (detectron2, mmcv) nằm
+trong `requirements.txt` với marker `sys_platform`; trọng số theo
+`configs/weights.yaml`. Không phải clone hay tải gì bằng tay.
 
 ## 1. Ở máy nhà: chuẩn bị dữ liệu
 
@@ -15,28 +19,28 @@ một vòng chấm.
 
 4. Đưa lên máy thuê: repo (`git clone` hoặc `git bundle`) + `all_v2.tar` (~1 GB).
 
-## 2. Ở máy thuê
+## 2. Ở máy lab / máy thuê
 
-    bash scripts/remote/setup.sh                 # env cofseg, detectron2, Mask2Former, trọng số  (~15 phút)
+    bash scripts/remote/setup.sh                 # env cofseg, detectron2, mmcv/mmdet, op Mask2Former, trọng số (~20 phút)
     bash scripts/remote/prepare_data.sh all_v2.tar   # giải nén + cắt 6 fold (hardlink, không tốn đĩa)
     bash scripts/remote/run_fold.sh f4 --smoke   # vài iteration mỗi model: kiểm đường chạy TRƯỚC
     nohup bash scripts/remote/run_all.sh > runs/remote_all.log 2>&1 &   # 6 fold, f4 f2 trước
     bash scripts/remote/pack_results.sh          # -> results_<ngày>.tar mang về
 
 `run_fold.sh` chạy tuần tự 4 lệnh `scripts/train.py` (YOLO11s → Mask R-CNN →
-Cascade → Mask2Former, mỗi cái `--workers 8`), dừng ngay khi một lệnh lỗi,
+SOLOv2 → Mask2Former, mỗi cái `--workers 8`), dừng ngay khi một lệnh lỗi,
 và để lại `preds/<model>_<fold>.json` (COCO results của split test) + log
-`runs/remote_<fold>.log`.
+`runs/remote_<fold>.log`. Cascade vẫn chạy được qua `--only cascade`.
 
 Chạy lại một phần / đổi tham số:
 
-    bash scripts/remote/run_fold.sh f2 --only cascade,mask2former
+    bash scripts/remote/run_fold.sh f2 --only solov2,mask2former
     bash scripts/remote/run_fold.sh f4 --imgsz 2048 --batch 2 --epochs 30
     FOLDS="f3 f5" bash scripts/remote/run_all.sh --only maskrcnn
 
 Thời gian ước trên 4090 @1024, batch 4, ~600 ảnh train: YOLO11s ~1 h,
-Mask R-CNN ~40 phút, Cascade ~55 phút, Mask2Former (100 epoch) ~3 h → một fold
-~6 h, sáu fold ~35 h.
+Mask R-CNN ~40 phút, SOLOv2 ~45 phút, Mask2Former (100 epoch) ~3 h → một fold
+~5,5 h, sáu fold ~33 h (Cascade thêm ~55 phút/fold nếu chạy).
 
 ## 3. Về máy nhà: chấm
 
@@ -46,8 +50,14 @@ Mask R-CNN ~40 phút, Cascade ~55 phút, Mask2Former (100 epoch) ~3 h → một 
 
 ## Chưa kiểm ở nhà
 
-`setup.sh` và ba model detectron2 chưa chạy thật trên Linux (máy phát triển
-là Windows, không dựng detectron2). Lần đầu: chạy `setup.sh` từng khối, rồi
-`run_fold.sh f4 --smoke`, sửa tại chỗ nếu API detectron2 lệch, rồi ghim
-`D2_REF` / `M2F_REF` trong `setup.sh` vào commit đã chạy được. Nhánh YOLO11 của
-`run_fold.sh` đã chạy thử ở nhà (1 epoch, 5 % ảnh, chấm 6 ảnh test).
+`setup.sh`, ba model detectron2 và SOLOv2 (mmdet) chưa chạy thật trên Linux
+(máy phát triển là Windows, không dựng detectron2/mmcv). Lần đầu: chạy
+`setup.sh` từng khối, rồi `run_fold.sh f4 --smoke`, sửa tại chỗ nếu API lệch.
+Nhánh YOLO11 của `run_fold.sh` đã chạy thử ở nhà (1 epoch, 5 % ảnh, chấm 6
+ảnh test). Hai chỗ dễ vấp đã biết:
+
+- mmdet 3.3.0 khai `mmcv < 2.2` nhưng wheel dựng sẵn cho torch 2.4 là 2.2.0;
+  `setup.sh` nới dòng kiểm đó. Nếu `from mmcv.ops import nms` vẫn lỗi thì
+  torch/mmcv lệch ABI: kiểm `pip show torch mmcv`.
+- `--no-build-isolation` khi `pip install -r requirements.txt`: detectron2 và
+  SAM 2 import torch lúc build, torch phải cài trước (setup.sh đã làm).

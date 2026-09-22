@@ -27,7 +27,7 @@ def main() -> int:
     ap.add_argument("--preds", default="preds", help="thư mục chứa <model>_<fold>.json")
     ap.add_argument("--export", default="data/export", help="thư mục chứa các fold f1..f6")
     ap.add_argument("--folds", default="", help="chỉ chấm các fold này, vd f4,f2")
-    ap.add_argument("--models", default="", help="chỉ chấm các model này, vd maskrcnn,cascade")
+    ap.add_argument("--models", default="", help="chỉ chấm các model này, vd maskrcnn,solov2")
     ap.add_argument("--config", default="configs/eval/coco_predictions.yaml")
     ap.add_argument("--runs", default="runs")
     ap.add_argument("--limit", type=int, default=None, help="chỉ chấm N ảnh đầu (thử)")

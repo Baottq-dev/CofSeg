@@ -1,0 +1,11 @@
+# SOLOv2 R50-FPN (mmdet). Trọng số: --set model.weights=<best.pth>
+# Cần mmcv/mmdet; ở máy không có, chấm predictions.json của run bằng
+# configs/eval/coco_predictions.yaml.
+base: _base.yaml
+name: solov2-r50-mm
+model:
+  name: mmdet
+  # mmdet_config.py cạnh best.pth giữ imgsz và mọi khoá của lần huấn luyện.
+  weights: runs/train/CHANGE_ME/weights/best.pth
+  conf: 0.05
+  max_det: 100
