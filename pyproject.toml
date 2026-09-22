@@ -6,7 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "coffee-seg"
 version = "0.1.0"
 description = "Segmentation từng cây cà phê & gán nhãn mật độ hoa (accuracy-first)"
-requires-python = ">=3.10"
+# scipy/scikit-image/numpy ghim trong requirements.txt chỉ có wheel cho >= 3.12.
+requires-python = ">=3.12"
 
 [tool.setuptools.packages.find]
 where = ["."]

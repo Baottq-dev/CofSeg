@@ -1,10 +1,25 @@
-# QUAN TRỌNG: cài bản GPU trước cho khớp CUDA của máy, rồi mới pip install -r:
-#   pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
-# Hai dòng dưới ghim cả hậu tố +cu121 nên CHỈ khớp khi cài từ index trên. Cố ý
-# như vậy: thiếu index thì pip báo lỗi ngay, thay vì âm thầm kéo bản CPU về rồi
-# để bạn ngồi chờ SAM chạy trên CPU mà không hiểu vì sao chậm.
-torch==2.5.1+cu121
-torchvision==0.20.1+cu121
+# Một file cho cả máy nhà (Windows) và máy lab/máy thuê (Linux). Dòng có
+# "; sys_platform == ..." pip tự chọn theo hệ điều hành, không cần sửa tay.
+#
+#   nhà :  pip install -r requirements.txt
+#   lab :  pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
+#          pip install -r requirements.txt --no-build-isolation
+#
+# --no-build-isolation vì detectron2 và SAM 2 biên dịch op CUDA ngay lúc cài,
+# setup.py của họ import torch — torch phải có sẵn trong env trước. Trên
+# Windows chúng không được cài (detectron2) hoặc bỏ qua op (SAM 2), nên không cần.
+--extra-index-url https://download.pytorch.org/whl/cu121
+--find-links https://download.openmmlab.com/mmcv/dist/cu121/torch2.4/index.html
+
+# ---- torch: ghim cả hậu tố +cu121 để thiếu index là pip báo ngay, không âm
+# thầm kéo bản CPU. Máy lab dừng ở 2.4.1 vì mmcv (SOLOv2) chỉ có wheel dựng
+# sẵn tới torch 2.4; nhà giữ 2.5.1 vì không chạy mmcv.
+torch==2.5.1+cu121; sys_platform == "win32"
+torchvision==0.20.1+cu121; sys_platform == "win32"
+torch==2.4.1+cu121; sys_platform == "linux"
+torchvision==0.19.1+cu121; sys_platform == "linux"
+
+# ---- dùng chung
 numpy==2.4.4
 scipy==1.18.0
 scikit-image==0.26.0
@@ -20,7 +35,22 @@ gradio==6.19.0         # giao diện Phase 1 (app/)
 pillow==12.2.0
 fastapi==0.139.0       # annotator tự xây (app/server.py)
 uvicorn==0.49.0        # chạy server annotator
-ultralytics==8.4.143   # đọc/kiểm bộ YOLO-seg do annotator xuất ra
-# SAM2: cài từ GitHub. Ghim đúng commit đang dùng (dist name là SAM-2 1.0):
-#   pip install "git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4"
-# (Phase 1 CHẈ cần SAM. detectron2 / stardist / coral-pytorch sẽ thêm ở phase sau.)
+ultralytics==8.4.143   # YOLO11-seg: huấn luyện + đọc bộ YOLO-seg do annotator xuất
+# SAM 2.1 (annotator + nhánh promptable). Không có pip package, ghim commit.
+SAM-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4
+# mmengine/mmdet thuần Python: cài được mọi nơi, để ở nhà kiểm config SOLOv2
+# (canopyseg/training/mmdet.py). Chạy thật cần mmcv bên dưới.
+mmengine==0.10.7
+mmdet==3.3.0
+shapely==2.1.2         # mmdet và Mask2Former cùng cần
+
+# ---- chỉ Linux: benchmark trên máy lab. Windows bỏ qua tự động.
+# detectron2: Mask R-CNN (mốc 0), Cascade, Mask2Former. Build từ source ~5-10 phút.
+detectron2 @ git+https://github.com/facebookresearch/detectron2.git@a2f4a8771ab77e8411c26b27f24f9489a28a2453 ; sys_platform == "linux"
+# mmcv có op CUDA biên dịch sẵn cho torch 2.4/cu121 (dòng --find-links trên).
+# mmdet 3.3.0 khai mmcv < 2.2 nhưng chạy được với 2.2.0; scripts/remote/setup.sh
+# nới dòng kiểm phiên bản đó sau khi cài.
+mmcv==2.2.0 ; sys_platform == "linux"
+# Mask2Former (third_party/Mask2Former, submodule) cần thêm:
+timm==1.0.29 ; sys_platform == "linux"
+h5py==3.16.0 ; sys_platform == "linux"

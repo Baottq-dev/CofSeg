@@ -1,25 +1,24 @@
 #!/usr/bin/env bash
-# Dựng môi trường trên máy thuê Linux (Ubuntu, driver CUDA 12.x, có nvcc).
+# Dựng môi trường trên máy lab / máy thuê Linux (Ubuntu, driver CUDA 12.x, có nvcc).
 # Chạy từ gốc repo:  bash scripts/remote/setup.sh
 #
-# Một env "cofseg" cho tất cả: torch 2.5.1+cu121 như máy nhà, ultralytics
-# (YOLO11), detectron2 build từ source (Mask R-CNN, Cascade), repo Mask2Former
-# clone vào third_party/ và op MSDeformAttn biên dịch tại chỗ. Tách env chỉ
-# khi pip báo xung đột — tới giờ chưa thấy.
+# Một env cho tất cả: torch 2.4.1+cu121 (mmcv chỉ có wheel tới 2.4), ultralytics
+# (YOLO11), detectron2 build từ source (Mask R-CNN, Cascade, Mask2Former),
+# mmcv/mmdet (SOLOv2), repo Mask2Former trong third_party/ với op MSDeformAttn
+# biên dịch tại chỗ. Mọi phiên bản ghim trong requirements.txt; dòng chỉ-Linux
+# ở đó pip tự chọn theo hệ điều hành.
 #
-# CHƯA CHẠY THẬT trên máy thuê: kiểm từng bước bằng mắt lần đầu.
+# CHƯA CHẠY THẬT trên máy Linux: kiểm từng khối bằng mắt lần đầu.
 set -euo pipefail
 
 ENV_NAME="${ENV_NAME:-cofseg}"
-PY_VER="${PY_VER:-3.10}"
-# Ghim commit sau lần khói đầu tiên để lần sau dựng lại y hệt.
-D2_REF="${D2_REF:-main}"
+PY_VER="${PY_VER:-3.12}"        # scipy/scikit-image ghim trong requirements cần >= 3.12
 M2F_REF="${M2F_REF:-main}"
 M2F_DIR="third_party/Mask2Former"
 
 cd "$(dirname "$0")/../.."
 echo "== repo: $(pwd)"
-command -v nvcc >/dev/null || { echo "Thiếu nvcc (CUDA toolkit): detectron2 và MSDeformAttn cần biên dịch CUDA."; exit 1; }
+command -v nvcc >/dev/null || { echo "Thiếu nvcc (CUDA toolkit): detectron2, SAM 2 và MSDeformAttn cần biên dịch CUDA."; exit 1; }
 nvcc --version | tail -1
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
@@ -31,23 +30,31 @@ fi
 conda activate "$ENV_NAME"
 python -V
 
-# ---- torch trước, đúng index cu121, rồi mới requirements (ghim +cu121) ------
-pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
-pip install -r requirements.txt
-pip install -e .
+# ---- torch trước (detectron2/SAM 2 import torch lúc build), rồi requirements --
+pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
 python -c "import torch; assert torch.cuda.is_available(), 'torch không thấy CUDA'; print('torch', torch.__version__, torch.cuda.get_device_name(0))"
-
-# ---- detectron2 (build từ source, ~5-10 phút) --------------------------------
-pip install "git+https://github.com/facebookresearch/detectron2.git@${D2_REF}"
+pip install -r requirements.txt --no-build-isolation
+pip install -e .
 python -c "import detectron2; print('detectron2', detectron2.__version__)"
 
-# ---- Mask2Former: repo + phụ thuộc + op CUDA ---------------------------------
+# ---- mmdet 3.3.0 khai mmcv < 2.2.0; wheel dựng sẵn cho torch 2.4 là 2.2.0 và
+# chạy được. Nới đúng một dòng kiểm phiên bản (cách được dùng rộng rãi).
+python - <<'PY'
+import re, mmdet, pathlib
+p = pathlib.Path(mmdet.__file__)
+s = p.read_text(encoding="utf-8")
+s2 = re.sub(r"mmcv_maximum_version = '2\.2\.0'", "mmcv_maximum_version = '2.3.0'", s)
+if s2 != s:
+    p.write_text(s2, encoding="utf-8"); print("mmdet/__init__.py: mmcv_maximum_version -> 2.3.0")
+PY
+python -c "import mmcv, mmdet, mmengine; from mmcv.ops import nms; print('mmcv', mmcv.__version__, 'mmdet', mmdet.__version__, 'mmengine', mmengine.__version__)"
+
+# ---- Mask2Former: repo + op CUDA -------------------------------------------
 mkdir -p third_party
 if [ ! -d "$M2F_DIR/.git" ]; then
   git clone https://github.com/facebookresearch/Mask2Former.git "$M2F_DIR"
 fi
 git -C "$M2F_DIR" checkout -q "$M2F_REF"
-pip install timm scipy shapely h5py scikit-image cython
 ( cd "$M2F_DIR/mask2former/modeling/pixel_decoder/ops" && sh make.sh )
 python - <<'PY'
 import sys; sys.path.insert(0, "third_party/Mask2Former")
