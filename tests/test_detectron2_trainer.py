@@ -9,7 +9,6 @@ detectron2 thật nằm cuối và tự bỏ qua khi thiếu.
 from __future__ import annotations
 
 import json
-import shutil
 
 import pytest
 
@@ -83,16 +82,6 @@ def test_trainer_contract_and_run_tag():
     assert Detectron2Trainer.locked_params() == frozenset()
     assert Detectron2Trainer.run_tag({"train": {"imgsz": 2048, "batch": 1}}) == "i2048b1e50"
     assert Detectron2Trainer.run_tag({}) == "i1024b4e50"
-
-
-@pytest.fixture
-def three_splits(tiny_dataset):
-    """tiny_dataset chỉ có train; nhân thành val/test để prepare() đọc đủ ba tập."""
-    ann = tiny_dataset / "annotations"
-    for sp in ("val", "test"):
-        shutil.copy2(ann / "instances_train.json", ann / f"instances_{sp}.json")
-        shutil.copytree(tiny_dataset / "images" / "train", tiny_dataset / "images" / sp)
-    return tiny_dataset
 
 
 def test_prepare_counts_train_images_without_detectron2(three_splits, tmp_path):

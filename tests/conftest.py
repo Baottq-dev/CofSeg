@@ -8,6 +8,7 @@ hỏng trên máy người khác. Mọi thứ ở đây được dựng tại ch
 from __future__ import annotations
 
 import json
+import shutil
 
 import numpy as np
 import pytest
@@ -100,3 +101,14 @@ def tiny_dataset(tmp_path, square_polygon):
         json.dumps(_coco_doc(images, anns)), encoding="utf-8"
     )
     return root
+
+
+@pytest.fixture
+def three_splits(tiny_dataset):
+    """tiny_dataset chỉ có train; nhân thành val/test để prepare() của các
+    trainer đọc đủ ba tập."""
+    ann = tiny_dataset / "annotations"
+    for sp in ("val", "test"):
+        shutil.copy2(ann / "instances_train.json", ann / f"instances_{sp}.json")
+        shutil.copytree(tiny_dataset / "images" / "train", tiny_dataset / "images" / sp)
+    return tiny_dataset

@@ -5,6 +5,6 @@ cần đọc tên trong config, không cần biết YOLO là gì.
 """
 
 from .base import Trainer
-from . import detectron2, maskrcnn, yolo  # noqa: F401 - import để @register chạy
+from . import detectron2, maskrcnn, mmdet, yolo  # noqa: F401 - import để @register chạy
 
 __all__ = ["Trainer"]
