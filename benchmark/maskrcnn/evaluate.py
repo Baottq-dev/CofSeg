@@ -1,13 +1,13 @@
-# Bản của maskrcnn_vannguyen: chạy hoàn toàn trong thư mục này (cofseg/ là bản sao
+# Bản của benchmark/maskrcnn: chạy hoàn toàn trong thư mục này (cofseg/ là bản sao
 # lõi của riêng thư mục). Chạy từ GỐC REPO để data/ và weights/ dùng chung:
 #
-#     python benchmark/maskrcnn_vannguyen/scripts/evaluate.py --config benchmark/maskrcnn_vannguyen/configs/eval/maskrcnn_r50_d2.yaml
+#     python benchmark/maskrcnn/evaluate.py --config benchmark/maskrcnn/configs/eval/maskrcnn_r50_d2.yaml
 """Chấm một model trên một split, qua một đường chung cho mọi model.
 
-    python benchmark/maskrcnn_vannguyen/scripts/evaluate.py --config benchmark/maskrcnn_vannguyen/configs/eval/maskrcnn_r50_d2.yaml --set model.weights=<best.pt>
-    python benchmark/maskrcnn_vannguyen/scripts/evaluate.py --config configs/eval/maskrcnn_r50.yaml --set model.weights=<best.pt>
-    python benchmark/maskrcnn_vannguyen/scripts/evaluate.py --config configs/eval/sam2_oracle.yaml --size t --limit 5
-    python benchmark/maskrcnn_vannguyen/scripts/evaluate.py --config benchmark/maskrcnn_vannguyen/configs/eval/_coco.yaml --file preds/cascade.json
+    python benchmark/maskrcnn/evaluate.py --config benchmark/maskrcnn/configs/eval/maskrcnn_r50_d2.yaml --set model.weights=<best.pt>
+    python benchmark/maskrcnn/evaluate.py --config configs/eval/maskrcnn_r50.yaml --set model.weights=<best.pt>
+    python benchmark/maskrcnn/evaluate.py --config configs/eval/sam2_oracle.yaml --size t --limit 5
+    python benchmark/maskrcnn/evaluate.py --config benchmark/maskrcnn/configs/eval/_coco.yaml --file preds/cascade.json
 
 Config có ba khối: `model:` (name trong sổ đăng ký + tham số khởi tạo, lồng
 nhau được), `data:` (root, split, min_area), `eval:` (ngưỡng ghép, vành biên).
@@ -27,7 +27,7 @@ tích) mà không bộ chấm nào cung cấp. Kết quả nằm trong runs/eval
 
 Đường riêng cho YOLO — `model.val()` của ultralytics, đúng thứ `yolo val` chạy:
 
-    python benchmark/maskrcnn_vannguyen/scripts/evaluate.py --native --weights <best.pt> --split test --imgsz 1024
+    python benchmark/maskrcnn/evaluate.py --native --weights <best.pt> --split test --imgsz 1024
 
 Giữ để đối chiếu với mọi báo cáo YOLO khác; số của nó và số COCOeval chênh nhau
 vài phần nghìn do cách nội suy đường PR, không phải do model.
@@ -41,7 +41,7 @@ import sys
 import traceback
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # benchmark/<thành viên>/
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # thư mục của model này
 
 from cofseg import artifacts  # noqa: E402
 from cofseg import cli  # noqa: E402

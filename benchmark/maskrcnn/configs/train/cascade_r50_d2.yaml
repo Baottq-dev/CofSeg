@@ -5,7 +5,7 @@
 # chênh lệch với mốc 0 chỉ do phần định vị.
 #
 # Không nằm trong bộ 4 model chính; chạy khi còn giờ:
-#     bash scripts/remote/run_fold.sh f4 --only cascade
+#     bash benchmark/run.py f4 --only cascade
 base: _base_d2.yaml
 name: cascade-r50-d2
 model:

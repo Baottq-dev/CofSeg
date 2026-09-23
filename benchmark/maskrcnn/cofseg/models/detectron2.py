@@ -48,7 +48,7 @@ def require_detectron2():
         import detectron2  # noqa: F401
     except ImportError as e:
         raise ImportError(
-            "Cần detectron2 (Linux, build từ source; xem scripts/remote/setup.sh). "
+            "Cần detectron2 (Linux, build từ source; xem scripts/setup_env.py). "
             "Ở máy không có nó, chấm file predictions.json bằng model coco_predictions."
         ) from e
 

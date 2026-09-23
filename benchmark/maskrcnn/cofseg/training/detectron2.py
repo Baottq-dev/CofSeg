@@ -2,8 +2,8 @@
 Mask2Former R50 (và PointRend nếu đưa config) — cùng scripts/train.py, cùng
 khối `train:` với hai trainer kia.
 
-    python benchmark/maskrcnn_vannguyen/scripts/train.py --config benchmark/maskrcnn_vannguyen/configs/train/maskrcnn_r50_d2.yaml --set data.root=data/export/f4
-    python benchmark/maskrcnn_vannguyen/scripts/train.py --config benchmark/maskrcnn_vannguyen/configs/train/mask2former_r50_d2.yaml --probe
+    python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --set data.root=data/export/f4
+    python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/mask2former_r50_d2.yaml --probe
 
 Khác biệt có chủ đích với trainer torchvision/YOLO:
 - Vòng lặp là DefaultTrainer của detectron2 (hoặc Trainer trong train_net.py

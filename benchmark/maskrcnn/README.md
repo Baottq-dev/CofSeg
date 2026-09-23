@@ -25,16 +25,17 @@ này** trên cùng một ruộng. Vì vậy hai thứ phải giữ nghiêm:
 Từ **gốc repo**:
 
 ```bash
-bash benchmark/maskrcnn_vannguyen/run.sh f4 --smoke     # vài iteration, kiểm đường chạy TRƯỚC
-bash benchmark/maskrcnn_vannguyen/run.sh f4             # một fold đầy đủ
-bash benchmark/maskrcnn_vannguyen/run.sh f4 --epochs 30 --batch 2
+python benchmark/run.py f4 --only maskrcnn --smoke    # vài iteration, kiểm đường chạy TRƯỚC
+python benchmark/run.py f4 --only maskrcnn            # một fold đầy đủ
+python benchmark/run.py f4 --only maskrcnn --epochs 30 --batch 2
 
 # test của thư mục này
-cd benchmark/maskrcnn_vannguyen && python -m pytest tests
+cd benchmark/maskrcnn && python -m pytest tests
 ```
 
-`run.sh` để lại `preds/maskrcnn_f4.json` ở gốc và các file kết quả trong
-`benchmark/maskrcnn_vannguyen/results/`.
+Để lại `preds/maskrcnn_f4.json` ở gốc và các file kết quả trong
+`benchmark/maskrcnn/results/`. Gọi thẳng cũng được:
+`python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/... --runs benchmark/maskrcnn/runs`
 
 ## Trong thư mục này
 
@@ -42,8 +43,7 @@ cd benchmark/maskrcnn_vannguyen && python -m pytest tests
 |---|---|
 | `cofseg/` | bản sao lõi của riêng thư mục: đọc dữ liệu, chỉ số, vòng chấm, trainer + model của model này |
 | `configs/train/`, `configs/eval/` | cấu hình huấn luyện và chấm |
-| `scripts/train.py`, `scripts/evaluate.py` | bản riêng, nạp `cofseg/` của thư mục này |
-| `run.sh` | train một fold, chấm, chép kết quả |
+| `train.py`, `evaluate.py` | bản riêng, nạp `cofseg/` của thư mục này |
 | `tests/` | test cho phần của mình — chạy trước khi commit |
 | `runs/` | kết quả train/eval (không vào git) |
 | `results/` | file kết quả nhỏ, được commit |
