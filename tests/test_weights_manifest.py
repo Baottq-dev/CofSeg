@@ -37,8 +37,8 @@ def test_shipped_manifest_is_consistent():
     # URL trong bản kê phải khớp URL mà code của thành viên dùng; hai chỗ lệch
     # nhau thì máy lab tải một bản, trainer nạp một bản khác.
     for member, needle, name in (
-            ("mask2former_anhvu", "maskformer2_R50_bs16_50ep", "maskformer2_R50_bs16_50ep_coco.pkl"),
-            ("solov2_phuongquynh", "solov2_r50_fpn_3x_coco", "solov2_r50_fpn_3x_coco.pth")):
+            ("mask2former", "maskformer2_R50_bs16_50ep", "maskformer2_R50_bs16_50ep_coco.pkl"),
+            ("solov2", "solov2_r50_fpn_3x_coco", "solov2_r50_fpn_3x_coco.pth")):
         code = "".join(p.read_text(encoding="utf-8")
                        for p in (ROOT / "benchmark" / member / "cofseg").rglob("*.py"))
         assert needle in code, f"{member}: không thấy checkpoint {needle} trong code"

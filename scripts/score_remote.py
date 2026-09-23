@@ -4,7 +4,7 @@
     python scripts/score_remote.py --preds preds --export data/export --folds f4,f2 --limit 20
 
 Mỗi preds/<model>_<fold>.json (COCO results của split test, do
-scripts/remote/run_fold.sh gom) được chấm bằng scripts/evaluate.py với
+benchmark/run.py gom) được chấm bằng scripts/evaluate.py với
 configs/eval/coco_predictions.yaml trên data/export/<fold> split test, tên
 lần chấm "<model>_<fold>" để summarize_folds.py nhận ra. Chạy từng file trong
 tiến trình con nên một file hỏng không kéo cả loạt; lỗi in ra cuối.

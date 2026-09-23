@@ -1,6 +1,6 @@
 """Chấm một model trên một split, qua một đường chung cho mọi model.
 
-    python scripts/evaluate.py --config benchmark/yolo11_quangbao/configs/eval/yolo26s.yaml --set model.weights=<best.pt>
+    python scripts/evaluate.py --config benchmark/yolo11/configs/eval/yolo26s.yaml --set model.weights=<best.pt>
     python scripts/evaluate.py --config configs/eval/maskrcnn_r50.yaml --set model.weights=<best.pt>
     python scripts/evaluate.py --config configs/eval/sam2_oracle.yaml --size t --limit 5
     python scripts/evaluate.py --config configs/eval/coco_predictions.yaml --file preds/cascade.json

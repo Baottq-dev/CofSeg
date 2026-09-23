@@ -6,15 +6,16 @@
 
 # Mỗi thư mục benchmark là một bản độc lập, một người chịu trách nhiệm:
 # code (cofseg/), config, cách chạy, kết quả.
-/benchmark/maskrcnn_vannguyen/     @vnguyen123
-/benchmark/solov2_phuongquynh/     @Phquynh2312
-/benchmark/yolo11_quangbao/        @Baottq-dev
-/benchmark/mask2former_anhvu/      @tranphuocanhvu2103
+/benchmark/maskrcnn/      @vnguyen123
+/benchmark/solov2/        @Phquynh2312
+/benchmark/yolo11/        @Baottq-dev
+/benchmark/mask2former/   @tranphuocanhvu2103
 
 # Dùng chung: cắt fold, bản kê trọng số, script chạy cả bốn, môi trường.
 # Sửa là ảnh hưởng mọi người nên cả nhóm cùng xem.
-/benchmark/README.md      @vnguyen123 @Phquynh2312 @Baottq-dev @tranphuocanhvu2103
+/benchmark/README.md       @vnguyen123 @Phquynh2312 @Baottq-dev @tranphuocanhvu2103
 /benchmark/check_copies.py @vnguyen123 @Phquynh2312 @Baottq-dev @tranphuocanhvu2103
+/benchmark/run.py         @vnguyen123 @Phquynh2312 @Baottq-dev @tranphuocanhvu2103
 /canopyseg/               @vnguyen123 @Phquynh2312 @Baottq-dev @tranphuocanhvu2103
 /scripts/                 @vnguyen123 @Phquynh2312 @Baottq-dev @tranphuocanhvu2103
 /configs/                 @vnguyen123 @Phquynh2312 @Baottq-dev @tranphuocanhvu2103

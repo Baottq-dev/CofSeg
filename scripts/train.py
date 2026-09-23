@@ -1,12 +1,12 @@
 """Huấn luyện một model bất kỳ. Model do config chỉ định, không phải script.
 
-    python scripts/train.py --config benchmark/yolo11_quangbao/configs/train/yolo26s.yaml
-    python scripts/train.py --config benchmark/yolo11_quangbao/configs/train/yolo26s.yaml --probe
-    python scripts/train.py --config benchmark/yolo11_quangbao/configs/train/yolo26s.yaml --print-config
+    python scripts/train.py --config benchmark/yolo11/configs/train/yolo26s.yaml
+    python scripts/train.py --config benchmark/yolo11/configs/train/yolo26s.yaml --probe
+    python scripts/train.py --config benchmark/yolo11/configs/train/yolo26s.yaml --print-config
 
 Truyền siêu tham số thẳng trên dòng lệnh — mọi tham số của trainer đều nhận:
 
-    python scripts/train.py --config benchmark/yolo11_quangbao/configs/train/yolo26s.yaml --epochs 100 --imgsz 640 --batch 16 
+    python scripts/train.py --config benchmark/yolo11/configs/train/yolo26s.yaml --epochs 100 --imgsz 640 --batch 16 
     
 Tên viết gạch nối cũng được (--cos-lr = --cos_lr). Cờ không kèm giá trị nghĩa
 là bật: --amp tương đương --amp true. Gõ sai tên thì script BÁO LỖI kèm gợi ý,

@@ -1,15 +1,14 @@
 """Các file config đi kèm repo phải nối đúng vào registry và vào nhau.
 
-Bốn model của bảng benchmark có bản code riêng trong `benchmark/<model>_<người>/`,
+Bốn model của bảng benchmark có bản code riêng trong `benchmark/<model>/`,
 nên test ở đây chỉ phủ phần của gốc (đường chạy nhanh, nhánh promptable) cộng
-những ràng buộc BẮC CẦU giữa các thư mục: `run_fold.sh` phải gọi đúng thư mục
-có thật, và mỗi thư mục phải tự chứa. Test cho model của từng người nằm trong
-`benchmark/<...>/tests/`.
+những ràng buộc BẮC CẦU giữa các thư mục: `benchmark/run.py` phải trỏ đúng
+thư mục và config có thật, và mỗi thư mục phải tự chứa. Test cho model của
+từng người nằm trong `benchmark/<model>/tests/`.
 """
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import pytest
@@ -20,7 +19,8 @@ from canopyseg.models.build import model_param_names
 ROOT = Path(__file__).resolve().parents[1]
 TRAIN = sorted(p for p in (ROOT / "configs" / "train").glob("*.yaml") if not p.name.startswith("_"))
 EVAL = sorted(p for p in (ROOT / "configs" / "eval").glob("*.yaml") if not p.name.startswith("_"))
-MEMBERS = sorted(d for d in (ROOT / "benchmark").iterdir() if d.is_dir() and (d / "run.sh").exists())
+MEMBERS = sorted(d for d in (ROOT / "benchmark").iterdir()
+                 if d.is_dir() and (d / "train.py").exists())
 
 
 @pytest.mark.parametrize("path", TRAIN, ids=lambda p: p.name)
@@ -48,29 +48,32 @@ def test_eval_config_names_a_model_and_only_its_params(path):
         assert not unknown, f"{path.name}: khối model có khoá {m['name']} không nhận: {sorted(unknown)}"
 
 
-def test_run_fold_calls_member_folders_that_exist():
-    sh = (ROOT / "scripts" / "remote" / "run_fold.sh").read_text(encoding="utf-8")
-    calls = re.findall(r"^want (\S+)\s+&& run (\S+)\s+(\S+)", sh, flags=re.M)
-    assert len(calls) == 4, "run_fold.sh phải gọi đúng bốn thư mục thành viên"
-    for want, short, member in calls:
-        assert want == short
-        assert (ROOT / "benchmark" / member / "run.sh").exists(), f"thiếu benchmark/{member}/run.sh"
-    default = re.search(r'ONLY="([^"]+)"', sh).group(1).split(",")
-    assert set(default) == {s for _, s, _ in calls}
-    assert {m for _, _, m in calls} == {d.name for d in MEMBERS}
+def test_runner_knows_every_member_folder():
+    """benchmark/run.py là chỗ duy nhất biết bốn model; bảng trong đó phải khớp
+    thư mục có thật, và mỗi mục phải trỏ vào config có thật."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_bench_run", ROOT / "benchmark" / "run.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    assert set(mod.ORDER) == set(mod.MODELS) == {d.name for d in MEMBERS}
+    for name, spec_ in mod.MODELS.items():
+        folder = ROOT / "benchmark" / spec_["dir"]
+        assert folder.is_dir(), f"{name}: không có thư mục {spec_['dir']}"
+        for key in ("train", "eval"):
+            assert (folder / spec_[key]).exists(), f"{name}: thiếu {spec_[key]}"
+        assert spec_["score"] in ("predictions", "weights")
+        assert spec_["data"] in ("root", "yaml")
 
 
 @pytest.mark.parametrize("member", MEMBERS, ids=lambda d: d.name)
 def test_member_folder_is_self_contained(member):
-    """Thư mục thành viên phải chạy được một mình: có bản sao lõi, script, và
-    mọi config mà run.sh nhắc tới. Và KHÔNG được nhắc tới canopyseg/ — import
-    ngược ra gốc là hết độc lập mà không ai nhận ra."""
-    for need in ("cofseg", "configs", "scripts/train.py", "scripts/evaluate.py", "run.sh"):
+    """Thư mục thành viên phải chạy được một mình: bản sao lõi, hai script,
+    config, test. Và KHÔNG được nhắc tới canopyseg/ — import ngược ra gốc là
+    hết độc lập mà không ai nhận ra."""
+    for need in ("cofseg", "configs", "train.py", "evaluate.py", "tests"):
         assert (member / need).exists(), f"{member.name}: thiếu {need}"
-
-    sh = (member / "run.sh").read_text(encoding="utf-8")
-    for rel in re.findall(r'"\$HERE/(configs/\S+?\.yaml)"', sh):
-        assert (member / rel).exists(), f"{member.name}: run.sh gọi config thiếu: {rel}"
 
     leaked = [p.relative_to(member).as_posix()
               for p in member.rglob("*.py") if "canopyseg" in p.read_text(encoding="utf-8")]

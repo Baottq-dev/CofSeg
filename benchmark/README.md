@@ -8,10 +8,10 @@ import thư mục nào, không ai phải chờ ai để sửa phần của mình
 
 | Thư mục | Người phụ trách | GitHub | Model | Vai trò trong bảng |
 |---|---|---|---|---|
-| `maskrcnn_vannguyen/` | VanNguyen | @vnguyen123 | Mask R-CNN R50-FPN | **mốc số 0** — mọi model khác báo Δ% mAP so với nó |
-| `solov2_phuongquynh/` | PhuongQuynh | @Phquynh2312 | SOLOv2 R50-FPN | box-free: lưới + kernel động, không box |
-| `yolo11_quangbao/` | QuangBao | @Baottq-dev | YOLOv11-Seg | một giai đoạn, thời gian thực |
-| `mask2former_anhvu/` | AnhVu | @tranphuocanhvu2103 | Mask2Former R50 | query / transformer, mask toàn ảnh |
+| `maskrcnn/` | VanNguyen | @vnguyen123 | Mask R-CNN R50-FPN | **mốc số 0** — mọi model khác báo Δ% mAP so với nó |
+| `solov2/` | PhuongQuynh | @Phquynh2312 | SOLOv2 R50-FPN | box-free: lưới + kernel động, không box |
+| `yolo11/` | QuangBao | @Baottq-dev | YOLOv11-Seg | một giai đoạn, thời gian thực |
+| `mask2former/` | AnhVu | @tranphuocanhvu2103 | Mask2Former R50 | query / transformer, mask toàn ảnh |
 
 Ba model dùng chung backbone ResNet-50 (Mask R-CNN, SOLOv2, Mask2Former) nên
 chênh lệch giữa chúng là do cơ chế, không do backbone.
@@ -19,8 +19,10 @@ chênh lệch giữa chúng là do cơ chế, không do backbone.
 ## Một thư mục có gì
 
 ```
-benchmark/<model>_<người>/
+benchmark/<model>/
 ├─ README.md              model gì, vì sao chọn, cách chạy, trạng thái
+├─ train.py               huấn luyện, nạp cofseg/ của thư mục này
+├─ evaluate.py            chấm, nạp cofseg/ của thư mục này
 ├─ cofseg/                BẢN SAO LÕI của riêng thư mục này
 │   ├─ datasets/          đọc fold COCO
 │   ├─ metrics/           mask AP, Boundary AP/IoU, sai số diện tích
@@ -29,9 +31,6 @@ benchmark/<model>_<người>/
 │   └─ training/          trainer của model này
 ├─ configs/train/*.yaml   cấu hình huấn luyện
 ├─ configs/eval/*.yaml    cấu hình chấm
-├─ scripts/train.py       bản riêng, nạp cofseg/ của thư mục này
-├─ scripts/evaluate.py    bản riêng
-├─ run.sh                 train một fold -> chấm -> chép kết quả
 ├─ tests/                 test cho phần của mình
 ├─ runs/                  (không vào git) kết quả train/eval
 ├─ results/               file kết quả nhỏ, ĐƯỢC commit
@@ -48,16 +47,21 @@ Từ **gốc repo** (để `data/` và `weights/` dùng chung):
 # cắt fold một lần cho cả nhóm
 python scripts/make_fold.py --export data/export/all_v2 --all
 
-# một người chạy model của mình
-bash benchmark/yolo11_quangbao/run.sh f4 --smoke      # kiểm đường chạy trước
-bash benchmark/yolo11_quangbao/run.sh f4
+# cả bốn model trên một fold
+python benchmark/run.py f4 --smoke      # vài iteration, kiểm đường chạy trước
+python benchmark/run.py f4
 
-# cả bốn model trên một fold (gọi run.sh của từng thư mục)
-bash scripts/remote/run_fold.sh f4
+# một người chạy model của mình
+python benchmark/run.py f4 --only solov2
+python benchmark/run.py f4 f2 --only yolo11 --imgsz 1024 --batch 4
+
+# hoặc gọi thẳng train/evaluate của thư mục mình
+python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml     --set data.yaml=data/export/f4/data.yaml --runs benchmark/yolo11/runs
 ```
 
-`run.sh` để lại `preds/<model>_<fold>.json` ở gốc và các file kết quả trong
-`benchmark/<...>/results/`.
+`benchmark/run.py` gọi `train.py` rồi `evaluate.py` của từng thư mục, để lại
+`preds/<model>_<fold>.json` ở gốc và file kết quả trong
+`benchmark/<model>/results/`. Một model lỗi thì ghi nhận và chạy tiếp model sau.
 
 ## Cái giá của việc tách rời, và cách kiểm soát
 
@@ -71,7 +75,7 @@ python benchmark/check_copies.py --diff   # lệch ở dòng nào
 python benchmark/check_copies.py --sync   # chép bản gốc đè lên chỗ lệch
 ```
 
-`run_fold.sh` gọi script này trước khi chạy. Sửa trainer hay model wrapper thì
+`benchmark/run.py` gọi script này trước mỗi lượt chạy. Sửa trainer hay model wrapper thì
 thoải mái — đó là phần của bạn; nhưng sửa phần chấm điểm thì **phải báo nhóm**,
 hoặc ghi rõ khác biệt khi trình bày bảng.
 
@@ -89,9 +93,9 @@ Dùng chung thật sự chỉ còn: `data/` (ảnh + nhãn), `weights/` (trọng
 - **Commit message tiếng Anh**, mô tả thay đổi chứ không mô tả file.
   Commit trong thư mục nào thì mang tên người phụ trách thư mục đó.
 - **Không commit** `data/`, `runs/`, `weights/`, `docs/`, `benchmark/*/runs/`.
-  Kết quả muốn chia sẻ thì chép file nhỏ vào `benchmark/<...>/results/`.
+  Kết quả muốn chia sẻ thì chép file nhỏ vào `benchmark/<model>/results/`.
 - Chạy test của thư mục mình trước khi commit:
-  `cd benchmark/<...> && python -m pytest tests`
+  `cd benchmark/<model> && python -m pytest tests`
 
 ## Commit đúng tên khi dùng chung một máy
 

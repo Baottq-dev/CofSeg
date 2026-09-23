@@ -7,10 +7,10 @@ Hướng dẫn chạy
 
 | Thư mục | Người phụ trách | Model | Vai trò |
 |---|---|---|---|
-| `benchmark/maskrcnn_vannguyen/` | VanNguyen | Mask R-CNN R50-FPN | mốc số 0 của bảng |
-| `benchmark/solov2_phuongquynh/` | PhuongQuynh | SOLOv2 R50-FPN | box-free |
-| `benchmark/yolo11_quangbao/` | QuangBao | YOLOv11-Seg | một giai đoạn, real-time |
-| `benchmark/mask2former_anhvu/` | AnhVu | Mask2Former R50 | query / transformer |
+| `benchmark/maskrcnn/` | VanNguyen | Mask R-CNN R50-FPN | mốc số 0 của bảng |
+| `benchmark/solov2/` | PhuongQuynh | SOLOv2 R50-FPN | box-free |
+| `benchmark/yolo11/` | QuangBao | YOLOv11-Seg | một giai đoạn, real-time |
+| `benchmark/mask2former/` | AnhVu | Mask2Former R50 | query / transformer |
 
 Mỗi thư mục `benchmark/` chứa TRỌN model của một người: code (bản sao lõi
 riêng trong `cofseg/`), config, script chạy, test, kết quả. Không thư mục nào
@@ -49,13 +49,13 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-Máy lab / máy thuê (Linux, có `nvcc`) — một lệnh làm hết, kể cả detectron2, mmcv, op Mask2Former và trọng số:
+Máy lab / máy thuê (Linux, có `nvcc`) — sáu bước, dừng đúng chỗ lỗi:
 
 ```
-bash scripts/remote/setup.sh
+python scripts/setup_env.py
 ```
 
-Chi tiết và cách chạy benchmark: `scripts/remote/README_remote.md`.
+Chi tiết và cách chạy benchmark: `CHAY_MAY_LINUX.md`.
 
 ## 3. Tải trọng số
 
@@ -97,12 +97,12 @@ python -m uvicorn app.server:app --host 0.0.0.0 --port 1801
 # cắt 6 fold từ một bản xuất chưa chia
 python scripts/make_fold.py --export data/export/all_v2 --all
 
-# một người chạy model của mình (train -> chấm -> chép kết quả)
-bash benchmark/yolo11_quangbao/run.sh f4 --smoke   # kiểm đường chạy trước
-bash benchmark/yolo11_quangbao/run.sh f4
+# cả bốn model trên một fold
+python benchmark/run.py f4 --smoke      # kiểm đường chạy trước
+python benchmark/run.py f4
 
-# cả bốn model trên một fold, máy Linux
-bash scripts/remote/run_fold.sh f4
+# một người chạy model của mình
+python benchmark/run.py f4 --only yolo11
 
 # bốn bản chấm điểm có còn giống nhau không (số có so được không)
 python benchmark/check_copies.py
@@ -111,4 +111,4 @@ python benchmark/check_copies.py
 python scripts/summarize_folds.py --eval benchmark/*/runs/eval
 ```
 
-Chi tiết cho máy lab / máy thuê: `scripts/remote/README_remote.md`.
+Chi tiết cho máy lab / máy thuê: `CHAY_MAY_LINUX.md`.
