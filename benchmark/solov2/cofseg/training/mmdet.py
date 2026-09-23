@@ -1,8 +1,8 @@
 """Trainer mmdetection: SOLOv2 R50-FPN — cùng scripts/train.py, cùng khối
 `train:` với các trainer kia.
 
-    python benchmark/solov2_phuongquynh/scripts/train.py --config benchmark/solov2_phuongquynh/configs/train/solov2_r50_mm.yaml --set data.root=data/export/f4
-    python benchmark/solov2_phuongquynh/scripts/train.py --config benchmark/solov2_phuongquynh/configs/train/solov2_r50_mm.yaml --probe
+    python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --set data.root=data/export/f4
+    python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --probe
 
 Cách nối vào mmdet: nạp config zoo đóng gói trong gói mmdet (không clone repo),
 gộp phần ghi đè model trong thư mục người phụ trách (ZOO[arch]["overrides"]),
@@ -81,7 +81,7 @@ def require_mmdet():
         import mmdet  # noqa: F401
     except ImportError as e:
         raise ImportError(
-            "Cần mmcv + mmdet (Linux; xem requirements.txt và scripts/remote/setup.sh). "
+            "Cần mmcv + mmdet (Linux; xem requirements.txt và scripts/setup_env.py). "
             "Ở máy không có, chấm file predictions.json bằng model coco_predictions."
         ) from e
 

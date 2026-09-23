@@ -24,16 +24,17 @@ toàn ảnh. Không RPN, không ROI, không cắt mask theo box.
 Từ **gốc repo**:
 
 ```bash
-bash benchmark/solov2_phuongquynh/run.sh f4 --smoke     # vài iteration, kiểm đường chạy TRƯỚC
-bash benchmark/solov2_phuongquynh/run.sh f4             # một fold đầy đủ
-bash benchmark/solov2_phuongquynh/run.sh f4 --epochs 30 --batch 2
+python benchmark/run.py f4 --only solov2 --smoke    # vài iteration, kiểm đường chạy TRƯỚC
+python benchmark/run.py f4 --only solov2            # một fold đầy đủ
+python benchmark/run.py f4 --only solov2 --epochs 30 --batch 2
 
 # test của thư mục này
-cd benchmark/solov2_phuongquynh && python -m pytest tests
+cd benchmark/solov2 && python -m pytest tests
 ```
 
-`run.sh` để lại `preds/solov2_f4.json` ở gốc và các file kết quả trong
-`benchmark/solov2_phuongquynh/results/`.
+Để lại `preds/solov2_f4.json` ở gốc và các file kết quả trong
+`benchmark/solov2/results/`. Gọi thẳng cũng được:
+`python benchmark/solov2/train.py --config benchmark/solov2/configs/train/... --runs benchmark/solov2/runs`
 
 ## Trong thư mục này
 
@@ -41,8 +42,7 @@ cd benchmark/solov2_phuongquynh && python -m pytest tests
 |---|---|
 | `cofseg/` | bản sao lõi của riêng thư mục: đọc dữ liệu, chỉ số, vòng chấm, trainer + model của model này |
 | `configs/train/`, `configs/eval/` | cấu hình huấn luyện và chấm |
-| `scripts/train.py`, `scripts/evaluate.py` | bản riêng, nạp `cofseg/` của thư mục này |
-| `run.sh` | train một fold, chấm, chép kết quả |
+| `train.py`, `evaluate.py` | bản riêng, nạp `cofseg/` của thư mục này |
 | `tests/` | test cho phần của mình — chạy trước khi commit |
 | `runs/` | kết quả train/eval (không vào git) |
 | `results/` | file kết quả nhỏ, được commit |
@@ -61,4 +61,4 @@ không còn so được với ba model kia — `python benchmark/check_copies.py
   (mmdet không có transform sẵn cho mask + box), chỉ lật ngang/dọc/chéo. Nhớ
   ghi chú khi đọc bảng.
 - mmdet 3.3.0 khai `mmcv < 2.2` nhưng wheel dựng sẵn cho torch 2.4 là 2.2.0;
-  `scripts/remote/setup.sh` nới dòng kiểm đó.
+  `scripts/setup_env.py` nới dòng kiểm đó.

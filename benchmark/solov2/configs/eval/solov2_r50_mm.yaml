@@ -1,6 +1,6 @@
 # SOLOv2 R50-FPN (mmdet). Trọng số: --set model.weights=<best.pth>
 # Cần mmcv/mmdet; ở máy không có, chấm predictions.json của run bằng
-# benchmark/solov2_phuongquynh/configs/eval/_coco.yaml.
+# benchmark/solov2/configs/eval/_coco.yaml.
 base: _base.yaml
 name: solov2-r50-mm
 model:

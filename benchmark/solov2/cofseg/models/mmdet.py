@@ -9,7 +9,7 @@ mmdet/mmcv chỉ được import BÊN TRONG hàm: repo ở nhà (Windows) không
 mmcv, nhưng registry và test phần thuần Python vẫn phải chạy.
 
 CHƯA CHẠY THẬT: mmcv không dựng được trên máy phát triển. Phải khói trên máy
-Linux (benchmark/solov2_phuongquynh/run.sh f4 --smoke) trước khi tin.
+Linux (benchmark/solov2/run.sh f4 --smoke) trước khi tin.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ def require_mmdet():
         import mmdet  # noqa: F401
     except ImportError as e:
         raise ImportError(
-            "Cần mmcv + mmdet (Linux; xem requirements.txt và scripts/remote/setup.sh). "
+            "Cần mmcv + mmdet (Linux; xem requirements.txt và scripts/setup_env.py). "
             "Ở máy không có, chấm file predictions.json bằng model coco_predictions."
         ) from e
 

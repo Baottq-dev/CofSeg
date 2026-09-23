@@ -8,7 +8,7 @@
     cp runs/train/<...>/results.csv                    results/solov2_f4_train.csv
 
 **Không** chép `predictions.json` (vài chục MB) hay file trọng số vào đây —
-chúng đi theo `scripts/remote/pack_results.sh` và ở lại `runs/`, `weights/`.
+chúng đi theo `scripts/pack_results.py` và ở lại `runs/`, `weights/`.
 
 Bảng tổng hợp cả bốn model dựng bằng:
 
