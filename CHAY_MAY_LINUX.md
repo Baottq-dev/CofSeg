@@ -4,7 +4,7 @@ Máy Linux (Ubuntu, GPU ≥ 24 GB, CUDA toolkit có `nvcc`, có internet). Mọi
 chạy từ gốc repo.
 
 Mã đi theo repo: `git clone --recurse-submodules <repo>` (Mask2Former là
-submodule trong `third_party/`); thư viện Linux-only (detectron2, mmcv) nằm
+submodule trong `benchmark/mask2former/Mask2Former`); thư viện Linux-only (detectron2, mmcv) nằm
 trong `requirements.txt` với marker `sys_platform`; trọng số theo
 `configs/weights.yaml`. Không phải clone hay tải gì bằng tay.
 

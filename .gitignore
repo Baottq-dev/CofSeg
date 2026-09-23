@@ -156,10 +156,9 @@ docs/
 predictions/
 weights/
 data/iachim_dataset_export/predictions/
-# third_party/ là submodule (Mask2Former): nội dung do repo con quản, ở đây
-# chỉ bỏ qua sản phẩm build op CUDA nếu nó rơi ra ngoài repo con.
-third_party/**/build/
-third_party/**/*.egg-info/
+# Repo Mask2Former là submodule trong benchmark/mask2former/; nội dung do repo
+# con quản, ở đây chỉ bỏ qua sản phẩm build op CUDA.
+**/Mask2Former/**/build/
+**/Mask2Former/**/*.egg-info/
 
-# Danh tính để commit đúng author khi cả nhóm dùng chung một máy (members/README.md)
 .authors.local

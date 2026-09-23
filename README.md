@@ -32,11 +32,11 @@ và cách commit đúng author khi dùng chung một máy: xem `benchmark/README
 ```
 git clone --recurse-submodules https://github.com/Baottq-dev/CofSeg.git CoffeeSeg
 cd CoffeeSeg
-# đã clone rồi mà thiếu third_party/Mask2Former:
+# đã clone rồi mà thiếu benchmark/mask2former/Mask2Former:
 git submodule update --init
 ```
 
-`third_party/` là submodule (Mask2Former), `requirements.txt` ghim mọi thư viện — dòng chỉ-Linux có marker `sys_platform`, pip tự bỏ qua trên Windows.
+`benchmark/mask2former/Mask2Former` là submodule (repo gốc của Mask2Former), `requirements.txt` ghim mọi thư viện — dòng chỉ-Linux có marker `sys_platform`, pip tự bỏ qua trên Windows.
 
 ## 2. Cài môi trường
 
