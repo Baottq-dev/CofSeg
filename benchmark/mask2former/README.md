@@ -26,16 +26,17 @@ chỉnh biên".
 Từ **gốc repo**:
 
 ```bash
-bash benchmark/mask2former_anhvu/run.sh f4 --smoke     # vài iteration, kiểm đường chạy TRƯỚC
-bash benchmark/mask2former_anhvu/run.sh f4             # một fold đầy đủ
-bash benchmark/mask2former_anhvu/run.sh f4 --epochs 30 --batch 2
+python benchmark/run.py f4 --only mask2former --smoke    # vài iteration, kiểm đường chạy TRƯỚC
+python benchmark/run.py f4 --only mask2former            # một fold đầy đủ
+python benchmark/run.py f4 --only mask2former --epochs 30 --batch 2
 
 # test của thư mục này
-cd benchmark/mask2former_anhvu && python -m pytest tests
+cd benchmark/mask2former && python -m pytest tests
 ```
 
-`run.sh` để lại `preds/mask2former_f4.json` ở gốc và các file kết quả trong
-`benchmark/mask2former_anhvu/results/`.
+Để lại `preds/mask2former_f4.json` ở gốc và các file kết quả trong
+`benchmark/mask2former/results/`. Gọi thẳng cũng được:
+`python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/... --runs benchmark/mask2former/runs`
 
 ## Trong thư mục này
 
@@ -43,8 +44,7 @@ cd benchmark/mask2former_anhvu && python -m pytest tests
 |---|---|
 | `cofseg/` | bản sao lõi của riêng thư mục: đọc dữ liệu, chỉ số, vòng chấm, trainer + model của model này |
 | `configs/train/`, `configs/eval/` | cấu hình huấn luyện và chấm |
-| `scripts/train.py`, `scripts/evaluate.py` | bản riêng, nạp `cofseg/` của thư mục này |
-| `run.sh` | train một fold, chấm, chép kết quả |
+| `train.py`, `evaluate.py` | bản riêng, nạp `cofseg/` của thư mục này |
 | `tests/` | test cho phần của mình — chạy trước khi commit |
 | `runs/` | kết quả train/eval (không vào git) |
 | `results/` | file kết quả nhỏ, được commit |
@@ -58,7 +58,7 @@ không còn so được với ba model kia — `python benchmark/check_copies.py
 
 - **Chưa chạy thật lần nào.** Cần máy Linux: detectron2 build từ source + repo
   Mask2Former (submodule `third_party/Mask2Former`) + op `MSDeformAttn` biên
-  dịch tại chỗ — `scripts/remote/setup.sh` làm hết. Việc đầu tiên:
+  dịch tại chỗ — `scripts/setup_env.py` làm hết. Việc đầu tiên:
   `run_fold.sh f4 --smoke --only mask2former`.
 - Tốn giờ nhất trong bốn model: recipe 100 epoch, ước ~3 h một fold trên 4090.
   Chạy sau khi ba model kia đã xong một fold để không chiếm GPU quá lâu.

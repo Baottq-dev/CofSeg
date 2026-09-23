@@ -1,16 +1,16 @@
-# Bản của mask2former_anhvu: chạy hoàn toàn trong thư mục này (cofseg/ là bản sao
+# Bản của benchmark/mask2former: chạy hoàn toàn trong thư mục này (cofseg/ là bản sao
 # lõi của riêng thư mục). Chạy từ GỐC REPO để data/ và weights/ dùng chung:
 #
-#     python benchmark/mask2former_anhvu/scripts/train.py --config benchmark/mask2former_anhvu/configs/train/mask2former_r50_d2.yaml
+#     python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml
 """Huấn luyện một model bất kỳ. Model do config chỉ định, không phải script.
 
-    python benchmark/mask2former_anhvu/scripts/train.py --config benchmark/mask2former_anhvu/configs/train/mask2former_r50_d2.yaml
-    python benchmark/mask2former_anhvu/scripts/train.py --config benchmark/mask2former_anhvu/configs/train/mask2former_r50_d2.yaml --probe
-    python benchmark/mask2former_anhvu/scripts/train.py --config benchmark/mask2former_anhvu/configs/train/mask2former_r50_d2.yaml --print-config
+    python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml
+    python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --probe
+    python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --print-config
 
 Truyền siêu tham số thẳng trên dòng lệnh — mọi tham số của trainer đều nhận:
 
-    python benchmark/mask2former_anhvu/scripts/train.py --config benchmark/mask2former_anhvu/configs/train/mask2former_r50_d2.yaml --epochs 100 --imgsz 640 --batch 16 
+    python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --epochs 100 --imgsz 640 --batch 16 
     
 Tên viết gạch nối cũng được (--cos-lr = --cos_lr). Cờ không kèm giá trị nghĩa
 là bật: --amp tương đương --amp true. Gõ sai tên thì script BÁO LỖI kèm gợi ý,
@@ -33,7 +33,7 @@ import sys
 import traceback
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # benchmark/<thành viên>/
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # thư mục của model này
 
 from cofseg import artifacts  # noqa: E402
 from cofseg import cli  # noqa: E402

@@ -6,11 +6,11 @@
 # lịch lr. Sửa một dòng ở đây là đổi số của cả ba model — báo nhóm trước.
 #
 # Config của từng model nằm trong thư mục người phụ trách:
-#     benchmark/mask2former_anhvu/configs/train/maskrcnn_r50_d2.yaml     (mốc số 0)
-#     benchmark/mask2former_anhvu/configs/train/cascade_r50_d2.yaml      (dự phòng)
-#     benchmark/mask2former_anhvu/configs/train/mask2former_r50_d2.yaml
+#     benchmark/mask2former/configs/train/maskrcnn_r50_d2.yaml     (mốc số 0)
+#     benchmark/mask2former/configs/train/cascade_r50_d2.yaml      (dự phòng)
+#     benchmark/mask2former/configs/train/mask2former_r50_d2.yaml
 #
-# Chạy trên máy Linux có detectron2 (scripts/remote/setup.sh). Ở nhà chỉ
+# Chạy trên máy Linux có detectron2 (scripts/setup_env.py). Ở nhà chỉ
 # --print-config / --list-params chạy được; --probe và train cần detectron2.
 
 trainer: detectron2

@@ -9,8 +9,8 @@
 # chỉ đặt số lớp, số query, độ phân giải, lịch theo epoch.
 #
 # Cần submodule third_party/Mask2Former + op MSDeformAttn đã biên dịch
-# (scripts/remote/setup.sh):
-#     python benchmark/mask2former_anhvu/scripts/train.py --config benchmark/mask2former_anhvu/configs/train/mask2former_r50_d2.yaml --set data.root=data/export/f4 --workers 8
+# (scripts/setup_env.py):
+#     python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --set data.root=data/export/f4 --workers 8
 base: _base_d2.yaml
 name: mask2former-r50-d2
 model:
