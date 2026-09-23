@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-M2F_DIR = "benchmark/mask2former/Mask2Former"
+M2F_DIR = "benchmark/mask2former/upstream"
 TORCH = ["torch==2.4.1", "torchvision==0.19.1",
          "--index-url", "https://download.pytorch.org/whl/cu121"]
 

@@ -8,14 +8,14 @@
 # 0.1-2.0 cắt ô IMAGE_SIZE) giữ nguyên trong Trainer của train_net.py; ở đây
 # chỉ đặt số lớp, số query, độ phân giải, lịch theo epoch.
 #
-# Cần submodule benchmark/mask2former/Mask2Former + op MSDeformAttn đã biên dịch
+# Cần submodule benchmark/mask2former/upstream + op MSDeformAttn đã biên dịch
 # (scripts/setup_env.py):
 #     python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --set data.root=data/export/f4 --workers 8
 base: _base_d2.yaml
 name: mask2former-r50-d2
 model:
   arch: mask2former
-  repo: benchmark/mask2former/Mask2Former
+  repo: benchmark/mask2former/upstream
 train:
   # Query-based hội tụ chậm hơn R-CNN; recipe COCO là 50 epoch trên 118k ảnh,
   # với ~600 ảnh train thì 100 epoch (~15k iteration ở batch 4) là mức khởi đầu.

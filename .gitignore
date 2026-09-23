@@ -156,9 +156,9 @@ docs/
 predictions/
 weights/
 data/iachim_dataset_export/predictions/
-# Repo Mask2Former là submodule trong benchmark/mask2former/; nội dung do repo
-# con quản, ở đây chỉ bỏ qua sản phẩm build op CUDA.
-**/Mask2Former/**/build/
-**/Mask2Former/**/*.egg-info/
+# Repo gốc của Mask2Former là submodule ở benchmark/mask2former/upstream/;
+# nội dung do repo con quản, ở đây chỉ bỏ qua sản phẩm build op CUDA.
+benchmark/*/upstream/**/build/
+benchmark/*/upstream/**/*.egg-info/
 
 .authors.local

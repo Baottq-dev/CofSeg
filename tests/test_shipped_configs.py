@@ -53,7 +53,7 @@ def test_member_folder_is_self_contained(member):
 
     leaked = [p.relative_to(member).as_posix()
               for p in member.rglob("*.py")
-              if "Mask2Former" not in p.parts and "canopyseg" in p.read_text(encoding="utf-8")]
+              if "upstream" not in p.parts and "canopyseg" in p.read_text(encoding="utf-8")]
     assert not leaked, f"{member.name}: còn nhắc canopyseg ở {leaked}"
 
 

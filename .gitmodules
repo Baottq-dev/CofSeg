@@ -1,3 +1,3 @@
-[submodule "benchmark/mask2former/Mask2Former"]
-	path = benchmark/mask2former/Mask2Former
+[submodule "benchmark/mask2former/upstream"]
+	path = benchmark/mask2former/upstream
 	url = https://github.com/facebookresearch/Mask2Former.git

@@ -2,7 +2,7 @@
 
 **Người phụ trách:** AnhVu (@tranphuocanhvu2103)
 **Framework:** detectron2 + repo Mask2Former (`trainer: detectron2`,
-`model.arch: mask2former`, `model.repo: benchmark/mask2former/Mask2Former`)
+`model.arch: mask2former`, `model.repo: benchmark/mask2former/upstream`)
 
 ## Vai trò
 
@@ -42,6 +42,7 @@ cd benchmark/mask2former && python -m pytest tests
 
 | | |
 |---|---|
+| `upstream/` | repo gốc facebookresearch/Mask2Former, submodule ghim commit |
 | `cofseg/` | bản sao lõi của riêng thư mục: đọc dữ liệu, chỉ số, vòng chấm, trainer + model của model này |
 | `configs/train/`, `configs/eval/` | cấu hình huấn luyện và chấm |
 | `train.py`, `evaluate.py` | bản riêng, nạp `cofseg/` của thư mục này |
@@ -54,7 +55,7 @@ Sửa gì trong đây cũng được, kể cả `cofseg/`. Riêng phần chấm 
 (`cofseg/metrics/`, `cofseg/evaluation/`, `cofseg/datasets/`) mà sửa thì số
 không còn so được với ba model kia. Sửa thì báo nhóm.
 
-## Mask2Former/ — repo gốc, submodule
+## upstream/ — repo gốc của Mask2Former (submodule)
 
 | | |
 |---|---|
@@ -64,16 +65,18 @@ không còn so được với ba model kia. Sửa thì báo nhóm.
 | Dùng làm gì | `cofseg/models/detectron2.py` nạp `train_net.py` và gói `mask2former` làm module; op `MSDeformAttn` biên dịch tại chỗ bằng `scripts/setup_env.py` |
 
 Repo con đi theo git: `git clone --recurse-submodules`, hoặc
-`git submodule update --init benchmark/mask2former/Mask2Former` nếu đã clone rồi.
+`git submodule update --init benchmark/mask2former/upstream` nếu đã clone rồi.
+Đặt tên `upstream/` chứ không phải `Mask2Former/` vì trùng tên thư mục cha,
+chỉ khác hoa thường — trên Windows và macOS nhìn như một.
 
 **Không sửa mã bên trong repo con.** Cần vá thì vá bằng code trong `cofseg/`
-(như hàm `load_mask2former`). Đổi commit: `git -C benchmark/mask2former/Mask2Former
+(như hàm `load_mask2former`). Đổi commit: `git -C benchmark/mask2former/upstream
 checkout <commit>` rồi commit ở repo ngoài — git ghi lại commit mới của repo con.
 
 ## Trạng thái
 
 - **Chưa chạy thật lần nào.** Cần máy Linux: detectron2 build từ source + repo
-  Mask2Former (submodule `benchmark/mask2former/Mask2Former`) + op `MSDeformAttn` biên
+  Mask2Former (submodule `benchmark/mask2former/upstream`) + op `MSDeformAttn` biên
   dịch tại chỗ — `scripts/setup_env.py` làm hết. Việc đầu tiên:
   `run_fold.sh f4 --smoke --only mask2former`.
 - Tốn giờ nhất trong bốn model: recipe 100 epoch, ước ~3 h một fold trên 4090.

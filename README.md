@@ -33,11 +33,11 @@ nhánh/commit và cách commit đúng author khi dùng chung một máy: xem
 ```
 git clone --recurse-submodules https://github.com/Baottq-dev/CofSeg.git CoffeeSeg
 cd CoffeeSeg
-# đã clone rồi mà thiếu benchmark/mask2former/Mask2Former:
+# đã clone rồi mà thiếu benchmark/mask2former/upstream:
 git submodule update --init
 ```
 
-`benchmark/mask2former/Mask2Former` là submodule (repo gốc của Mask2Former), `requirements.txt` ghim mọi thư viện — dòng chỉ-Linux có marker `sys_platform`, pip tự bỏ qua trên Windows.
+`benchmark/mask2former/upstream` là submodule (repo gốc của Mask2Former), `requirements.txt` ghim mọi thư viện — dòng chỉ-Linux có marker `sys_platform`, pip tự bỏ qua trên Windows.
 
 ## 2. Cài môi trường
 
