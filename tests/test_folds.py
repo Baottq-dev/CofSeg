@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 
 import numpy as np
 import pytest
@@ -120,6 +121,48 @@ def test_copy_flag_and_refusal_to_overwrite(export, folds_yaml, tmp_path):
     assert s["images_copied"] == 6
     with pytest.raises(FileExistsError):
         foldmod.make_fold(export, "f1", foldmod.fold_fields(doc, "f1"), out)
+
+
+def test_labels_are_generated_when_the_export_has_none(export, folds_yaml, tmp_path):
+    """Bản xuất chỉ có COCO (quên tick ô YOLO) vẫn phải ra fold dùng được.
+
+    Trước đây thiếu labels/ là fold ra file .txt RỖNG: ultralytics đọc được,
+    không báo gì, và YOLO train trên không có nhãn nào suốt cả đêm.
+    """
+    from canopyseg.datasets.yolo import verify_roundtrip
+
+    shutil.rmtree(export / "labels")
+    out = tmp_path / "f1"
+    s = foldmod.make_fold(export, "f1", foldmod.fold_fields(foldmod.load_folds(folds_yaml), "f1"), out)
+
+    assert s["labels"] == "generate"
+    assert sum(v["labels"] for v in s["labels_generated"].values()) == 10   # 5 ảnh có vùng x 2
+    assert (out / "data.yaml").exists()
+    # Nhãn sinh ra phải khớp polygon trong COCO của chính fold đó.
+    r = verify_roundtrip(out, list(foldmod.SPLITS))
+    assert r["ok"] and all(v["problems"] == [] for v in r["splits"].values())
+    # Ảnh nền vẫn có file rỗng, không phải thiếu file.
+    bg = out / "labels" / "train" / "field_3__10__1__b.txt"
+    assert bg.exists() and bg.read_text(encoding="utf-8") == ""
+
+
+def test_label_mode_copy_needs_an_export_that_has_them(export, folds_yaml, tmp_path):
+    doc = foldmod.load_folds(folds_yaml)
+    fields = foldmod.fold_fields(doc, "f1")
+    # Bản xuất CÓ labels/ -> auto chép, giữ nguyên byte của bản xuất.
+    s = foldmod.make_fold(export, "f1", fields, tmp_path / "copied")
+    assert s["labels"] == "copy" and "labels_generated" not in s
+    assert (tmp_path / "copied" / "data.yaml").exists()
+
+    # generate ép sinh lại dù bản xuất có sẵn (dùng khi nghi labels/ đã cũ).
+    s = foldmod.make_fold(export, "f1", fields, tmp_path / "gen", labels="generate")
+    assert s["labels"] == "generate"
+
+    shutil.rmtree(export / "labels")
+    with pytest.raises(FileNotFoundError, match="labels"):
+        foldmod.make_fold(export, "f1", fields, tmp_path / "must_copy", labels="copy")
+    with pytest.raises(ValueError, match="labels="):
+        foldmod.make_fold(export, "f1", fields, tmp_path / "bad", labels="khong_co")
 
 
 def test_bad_fold_configs_fail_before_writing(tmp_path, export):

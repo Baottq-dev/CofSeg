@@ -42,6 +42,10 @@ def main() -> int:
     ap.add_argument(
         "--copy", action="store_true", help="chép ảnh thay vì hardlink (tốn đĩa)"
     )
+    ap.add_argument(
+        "--labels", default="auto", choices=foldmod.LABEL_MODES,
+        help="nhãn YOLO: auto = chép nếu bản xuất có labels/, không thì sinh từ COCO",
+    )
     a = ap.parse_args()
 
     doc = foldmod.load_folds(a.folds)
@@ -52,7 +56,7 @@ def main() -> int:
     for name in names:
         fields = foldmod.fold_fields(doc, name)
         out = out_root / name
-        s = foldmod.make_fold(export, name, fields, out, copy=a.copy)
+        s = foldmod.make_fold(export, name, fields, out, copy=a.copy, labels=a.labels)
         print(f"{name} -> {out}")
         for sp in foldmod.SPLITS:
             r = s["splits"][sp]
@@ -64,8 +68,12 @@ def main() -> int:
             print(f"  ảnh chép thay vì hardlink: {s['images_copied']}")
         if s["images_skipped"]:
             print(f"  bỏ qua {len(s['images_skipped'])} ảnh không thuộc ruộng nào trong folds.yaml")
-        if not s["labels"]:
-            print("  bản xuất không có labels/ -> không ghi nhãn YOLO và data.yaml")
+        if s["labels"] == "generate":
+            gen = s.get("labels_generated") or {}
+            n = sum(v["labels"] for v in gen.values())
+            print(f"  nhãn YOLO: sinh từ COCO ({n} vùng) vì bản xuất không có labels/")
+        else:
+            print("  nhãn YOLO: chép từ bản xuất")
     return 0
 
 

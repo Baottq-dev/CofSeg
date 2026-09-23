@@ -3,7 +3,7 @@
 Đầu vào là thư mục app/ xuất với split_by=none:
     <export>/annotations/instances.json
     <export>/images/<field__flight__file.jpg>
-    <export>/labels/<stem>.txt          (chỉ khi xuất kèm YOLO)
+    <export>/labels/<stem>.txt          (nếu bản xuất có kèm YOLO)
 
 Đầu ra là thư mục đúng bố cục CocoDataset và ultralytics mong đợi:
     <out>/annotations/instances_<split>.json
@@ -13,6 +13,10 @@ Hai quyết định đáng ghi:
 - Ảnh được HARDLINK chứ không chép: 6 fold × 1 GB ảnh mà chép là 6 GB cho
   cùng một byte. Hardlink chỉ là tên thứ hai của cùng file, không tốn đĩa, và
   ai đọc cũng thấy là file thường. Khác ổ đĩa thì tự chuyển sang chép.
+- Nhãn YOLO: bản xuất có labels/ thì CHÉP; không có thì SINH từ chính file
+  COCO của fold. Trước đây thiếu labels/ là fold ra file .txt rỗng và YOLO
+  train trên không có gì mà chẳng ai báo — một bộ xuất quên tick ô YOLO là mất
+  một đêm máy. Sinh ra thì nhãn luôn khớp COCO của cùng fold đó.
 - id ảnh và id annotation GIỮ NGUYÊN từ bản xuất gốc. Máy thuê chấm test rồi
   trả về file dự đoán theo image_id; nếu đánh số lại thì file đó không khớp
   với bản chấm ở nhà mà không có lỗi nào báo.
@@ -28,7 +32,7 @@ from pathlib import Path
 
 import yaml
 
-from .yolo import write_data_yaml
+from .yolo import write_data_yaml, write_labels
 
 SPLITS = ("train", "val", "test")
 
@@ -94,18 +98,28 @@ def _sha1(path: Path) -> str:
     return h.hexdigest()
 
 
+LABEL_MODES = ("auto", "copy", "generate")
+
+
 def make_fold(
     export: str | Path,
     name: str,
     fields: dict[str, list[str]],
     out: str | Path,
     copy: bool = False,
+    labels: str = "auto",
 ) -> dict:
     """Cắt <export> thành <out> theo `fields` ({split: [ruộng]}). Trả về tóm tắt.
 
     <out> phải chưa tồn tại — thư mục fold là thứ sinh ra được, xoá đi làm lại
     rẻ hơn là đoán xem bên trong còn gì của lần trước.
+
+    `labels`: "auto" (chép nếu bản xuất có labels/, không thì sinh từ COCO),
+    "copy" (bắt buộc chép, lỗi nếu bản xuất không có), "generate" (luôn sinh —
+    dùng khi nghi labels/ của bản xuất đã cũ so với instances.json).
     """
+    if labels not in LABEL_MODES:
+        raise ValueError(f"labels={labels!r} không hợp lệ; có: {LABEL_MODES}")
     export, out = Path(export), Path(out)
     ann_file = export / "annotations" / "instances.json"
     if not ann_file.exists():
@@ -139,7 +153,13 @@ def make_fold(
     for a in raw["annotations"]:
         anns_by_image.setdefault(int(a["image_id"]), []).append(a)
 
-    has_labels = (export / "labels").is_dir()
+    export_has_labels = (export / "labels").is_dir()
+    if labels == "copy" and not export_has_labels:
+        raise FileNotFoundError(
+            f"labels='copy' nhưng {export / 'labels'} không có. Xuất lại kèm format "
+            "yolo, hoặc dùng labels='generate' để sinh từ COCO.")
+    label_mode = "copy" if (labels == "copy" or (labels == "auto" and export_has_labels)) else "generate"
+    has_labels = label_mode == "copy"
     summary: dict = {
         "fold": name,
         "fields": fields,
@@ -147,7 +167,7 @@ def make_fold(
         "source_sha1": _sha1(ann_file),
         "images_skipped": skipped,
         "splits": {},
-        "labels": has_labels,
+        "labels": label_mode,
     }
     how = {"link": 0, "copy": 0}
     (out / "annotations").mkdir(parents=True)
@@ -192,9 +212,19 @@ def make_fold(
     summary["images_linked"] = how["link"]
     summary["images_copied"] = how["copy"]
 
-    if has_labels:
-        names = {int(c["id"]) - 1: c["name"] for c in raw.get("categories", [])}
-        write_data_yaml(out, {sp: f"images/{sp}" for sp in SPLITS}, names or {0: "canopy"})
+    cats = raw.get("categories") or []
+    names = {int(c["id"]) - 1: c["name"] for c in cats} or {0: "canopy"}
+    if label_mode == "generate":
+        # min_area=0: model COCO (detectron2, mmdet) đọc thẳng instances_*.json
+        # nên train trên MỌI annotation; lọc bớt ở nhãn YOLO là cho YOLO một bộ
+        # nhãn khác các model kia, tức so sánh không còn sạch.
+        if len(cats) > 1:
+            raise ValueError(
+                f"Sinh nhãn YOLO chỉ làm được với bộ một lớp; bản xuất có {len(cats)} lớp. "
+                "Xuất lại kèm format yolo rồi dùng labels='copy'.")
+        summary["labels_generated"] = write_labels(
+            out, list(SPLITS), class_index=min(names), min_area=0.0)["splits"]
+    write_data_yaml(out, {sp: f"images/{sp}" for sp in SPLITS}, names)
     (out / "fold.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
     )
