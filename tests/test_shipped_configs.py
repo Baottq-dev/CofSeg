@@ -2,9 +2,8 @@
 
 Gốc repo không còn model nào: bốn model nằm trong `benchmark/<model>/`, mỗi
 thư mục một bản độc lập. Test ở đây chỉ kiểm những thứ nối các thư mục lại —
-`benchmark/run.py` phải trỏ đúng thư mục và config có thật, mỗi thư mục phải
-tự chứa, và config trong đó phải nạp được. Test cho từng model nằm trong
-`benchmark/<model>/tests/`.
+mỗi thư mục phải tự chứa và config trong đó phải nạp được. Test cho từng
+model nằm trong `benchmark/<model>/tests/`.
 """
 
 from __future__ import annotations
@@ -18,29 +17,6 @@ from canopyseg import config
 ROOT = Path(__file__).resolve().parents[1]
 MEMBERS = sorted(d for d in (ROOT / "benchmark").iterdir()
                  if d.is_dir() and (d / "train.py").exists())
-
-
-def _runner():
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("_bench_run", ROOT / "benchmark" / "run.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-def test_runner_knows_every_member_folder():
-    """benchmark/run.py là chỗ duy nhất biết bốn model; bảng trong đó phải khớp
-    thư mục có thật, và mỗi mục phải trỏ vào config có thật."""
-    mod = _runner()
-    assert set(mod.ORDER) == set(mod.MODELS) == {d.name for d in MEMBERS}
-    for name, spec in mod.MODELS.items():
-        folder = ROOT / "benchmark" / spec["dir"]
-        assert folder.is_dir(), f"{name}: không có thư mục {spec['dir']}"
-        for key in ("train", "eval"):
-            assert (folder / spec[key]).exists(), f"{name}: thiếu {spec[key]}"
-        assert spec["score"] in ("predictions", "weights")
-        assert spec["data"] in ("root", "yaml")
 
 
 @pytest.mark.parametrize("member", MEMBERS, ids=lambda d: d.name)

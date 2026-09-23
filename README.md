@@ -50,13 +50,17 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-Máy lab / máy thuê (Linux, có `nvcc`) — sáu bước, dừng đúng chỗ lỗi:
+Máy lab / máy thuê (Linux, có `nvcc`) — sáu bước, dừng đúng chỗ lỗi; hỏng
+bước nào thì `--from <tên bước>` chạy tiếp từ đó (`--list` xem các bước):
 
 ```
+conda create -y -n cofseg python=3.12 && conda activate cofseg
 python scripts/setup_env.py
 ```
 
-Chi tiết và cách chạy benchmark: `CHAY_MAY_LINUX.md`.
+Mask2Former, Cascade (detectron2) và SOLOv2 (mmdet) **chưa chạy thật trên
+Linux lần nào** — máy phát triển là Windows. Lần đầu nên đi từng bước và khói
+một fold trước khi chạy cả sáu.
 
 ## 3. Tải trọng số
 
@@ -98,15 +102,16 @@ python -m uvicorn app.server:app --host 0.0.0.0 --port 1801
 # cắt 6 fold từ một bản xuất chưa chia
 python scripts/make_fold.py --export data/export/all_v2 --all
 
-# cả bốn model trên một fold
-python benchmark/run.py f4 --smoke      # kiểm đường chạy trước
-python benchmark/run.py f4
+# chuẩn bị dữ liệu trên máy Linux (giải nén bản xuất rồi cắt fold)
+python scripts/prepare_data.py all_v2.tar
 
-# một người chạy model của mình
-python benchmark/run.py f4 --only yolo11
-
+# mỗi người chạy model của mình: lệnh trong benchmark/<model>/README.md
 # bảng model x ruộng từ kết quả của cả bốn thư mục
 python scripts/summarize_folds.py --eval benchmark/*/runs/eval
+
+# gói kết quả mang về
+python scripts/pack_results.py
 ```
 
-Chi tiết cho máy lab / máy thuê: `CHAY_MAY_LINUX.md`.
+Ai phụ trách model nào, ba quy ước đặt tên khi chạy, và cách gộp bảng:
+`benchmark/README.md`.

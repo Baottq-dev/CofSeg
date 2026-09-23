@@ -21,20 +21,31 @@ toàn ảnh. Không RPN, không ROI, không cắt mask theo box.
 
 ## Cách chạy
 
-Từ **gốc repo**:
+Từ **gốc repo** (để `data/` và `weights/` dùng chung). Đặt `--runs` vào thư mục
+này và `--name` theo đúng dạng `<model>_<fold>` — bảng tổng hợp đọc tên đó để
+biết model nào chấm trên ruộng nào.
 
 ```bash
-python benchmark/run.py f4 --only solov2 --smoke    # vài iteration, kiểm đường chạy TRƯỚC
-python benchmark/run.py f4 --only solov2            # một fold đầy đủ
-python benchmark/run.py f4 --only solov2 --epochs 30 --batch 2
+FOLD=f4
 
-# test của thư mục này
+# 1. huấn luyện (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
+python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --set data.root=data/export/$FOLD --runs benchmark/solov2/runs --name solov2-$FOLD
+
+# 2. dự đoán test do trainer ghi ra -> preds/ để cả nhóm dùng chung
+RUN=$(ls -td benchmark/solov2/runs/train/*_solov2-${FOLD}_* | head -1)
+mkdir -p preds && cp "$RUN/predictions.json" preds/solov2_$FOLD.json
+
+# 3. chấm: Boundary AP, Boundary IoU, sai số diện tích, bảng từng vùng
+python benchmark/solov2/evaluate.py --config benchmark/solov2/configs/eval/_coco.yaml --file preds/solov2_$FOLD.json --set data.root=data/export/$FOLD --split test --runs benchmark/solov2/runs --name solov2_$FOLD
+
+# 4. chép file kết quả nhỏ vào results/ (runs/ không vào git)
+EV=$(ls -td benchmark/solov2/runs/eval/*_solov2_${FOLD}_* | head -1)
+cp "$EV/metrics.json"   benchmark/solov2/results/solov2_${FOLD}_metrics.json
+cp "$EV/per_region.csv" benchmark/solov2/results/solov2_${FOLD}_per_region.csv
+
+# test của thư mục này, chạy trước khi commit
 cd benchmark/solov2 && python -m pytest tests
 ```
-
-Để lại `preds/solov2_f4.json` ở gốc và các file kết quả trong
-`benchmark/solov2/results/`. Gọi thẳng cũng được:
-`python benchmark/solov2/train.py --config benchmark/solov2/configs/train/... --runs benchmark/solov2/runs`
 
 ## Trong thư mục này
 

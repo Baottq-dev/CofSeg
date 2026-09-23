@@ -22,20 +22,31 @@ này** trên cùng một ruộng. Vì vậy hai thứ phải giữ nghiêm:
 
 ## Cách chạy
 
-Từ **gốc repo**:
+Từ **gốc repo** (để `data/` và `weights/` dùng chung). Đặt `--runs` vào thư mục
+này và `--name` theo đúng dạng `<model>_<fold>` — bảng tổng hợp đọc tên đó để
+biết model nào chấm trên ruộng nào.
 
 ```bash
-python benchmark/run.py f4 --only maskrcnn --smoke    # vài iteration, kiểm đường chạy TRƯỚC
-python benchmark/run.py f4 --only maskrcnn            # một fold đầy đủ
-python benchmark/run.py f4 --only maskrcnn --epochs 30 --batch 2
+FOLD=f4
 
-# test của thư mục này
+# 1. huấn luyện (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
+python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --set data.root=data/export/$FOLD --runs benchmark/maskrcnn/runs --name maskrcnn-$FOLD
+
+# 2. dự đoán test do trainer ghi ra -> preds/ để cả nhóm dùng chung
+RUN=$(ls -td benchmark/maskrcnn/runs/train/*_maskrcnn-${FOLD}_* | head -1)
+mkdir -p preds && cp "$RUN/predictions.json" preds/maskrcnn_$FOLD.json
+
+# 3. chấm: Boundary AP, Boundary IoU, sai số diện tích, bảng từng vùng
+python benchmark/maskrcnn/evaluate.py --config benchmark/maskrcnn/configs/eval/_coco.yaml --file preds/maskrcnn_$FOLD.json --set data.root=data/export/$FOLD --split test --runs benchmark/maskrcnn/runs --name maskrcnn_$FOLD
+
+# 4. chép file kết quả nhỏ vào results/ (runs/ không vào git)
+EV=$(ls -td benchmark/maskrcnn/runs/eval/*_maskrcnn_${FOLD}_* | head -1)
+cp "$EV/metrics.json"   benchmark/maskrcnn/results/maskrcnn_${FOLD}_metrics.json
+cp "$EV/per_region.csv" benchmark/maskrcnn/results/maskrcnn_${FOLD}_per_region.csv
+
+# test của thư mục này, chạy trước khi commit
 cd benchmark/maskrcnn && python -m pytest tests
 ```
-
-Để lại `preds/maskrcnn_f4.json` ở gốc và các file kết quả trong
-`benchmark/maskrcnn/results/`. Gọi thẳng cũng được:
-`python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/... --runs benchmark/maskrcnn/runs`
 
 ## Trong thư mục này
 

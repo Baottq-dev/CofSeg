@@ -20,20 +20,29 @@ trực tiếp thì độ chính xác giảm bao nhiêu** — so ms/ảnh và mAP
 
 ## Cách chạy
 
-Từ **gốc repo**:
+Từ **gốc repo** (để `data/` và `weights/` dùng chung). Đặt `--runs` vào thư mục
+này và `--name` theo đúng dạng `<model>_<fold>` — bảng tổng hợp đọc tên đó để
+biết model nào chấm trên ruộng nào.
 
 ```bash
-python benchmark/run.py f4 --only yolo11 --smoke    # vài iteration, kiểm đường chạy TRƯỚC
-python benchmark/run.py f4 --only yolo11            # một fold đầy đủ
-python benchmark/run.py f4 --only yolo11 --epochs 30 --batch 2
+FOLD=f4
 
-# test của thư mục này
+# 1. huấn luyện (thêm --epochs 1 --fraction 0.05 để khói)
+python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --set data.yaml=data/export/$FOLD/data.yaml --runs benchmark/yolo11/runs --name yolo11s-$FOLD
+
+# 2. chấm bằng trọng số tốt nhất
+RUN=$(ls -td benchmark/yolo11/runs/train/*_yolo11s-${FOLD}_* | head -1)
+python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo11s.yaml --set model.weights="$RUN/ultralytics/weights/best.pt" --set data.root=data/export/$FOLD --split test --runs benchmark/yolo11/runs --name yolo11s_$FOLD
+
+# 3. dự đoán + kết quả nhỏ
+EV=$(ls -td benchmark/yolo11/runs/eval/*_yolo11s_${FOLD}_* | head -1)
+mkdir -p preds && cp "$EV/predictions.json" preds/yolo11s_$FOLD.json
+cp "$EV/metrics.json"   benchmark/yolo11/results/yolo11s_${FOLD}_metrics.json
+cp "$EV/per_region.csv" benchmark/yolo11/results/yolo11s_${FOLD}_per_region.csv
+
+# test của thư mục này, chạy trước khi commit
 cd benchmark/yolo11 && python -m pytest tests
 ```
-
-Để lại `preds/yolo11s_f4.json` ở gốc và các file kết quả trong
-`benchmark/yolo11/results/`. Gọi thẳng cũng được:
-`python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/... --runs benchmark/yolo11/runs`
 
 ## Trong thư mục này
 

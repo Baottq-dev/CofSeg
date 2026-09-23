@@ -23,20 +23,31 @@ chỉnh biên".
 
 ## Cách chạy
 
-Từ **gốc repo**:
+Từ **gốc repo** (để `data/` và `weights/` dùng chung). Đặt `--runs` vào thư mục
+này và `--name` theo đúng dạng `<model>_<fold>` — bảng tổng hợp đọc tên đó để
+biết model nào chấm trên ruộng nào.
 
 ```bash
-python benchmark/run.py f4 --only mask2former --smoke    # vài iteration, kiểm đường chạy TRƯỚC
-python benchmark/run.py f4 --only mask2former            # một fold đầy đủ
-python benchmark/run.py f4 --only mask2former --epochs 30 --batch 2
+FOLD=f4
 
-# test của thư mục này
+# 1. huấn luyện (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
+python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --set data.root=data/export/$FOLD --runs benchmark/mask2former/runs --name mask2former-$FOLD
+
+# 2. dự đoán test do trainer ghi ra -> preds/ để cả nhóm dùng chung
+RUN=$(ls -td benchmark/mask2former/runs/train/*_mask2former-${FOLD}_* | head -1)
+mkdir -p preds && cp "$RUN/predictions.json" preds/mask2former_$FOLD.json
+
+# 3. chấm: Boundary AP, Boundary IoU, sai số diện tích, bảng từng vùng
+python benchmark/mask2former/evaluate.py --config benchmark/mask2former/configs/eval/_coco.yaml --file preds/mask2former_$FOLD.json --set data.root=data/export/$FOLD --split test --runs benchmark/mask2former/runs --name mask2former_$FOLD
+
+# 4. chép file kết quả nhỏ vào results/ (runs/ không vào git)
+EV=$(ls -td benchmark/mask2former/runs/eval/*_mask2former_${FOLD}_* | head -1)
+cp "$EV/metrics.json"   benchmark/mask2former/results/mask2former_${FOLD}_metrics.json
+cp "$EV/per_region.csv" benchmark/mask2former/results/mask2former_${FOLD}_per_region.csv
+
+# test của thư mục này, chạy trước khi commit
 cd benchmark/mask2former && python -m pytest tests
 ```
-
-Để lại `preds/mask2former_f4.json` ở gốc và các file kết quả trong
-`benchmark/mask2former/results/`. Gọi thẳng cũng được:
-`python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/... --runs benchmark/mask2former/runs`
 
 ## Trong thư mục này
 

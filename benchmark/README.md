@@ -41,27 +41,29 @@ Sửa gì trong thư mục mình cũng được — kể cả `cofseg/`. Không 
 
 ## Chạy
 
-Từ **gốc repo** (để `data/` và `weights/` dùng chung):
+Cắt fold một lần cho cả nhóm, từ gốc repo:
 
 ```bash
-# cắt fold một lần cho cả nhóm
 python scripts/make_fold.py --export data/export/all_v2 --all
-
-# cả bốn model trên một fold
-python benchmark/run.py f4 --smoke      # vài iteration, kiểm đường chạy trước
-python benchmark/run.py f4
-
-# một người chạy model của mình
-python benchmark/run.py f4 --only solov2
-python benchmark/run.py f4 f2 --only yolo11 --imgsz 1024 --batch 4
-
-# hoặc gọi thẳng train/evaluate của thư mục mình
-python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml     --set data.yaml=data/export/f4/data.yaml --runs benchmark/yolo11/runs
 ```
 
-`benchmark/run.py` gọi `train.py` rồi `evaluate.py` của từng thư mục, để lại
-`preds/<model>_<fold>.json` ở gốc và file kết quả trong
-`benchmark/<model>/results/`. Một model lỗi thì ghi nhận và chạy tiếp model sau.
+Sau đó **mỗi người chạy model của mình** — lệnh cụ thể nằm trong README của
+từng thư mục. Không có script chạy cả bốn: mỗi model một framework, một lịch,
+một người chịu trách nhiệm.
+
+Ba quy ước phải giữ, vì bước gộp bảng cuối dựa vào chúng:
+
+| | |
+|---|---|
+| `--runs benchmark/<model>/runs` | kết quả rơi vào thư mục của mình, không lẫn của người khác |
+| `--name <model>_<fold>` lúc **chấm** | `summarize_folds.py` đọc tên này để biết model nào trên ruộng nào |
+| `preds/<model>_<fold>.json` | file dự đoán test, đặt ở `preds/` gốc để cả nhóm đối chiếu |
+
+Gộp kết quả bốn người thành bảng model × ruộng:
+
+```bash
+python scripts/summarize_folds.py --eval benchmark/*/runs/eval
+```
 
 ## Cái giá của việc tách rời
 
