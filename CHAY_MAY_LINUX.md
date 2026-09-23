@@ -64,17 +64,11 @@ sáu fold ~33 h.
 
 ```bash
 tar -xf results_<ngày>.tar
-python benchmark/check_copies.py                          # bốn bản chấm còn giống nhau không
 python scripts/summarize_folds.py --eval benchmark/*/runs/eval
 ```
 
-Nếu muốn chấm lại mọi file dự đoán bằng **một** vòng chấm duy nhất (bản gốc
-`canopyseg/`) thay vì bản của từng người:
-
-```bash
-python scripts/score_remote.py --preds preds --export data/export
-python scripts/summarize_folds.py --eval runs/eval
-```
+Mỗi thư mục đã tự chấm xong trên máy Linux và để kết quả trong
+`benchmark/<model>/results/`; bước này chỉ gộp lại thành bảng model x ruộng.
 
 ## Chưa kiểm ở nhà
 

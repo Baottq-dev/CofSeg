@@ -63,25 +63,19 @@ python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s
 `preds/<model>_<fold>.json` ở gốc và file kết quả trong
 `benchmark/<model>/results/`. Một model lỗi thì ghi nhận và chạy tiếp model sau.
 
-## Cái giá của việc tách rời, và cách kiểm soát
+## Cái giá của việc tách rời
 
-Bốn bản sao `cofseg/` ban đầu giống hệt nhau. Nếu một người sửa phần **chấm
+Bốn bản sao `cofseg/` xuất phát giống hệt nhau. Nếu một người sửa phần **chấm
 điểm** (`metrics/`, `evaluation/`, `datasets/`) thì model của người đó đo bằng
 một cái thước khác, và cột "Δ% mAP so với Mask R-CNN" không còn nghĩa.
 
-```bash
-python benchmark/check_copies.py          # 9 file chấm điểm x 4 bản, so với canopyseg/
-python benchmark/check_copies.py --diff   # lệch ở dòng nào
-python benchmark/check_copies.py --sync   # chép bản gốc đè lên chỗ lệch
-```
-
-`benchmark/run.py` gọi script này trước mỗi lượt chạy. Sửa trainer hay model wrapper thì
-thoải mái — đó là phần của bạn; nhưng sửa phần chấm điểm thì **phải báo nhóm**,
-hoặc ghi rõ khác biệt khi trình bày bảng.
+Sửa trainer hay model wrapper thì thoải mái — đó là phần của bạn. Sửa phần
+chấm điểm thì **phải báo nhóm** để ba người kia sửa theo, hoặc ghi rõ khác
+biệt khi trình bày bảng.
 
 Dùng chung thật sự chỉ còn: `data/` (ảnh + nhãn), `weights/` (trọng số COCO),
 `scripts/make_fold.py` (cắt fold — mọi người phải dùng CÙNG bộ fold),
-`requirements.txt` (một env).
+`scripts/summarize_folds.py` (gộp bảng), `requirements.txt` (một env).
 
 ## Quy ước làm chung
 

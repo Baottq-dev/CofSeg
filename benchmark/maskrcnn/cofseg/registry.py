@@ -1,6 +1,6 @@
 """Sổ đăng ký: tên trong config -> lớp thực thi.
 
-Đây là chỗ khiến scripts/train.py không cần biết YOLO tồn tại. Thêm một họ
+Đây là chỗ khiến benchmark/maskrcnn/train.py không cần biết YOLO tồn tại. Thêm một họ
 model mới (Mask R-CNN, model tự viết...) = thêm một file có @register, không
 sửa dòng nào ở script hay ở vòng lặp đánh giá.
 

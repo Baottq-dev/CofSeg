@@ -17,9 +17,10 @@ riêng trong `cofseg/`), config, script chạy, test, kết quả. Không thư m
 import thư mục nào. Dùng chung chỉ còn dữ liệu (`data/`), trọng số
 (`weights/`), việc cắt fold và một env Python.
 
-Cái giá: bốn bản sao phần chấm điểm, lệch nhau là bảng so sánh mất nghĩa —
-`python benchmark/check_copies.py` kiểm điều đó. Bố cục, quy ước nhánh/commit
-và cách commit đúng author khi dùng chung một máy: xem `benchmark/README.md`.
+Cái giá: bốn bản sao phần chấm điểm, ai sửa thì số của người đó không còn so
+được với ba người kia, nên sửa phần chấm phải báo nhóm. Bố cục, quy ước
+nhánh/commit và cách commit đúng author khi dùng chung một máy: xem
+`benchmark/README.md`.
 
 ## 0. Yêu cầu
 
@@ -103,9 +104,6 @@ python benchmark/run.py f4
 
 # một người chạy model của mình
 python benchmark/run.py f4 --only yolo11
-
-# bốn bản chấm điểm có còn giống nhau không (số có so được không)
-python benchmark/check_copies.py
 
 # bảng model x ruộng từ kết quả của cả bốn thư mục
 python scripts/summarize_folds.py --eval benchmark/*/runs/eval

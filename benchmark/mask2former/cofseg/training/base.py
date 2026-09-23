@@ -1,6 +1,6 @@
 """Hợp đồng cho trainer.
 
-scripts/train.py chỉ làm việc với lớp này. Thêm Mask R-CNN, detectron2, hay
+benchmark/mask2former/train.py chỉ làm việc với lớp này. Thêm Mask R-CNN, detectron2, hay
 model tự viết = thêm một file trong cofseg/training/ có @register, không
 sửa dòng nào ở script.
 """
@@ -34,7 +34,7 @@ class Trainer(ABC):
     def param_defaults(cls) -> dict | None:
         """Tên -> mặc định của mọi tham số mà khối `train:` nhận.
 
-        scripts/train.py dùng nó để bắt lỗi gõ sai tên và để in --list-params.
+        benchmark/mask2former/train.py dùng nó để bắt lỗi gõ sai tên và để in --list-params.
         None nghĩa là trainer không liệt kê được (mọi tên đều được nhận) — đó là
         một lựa chọn phải có chủ đích, vì gõ sai sẽ không có gì báo.
         """

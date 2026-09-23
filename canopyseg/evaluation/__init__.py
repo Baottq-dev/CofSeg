@@ -1,33 +1,11 @@
-"""Chấm model trên một split.
+"""Gộp kết quả của cả bốn model thành một bảng.
 
-Hai đường, cùng một bộ dữ liệu:
-
-- `evaluate_split` + `coco_eval`: đường CHUNG cho mọi model trong sổ đăng ký
-  (YOLO, Mask R-CNN, SAM, model ghép, file dự đoán từ máy khác). Mask AP và
-  Boundary AP chấm bằng pycocotools — bản tham chiếu mà detectron2, mmdet,
-  torchvision và chính ultralytics (khi save_json trên COCO) gọi bên dưới —
-  cộng các chỉ số biên từng vùng mà không bộ nào cung cấp.
-
-- `validate` (native.py): `model.val()` của ultralytics, chỉ cho YOLO. Giữ để
-  đối chiếu với mọi báo cáo YOLO khác; số của nó và số COCOeval chênh nhau vài
-  phần nghìn do cách nội suy đường PR, không phải do model.
+Việc CHẤM từng model nằm trong thư mục của người phụ trách
+(benchmark/<model>/cofseg/evaluation/), mỗi người một bản. Ở đây chỉ còn phần
+đọc các lần chấm đã xong và dựng bảng model x ruộng — thứ không thuộc về ai
+trong bốn người.
 """
 
-from . import coco_eval
-from .matching import Match, align_masks, match_instances
-from .native import validate
-from .report import write_coco_results, write_csv, write_predictions
-from .runner import evaluate_split, summarize
+from . import folds
 
-__all__ = [
-    "coco_eval",
-    "evaluate_split",
-    "summarize",
-    "validate",
-    "Match",
-    "align_masks",
-    "match_instances",
-    "write_csv",
-    "write_predictions",
-    "write_coco_results",
-]
+__all__ = ["folds"]

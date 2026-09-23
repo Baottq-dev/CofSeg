@@ -5,8 +5,8 @@
 """Chấm một model trên một split, qua một đường chung cho mọi model.
 
     python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo11s.yaml --set model.weights=<best.pt>
-    python benchmark/yolo11/evaluate.py --config configs/eval/maskrcnn_r50.yaml --set model.weights=<best.pt>
-    python benchmark/yolo11/evaluate.py --config configs/eval/sam2_oracle.yaml --size t --limit 5
+    python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo11s.yaml --set model.weights=<best.pt>
+    python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo11s.yaml --size t --limit 5
     python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/_coco.yaml --file preds/cascade.json
 
 Config có ba khối: `model:` (name trong sổ đăng ký + tham số khởi tạo, lồng
@@ -217,7 +217,7 @@ def main() -> int:
     if a.native:
         return run_native(a, extra)
     if not a.config:
-        raise SystemExit("Cần --config <configs/eval/...yaml>, hoặc --native --weights <best.pt>.")
+        raise SystemExit("Cần --config <benchmark/yolo11/configs/eval/...yaml>, hoặc --native --weights <best.pt>.")
     return run_config(a, extra)
 
 

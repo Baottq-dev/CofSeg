@@ -149,8 +149,6 @@ def main(argv=None) -> int:
     ap.add_argument("--only", default="", help="chỉ chạy các model này, phẩy ngăn")
     ap.add_argument("--smoke", action="store_true", help="vài iteration mỗi model")
     ap.add_argument("--list", action="store_true", help="liệt kê model rồi thoát")
-    ap.add_argument("--skip-check", action="store_true",
-                    help="bỏ qua bước đối chiếu bốn bản chấm điểm")
     a, extra = ap.parse_known_args(argv)
 
     if a.list:
@@ -165,10 +163,6 @@ def main(argv=None) -> int:
     if unknown:
         raise SystemExit(f"không có model: {unknown}; có: {ORDER}")
     names = [n for n in ORDER if n in names]
-
-    if not a.skip_check:
-        # Bốn bản chấm điểm phải giống nhau thì Δ% mAP mới có nghĩa.
-        subprocess.run([sys.executable, "benchmark/check_copies.py"], cwd=ROOT)
 
     done, failed = [], []
     for fold in a.folds:

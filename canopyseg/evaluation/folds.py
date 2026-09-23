@@ -6,7 +6,7 @@ một ô cho mỗi model, và cột "Δ% mAP" so với Mask R-CNN (mốc 0) trê
 ruộng, vì so chéo ruộng là so hai bài toán khác nhau.
 
 Tên model và fold lấy từ `name` trong config.yaml của lần chấm
-(score_remote.py đặt "<model>_<fold>"); fold -> ruộng test lấy từ folds.yaml.
+(benchmark/run.py đặt "<model>_<fold>"); fold -> ruộng test lấy từ folds.yaml.
 """
 
 from __future__ import annotations

@@ -10,7 +10,7 @@ ba tuần sau không ai nhớ vì sao lần đó đặt batch 2.
 Cột "cấu hình khác mặc định" ghi đúng phần ghi đè, ví dụ `--imgsz 2048 --batch 2`
 hoặc `--set train.lr=0.005`; để trống nghĩa là chạy y như config trong
 `configs/`. Số lấy từ `runs/eval/<...>/metrics.json` sau khi chấm bằng
-`scripts/evaluate.py`, không lấy số detectron2/mmdet in ra lúc train (khác
+`benchmark/solov2/evaluate.py`, không lấy số detectron2/mmdet in ra lúc train (khác
 cách tính Boundary).
 
 ## Ghi chú dài

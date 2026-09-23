@@ -1,5 +1,5 @@
 """Trainer detectron2: Mask R-CNN R50-FPN, Cascade Mask R-CNN R50-FPN,
-Mask2Former R50 (và PointRend nếu đưa config) — cùng scripts/train.py, cùng
+Mask2Former R50 (và PointRend nếu đưa config) — cùng benchmark/mask2former/train.py, cùng
 khối `train:` với hai trainer kia.
 
     python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/maskrcnn_r50_d2.yaml --set data.root=data/export/f4

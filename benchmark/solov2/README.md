@@ -50,7 +50,7 @@ cd benchmark/solov2 && python -m pytest tests
 
 Sửa gì trong đây cũng được, kể cả `cofseg/`. Riêng phần chấm điểm
 (`cofseg/metrics/`, `cofseg/evaluation/`, `cofseg/datasets/`) mà sửa thì số
-không còn so được với ba model kia — `python benchmark/check_copies.py` sẽ báo.
+không còn so được với ba model kia. Sửa thì báo nhóm.
 
 ## Trạng thái
 

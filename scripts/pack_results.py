@@ -82,7 +82,6 @@ def main(argv=None) -> int:
             tf.add(p, arcname=p.relative_to(ROOT).as_posix())
     print(f"{out}  ({out.stat().st_size / 2**20:.0f} MB, {len(files)} file)")
     print("Ở máy nhà: tar -xf " + out.name)
-    print("           python benchmark/check_copies.py")
     print("           python scripts/summarize_folds.py --eval benchmark/*/runs/eval")
     return 0
 

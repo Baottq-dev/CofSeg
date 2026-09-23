@@ -1,4 +1,4 @@
-"""Trainer mmdetection: SOLOv2 R50-FPN — cùng scripts/train.py, cùng khối
+"""Trainer mmdetection: SOLOv2 R50-FPN — cùng benchmark/solov2/train.py, cùng khối
 `train:` với các trainer kia.
 
     python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --set data.root=data/export/f4
@@ -10,7 +10,7 @@ rồi tự sinh khối dữ
 liệu / lịch học / hook từ `train:` (build_overrides — thuần Python, có test).
 Vòng lặp là mmengine Runner; sau khi xong chấm test bằng checkpoint tốt nhất,
 ghi predictions.json (COCO results) và test_metrics.json cùng bố cục với
-trainer detectron2 để run_fold.sh / score_remote.py dùng chung.
+ba model kia để benchmark/run.py và bảng tổng hợp đọc chung một bố cục.
 
 Tăng cường: lật ngang/dọc như hai trainer kia; không có xoay 90° vì mmdet
 không có transform sẵn cho mask + box (ghi vào bảng là chênh lệch có chủ đích).
