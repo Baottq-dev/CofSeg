@@ -136,7 +136,7 @@ def capture(path: str | Path, raw: bool = True):
     path.parent.mkdir(parents=True, exist_ok=True)
     # newline mặc định (dịch "\n" thành xuống dòng của hệ điều hành) là đúng
     # thứ Python làm với stdout, nên file trùng KHỚP TỪNG BYTE với kết quả của
-    # `python benchmark/yolo11_quangbao/scripts/train.py > terminal.txt`. Ký tự \r của thanh tiến trình
+    # `python benchmark/yolo11/train.py > terminal.txt`. Ký tự \r của thanh tiến trình
     # không bị dịch nên vẫn nguyên vẹn.
     fh = path.open("w", encoding="utf-8")
 

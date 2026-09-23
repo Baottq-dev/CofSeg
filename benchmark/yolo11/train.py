@@ -1,16 +1,16 @@
-# Bản của yolo11_quangbao: chạy hoàn toàn trong thư mục này (cofseg/ là bản sao
+# Bản của benchmark/yolo11: chạy hoàn toàn trong thư mục này (cofseg/ là bản sao
 # lõi của riêng thư mục). Chạy từ GỐC REPO để data/ và weights/ dùng chung:
 #
-#     python benchmark/yolo11_quangbao/scripts/train.py --config benchmark/yolo11_quangbao/configs/train/yolo11s.yaml
+#     python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml
 """Huấn luyện một model bất kỳ. Model do config chỉ định, không phải script.
 
-    python benchmark/yolo11_quangbao/scripts/train.py --config benchmark/yolo11_quangbao/configs/train/yolo11s.yaml
-    python benchmark/yolo11_quangbao/scripts/train.py --config benchmark/yolo11_quangbao/configs/train/yolo11s.yaml --probe
-    python benchmark/yolo11_quangbao/scripts/train.py --config benchmark/yolo11_quangbao/configs/train/yolo11s.yaml --print-config
+    python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml
+    python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --probe
+    python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --print-config
 
 Truyền siêu tham số thẳng trên dòng lệnh — mọi tham số của trainer đều nhận:
 
-    python benchmark/yolo11_quangbao/scripts/train.py --config benchmark/yolo11_quangbao/configs/train/yolo11s.yaml --epochs 100 --imgsz 640 --batch 16 
+    python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --epochs 100 --imgsz 640 --batch 16 
     
 Tên viết gạch nối cũng được (--cos-lr = --cos_lr). Cờ không kèm giá trị nghĩa
 là bật: --amp tương đương --amp true. Gõ sai tên thì script BÁO LỖI kèm gợi ý,
@@ -33,7 +33,7 @@ import sys
 import traceback
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # benchmark/<thành viên>/
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # thư mục của model này
 
 from cofseg import artifacts  # noqa: E402
 from cofseg import cli  # noqa: E402
