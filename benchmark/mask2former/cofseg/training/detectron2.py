@@ -2,7 +2,7 @@
 Mask2Former R50 (và PointRend nếu đưa config) — cùng benchmark/mask2former/train.py, cùng
 khối `train:` với hai trainer kia.
 
-    python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/maskrcnn_r50_d2.yaml --set data.root=data/export/f4
+    python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/maskrcnn_r50_d2.yaml --set data.root=data/export/block/f4
     python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --probe
 
 Khác biệt có chủ đích với trainer torchvision/YOLO:
@@ -120,7 +120,7 @@ class Detectron2Trainer(Trainer):
         self.weights = m.get("weights")
         self.train_args: dict = {**D2_DEFAULTS, **(cfg.get("train") or {})}
         d = cfg.get("data") or {}
-        self.root = Path(d.get("root", "data/export/f4"))
+        self.root = Path(d.get("root", "data/export/block/f4"))
         self.splits = {k: d.get(k, k) for k in ("train", "val", "test")}
         self.min_area = float(d.get("min_area", 0.0))
         self.limit = d.get("limit")

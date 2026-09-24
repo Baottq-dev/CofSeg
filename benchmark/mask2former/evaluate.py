@@ -69,7 +69,7 @@ def run_config(a, extra: list[str]) -> int:
     hp = cli.parse_overrides(extra, model_param_names(name), what=f"model {name!r}")
     cfg["model"].update(hp)
 
-    data = {"root": "data/export/f4", "split": "test", "min_area": 50.0,
+    data = {"root": "data/export/block/f4", "split": "test", "min_area": 50.0,
             **(cfg.get("data") or {})}
     if a.split:
         data["split"] = a.split
@@ -202,7 +202,7 @@ def main() -> int:
     ap.add_argument("--native", action="store_true",
                     help="chấm bằng model.val() của ultralytics (chỉ YOLO)")
     ap.add_argument("--weights", default=None, help="[native] best.pt / last.pt")
-    ap.add_argument("--data", default="data/export/f4/data.yaml", help="[native] data.yaml")
+    ap.add_argument("--data", default="data/export/block/f4/data.yaml", help="[native] data.yaml")
     ap.add_argument("--imgsz", type=int, default=1024, help="[native]")
     ap.add_argument("--batch", type=int, default=4, help="[native]")
     # [native] max_det=300 mặc định của ultralytics làm tràn VRAM ở khâu val: nó
