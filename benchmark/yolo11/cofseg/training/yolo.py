@@ -22,8 +22,10 @@ ultralytics không biết về dữ liệu này:
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
+from .. import progress
 from ..registry import register
 from . import memory
 from .base import Trainer
@@ -173,7 +175,9 @@ class YoloTrainer(Trainer):
             name="ultralytics",
             exist_ok=True,
         )
+        t0 = time.time()
         results = model.train(**args)
+        train_seconds = round(time.time() - t0, 1)
 
         # train() trả về SegmentMetrics, và thực thể đó KHÔNG có save_dir (đã
         # kiểm trên ultralytics 8.4.143: hasattr -> False). Nên nơi ghi được
@@ -203,4 +207,30 @@ class YoloTrainer(Trainer):
         metrics = getattr(results, "results_dict", None)
         if metrics:
             out["ultralytics_metrics"] = {k: float(v) for k, v in metrics.items()}
+        out["train_seconds"] = train_seconds
+        self._print_summary(metrics or {}, train_seconds, best if best.exists() else last)
         return out
+
+    def _print_summary(self, metrics: dict, seconds, weights) -> None:
+        """Khối cuối lượt chạy, cùng dạng với ba model kia.
+
+        ultralytics đã có thanh tiến trình và bảng mỗi epoch, nên ở đây không
+        cần hook nào — chỉ cần kết thúc giống nhau để bốn lượt train đọc được
+        cạnh nhau. Lấy chỉ số của MẶT NẠ, hậu tố (M), chứ không phải (B) là
+        của hộp: bài toán là phân vùng thực thể.
+        """
+        def pct(key):
+            got = metrics.get(key)
+            return None if got is None else float(got) * 100
+
+        rows = [("epoch", str(self.train_args.get("epochs", "—"))),
+                ("val (mặt nạ)",
+                 f"mAP50-95 {progress.fmt_num(pct('metrics/mAP50-95(M)'))}   "
+                 f"mAP50 {progress.fmt_num(pct('metrics/mAP50(M)'))}"),
+                ("thời gian", f"train {progress.fmt_time(seconds)}")]
+        try:
+            shown = Path(weights).relative_to(self.run_dir)
+        except ValueError:
+            shown = weights
+        rows.append(("trọng số", str(shown)))
+        print(progress.summary(f"{self.model_name} · {self.run_dir.name}", rows), flush=True)
