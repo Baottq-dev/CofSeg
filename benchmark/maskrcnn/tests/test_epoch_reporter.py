@@ -163,3 +163,47 @@ def test_so_iteration_moi_epoch_lam_tron_len(tmp_path, fake_d2, capsys):
     trainer = _run(t._epoch_reporter(), 3, 30, {3: 1.0})
     assert trainer.max_iter == 90
     assert "iter 90/90" in capsys.readouterr().out
+
+
+def test_tach_thoi_gian_train_khoi_thoi_gian_val(tmp_path, fake_d2, capsys):
+    """Evaluator gọi close_train_bar() lúc bắt đầu chấm, nên dòng epoch nói
+    được 'train bao lâu + val bao lâu' thay vì một con số gộp.
+
+    Một epoch 0:53 mà 0:33 trong đó là chấm val thì con số gộp nói sai hẳn
+    về tốc độ huấn luyện.
+    """
+    import time
+
+    t = _trainer(tmp_path, epochs=1)
+    r = t._epoch_reporter()
+    trainer = _FakeTrainer(30)
+    r.trainer = trainer
+    r.before_train()
+    for i in range(30):
+        trainer.iter = i
+        trainer.storage.iter = i
+        r.after_step()
+    # EvalHook.after_train -> evaluator.reset() -> close_train_bar()
+    r.close_train_bar()
+    time.sleep(0.05)                      # thời gian chấm val
+    trainer.storage.put(**{"segm/AP": 27.61})
+    r.after_train()
+
+    line = [l for l in capsys.readouterr().out.splitlines() if l.startswith("epoch")][0]
+    assert "+ val " in line, line
+
+
+def test_close_train_bar_goi_hai_lan_khong_doi_so(tmp_path, fake_d2):
+    """reset() có thể chạy nhiều lần trong một lượt chấm; lần sau không được
+    cộng thêm thời gian val vào thời gian train."""
+    import time
+
+    t = _trainer(tmp_path, epochs=1)
+    r = t._epoch_reporter()
+    r.trainer = _FakeTrainer(30)
+    r.before_train()
+    r.close_train_bar()
+    lan_dau = r.trained
+    time.sleep(0.05)
+    r.close_train_bar()
+    assert r.trained == lan_dau
