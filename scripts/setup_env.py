@@ -202,7 +202,14 @@ def step_detectron2() -> None:
         print('  --skip-cuda-build: CUDA_VISIBLE_DEVICES="" lúc cài -> dựng CppExtension.')
         print("    Chỉ có tác dụng lúc CÀI; lúc train GPU vẫn thấy đủ.")
     pip("install", "--no-build-isolation", D2, env=env)
-    py("-c", "import detectron2; print('detectron2', detectron2.__version__)")
+    # Kiểm cả model_zoo chứ không chỉ `import detectron2`: model_zoo là chỗ
+    # duy nhất còn `import pkg_resources`, và `import detectron2` KHÔNG kéo
+    # nó theo. Vì vậy bước này từng báo xanh còn lần train đầu mới chết, sau
+    # khi đã nạp xong dữ liệu. Nếu dòng này gãy vì pkg_resources thì env có
+    # setuptools >= 82: `pip install "setuptools<82"` (đã ghim trong
+    # requirements.txt, chỉ env cài từ trước mới thiếu).
+    py("-c", "import detectron2; from detectron2 import model_zoo; "
+             "print('detectron2', detectron2.__version__)")
 
 
 def step_mmdet() -> None:

@@ -79,6 +79,20 @@ iopath==0.1.9          # SAM 2 nạp checkpoint qua iopath; detectron2 cũng c�
 mmengine==0.10.7
 mmdet==3.3.0
 shapely==2.1.2         # mmdet và Mask2Former cùng cần
+# setuptools: detectron2 0.6 mở model zoo bằng `import pkg_resources`, mà
+# setuptools 82 đã BỎ HẲN module đó (đã mở wheel ra đếm: 81.0.0 còn
+# pkg_resources/, 82.0.1 không còn dòng nào). Không ghim thì Mask R-CNN và
+# Mask2Former chết ở lần train đầu, sau khi đã nạp xong dữ liệu:
+#
+#     File ".../detectron2/model_zoo/model_zoo.py", line 4, in <module>
+#         import pkg_resources
+#     ModuleNotFoundError: No module named 'pkg_resources'
+#
+# Ghim rẻ hơn vá: một dòng này che cho MỌI gói cũ còn gọi pkg_resources, chứ
+# không phải sửa một file bên trong detectron2 rồi lần cài sau lại mất. Gỡ
+# được khi detectron2 chuyển sang importlib.resources — repo đó gần như đứng
+# yên, đừng trông chờ.
+setuptools<82
 
 # ---- chỉ Linux: benchmark trên máy lab. Windows bỏ qua tự động.
 # detectron2 (Mask R-CNN, Mask2Former) KHÔNG nằm ở đây. Nó là gói duy nhất
