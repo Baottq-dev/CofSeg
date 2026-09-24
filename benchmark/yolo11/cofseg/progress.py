@@ -139,7 +139,7 @@ def fmt_num(x, nd: int = 2) -> str:
 
 def epoch_line(epoch: int, epochs: int, it: int, iters: int, *, loss=None,
                lr=None, mem=None, metrics: dict | None = None,
-               best: bool = False, seconds=None) -> str:
+               best: bool = False, seconds=None, val_seconds=None) -> str:
     """Một dòng cho một epoch đã xong.
 
     Bề rộng cột lấy từ tổng số epoch/iteration nên các dòng thẳng hàng nhau mà
@@ -157,8 +157,11 @@ def epoch_line(epoch: int, epochs: int, it: int, iters: int, *, loss=None,
         v = (metrics or {}).get(k)
         if v is not None:
             parts.append(f"{k} {float(v):6.2f}")
+    # Tách train và val: một epoch 0:53 mà 0:33 trong đó là chấm val thì
+    # con số gộp nói sai về tốc độ huấn luyện.
     if seconds is not None:
-        parts.append(fmt_time(seconds))
+        parts.append(fmt_time(seconds) if val_seconds is None
+                     else f"{fmt_time(seconds)} + val {fmt_time(val_seconds)}")
     line = "   ".join(parts)
     return line + "   * tốt nhất" if best else line
 
@@ -202,9 +205,14 @@ class Bar:
     Tự tắt khi stdout không phải terminal: `nohup python train.py > log.txt`
     thì thanh tiến trình chỉ để lại hàng nghìn ký tự \r trong file chứ không
     ai nhìn, trong khi các dòng epoch vẫn ra đủ.
+
+    `leave=True` (mặc định) GIỮ thanh lại sau khi xong. Thanh đã hoàn tất là
+    thứ duy nhất nói được tốc độ thật (`1.53it/s`) và thời gian riêng của
+    phần đó, tách khỏi thời gian chấm val. Xoá đi là mất số đó.
     """
 
-    def __init__(self, total: int, desc: str = "", enabled: bool = True):
+    def __init__(self, total: int, desc: str = "", enabled: bool = True,
+                 leave: bool = True):
         self.total = int(total)
         self.n = 0
         self.bar = None
@@ -214,7 +222,7 @@ class Bar:
             from tqdm import tqdm
         except ImportError:
             return
-        self.bar = tqdm(total=self.total, desc=desc, unit="it", leave=False,
+        self.bar = tqdm(total=self.total, desc=desc, unit="it", leave=leave,
                         dynamic_ncols=True, file=sys.stdout)
 
     @staticmethod
