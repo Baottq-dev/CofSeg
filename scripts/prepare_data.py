@@ -1,6 +1,7 @@
 """Giải nén bản xuất chưa chia rồi cắt đủ sáu fold.
 
     python scripts/prepare_data.py all_v2.tar
+    python scripts/prepare_data.py all_v2.tar --val configs/dataset/val_flight.yaml
     python scripts/prepare_data.py all_v2.tar --name all_v2 --folds f4 f2
 
 all_v2.tar tạo ở máy nhà, từ gốc repo (Windows 10+ có sẵn tar):
@@ -44,6 +45,10 @@ def main(argv=None) -> int:
     ap.add_argument("--name", default="all_v2", help="tên thư mục bên trong tar")
     ap.add_argument("--folds", nargs="*", default=None,
                     help="chỉ cắt các fold này; mặc định cắt hết")
+    ap.add_argument("--val", default="configs/dataset/val_block.yaml",
+                    help="cách cắt val: val_block.yaml hoặc val_flight.yaml")
+    ap.add_argument("--out-root", default=None,
+                    help="thư mục chứa fold; mặc định data/export/<tên cách chia>")
     ap.add_argument("--keep", action="store_true",
                     help="không giải nén lại nếu thư mục bản xuất đã có")
     a = ap.parse_args(argv)
@@ -70,18 +75,21 @@ def main(argv=None) -> int:
                 "split_by=none, format coco + yolo.")
         raise SystemExit(f"Không thấy {ann.relative_to(ROOT)} sau khi giải nén")
     if not (export / "labels").exists():
-        print(f"CẢNH BÁO: {export.relative_to(ROOT)} không có labels/ — bản xuất thiếu "
-              "format yolo, fold cắt ra sẽ có nhãn rỗng và YOLO không học được gì.")
+        print(f"{export.relative_to(ROOT)} không có labels/ — nhãn YOLO sẽ được sinh "
+              "từ chính file COCO của từng fold.")
 
-    base = [sys.executable, "scripts/make_fold.py", "--export",
-            export.relative_to(ROOT).as_posix()]
+    out_root = Path(a.out_root) if a.out_root else EXPORT / Path(a.val).stem.replace("val_", "")
+    base = [sys.executable, "scripts/make_fold.py",
+            "--export", export.relative_to(ROOT).as_posix(),
+            "--val", a.val, "--out-root", out_root.as_posix()]
     for args in ([["--all"]] if not a.folds else [["--fold", f] for f in a.folds]):
         print("  $", " ".join(base + args))
         subprocess.run(base + args, cwd=ROOT, check=True)
 
-    made = sorted(d.name for d in EXPORT.glob("f*") if d.is_dir())
-    print(f"\nFold đã có: {' '.join(made) or '(chưa có)'}")
-    print("Tiếp: python benchmark/run.py f4 --smoke")
+    made = sorted(d.name for d in out_root.glob("f*") if d.is_dir())
+    print(f"\nFold đã có trong {out_root.relative_to(ROOT).as_posix()}: "
+          f"{' '.join(made) or '(chưa có)'}")
+    print("Tiếp: lệnh chạy từng model nằm trong benchmark/<model>/README.md")
     return 0
 
 

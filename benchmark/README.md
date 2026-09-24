@@ -41,11 +41,24 @@ Sửa gì trong thư mục mình cũng được — kể cả `cofseg/`. Không 
 
 ## Chạy
 
-Cắt fold một lần cho cả nhóm, từ gốc repo:
+Cắt fold một lần cho cả nhóm, từ gốc repo. Sáu lượt luôn giống nhau (mỗi ruộng
+làm test một lần, train năm ruộng còn lại); khác nhau ở chỗ cắt val ra sao, và
+hai cách đang cân nhắc cho hai bộ fold riêng:
 
 ```bash
-python scripts/make_fold.py --export data/export/all_v2 --all
+# cách 1: khối ảnh cuối mỗi đường bay, trượt theo lượt, đệm theo đồ thị chồng lấn
+python scripts/make_fold.py --export data/export/dataset_v1     --val configs/dataset/val_block.yaml --all --out-root data/export/block
+
+# cách 2: trọn hai đường bay cuối (field_1/10/4 + field_2/10/2), cố định
+python scripts/make_fold.py --export data/export/dataset_v1     --val configs/dataset/val_flight.yaml --all --out-root data/export/flight
+
+# so hai cách trên cả sáu lượt trước khi chốt
+python scripts/compare_val_splits.py
 ```
+
+Lệnh trong README của từng model đang trỏ vào `data/export/block/`. Đổi sang
+bộ kia là `--set data.root=data/export/flight/$FOLD`. **Cả bốn người phải dùng
+cùng một bộ** — số của hai bộ fold không so với nhau được.
 
 Sau đó **mỗi người chạy model của mình** — lệnh cụ thể nằm trong README của
 từng thư mục. Không có script chạy cả bốn: mỗi model một framework, một lịch,

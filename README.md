@@ -99,8 +99,15 @@ python -m uvicorn app.server:app --host 0.0.0.0 --port 1801
 ## 6. Chạy benchmark
 
 ```
-# cắt 6 fold từ một bản xuất chưa chia
-python scripts/make_fold.py --export data/export/all_v2 --all
+# xem nhật ký bay và đồ thị chồng lấn trước khi chia (bằng chứng cho cách chia)
+python scripts/inspect_flights.py --export data/export/dataset_v1
+python scripts/export_overlap_edges.py
+
+# cắt 6 fold từ một bản xuất chưa chia, theo một trong hai cách chia val
+python scripts/make_fold.py --export data/export/dataset_v1     --val configs/dataset/val_block.yaml --all --out-root data/export/block
+
+# so hai cách chia val trên cả sáu lượt
+python scripts/compare_val_splits.py
 
 # chuẩn bị dữ liệu trên máy Linux (giải nén bản xuất rồi cắt fold)
 python scripts/prepare_data.py all_v2.tar
