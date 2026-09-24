@@ -159,7 +159,8 @@ def by_flight(frames: Iterable[flightlog.Frame], graph: Graph, *,
         before, after = (j.field, j.before), (j.field, j.after)
         side = None
         if after in used and before not in used:
-            side, names = "before", [f.file_name for f in fl[before]][-buffer:]
+            # [-0:] là CẢ danh sách, không phải rỗng — buffer=0 phải là không bỏ gì.
+            side, names = "before", [f.file_name for f in fl[before]][len(fl[before]) - buffer:]
         elif before in used and after not in used:
             side, names = "after", [f.file_name for f in fl[after]][:buffer]
         if side is None:

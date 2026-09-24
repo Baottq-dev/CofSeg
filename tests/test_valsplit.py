@@ -237,3 +237,13 @@ def test_val_images_are_never_also_dropped(flight_run):
     g = sequential_graph(fs)
     a = valsplit.by_flight(fs, g, flights=["field_1/10/1", "field_1/10/2"], buffer=10)
     assert a.val & a.drop == set()
+
+
+def test_buffer_zero_drops_nothing_at_the_seam(flight_run):
+    """[-0:] trong Python là CẢ danh sách chứ không phải rỗng: buffer=0 từng
+    bỏ trọn đường bay đứng trước val."""
+    fs = two_segments(flight_run)
+    g = Graph()                                   # không cạnh nào, tách riêng tác dụng của đệm
+    a = valsplit.by_flight(fs, g, flights=["field_1/10/2"], buffer=0)
+    assert a.drop == set()
+    assert a.why["junctions"][0]["buffered"] == 0
