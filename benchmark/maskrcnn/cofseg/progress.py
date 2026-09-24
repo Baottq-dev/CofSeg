@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import logging
 import sys
-import warnings
+from pathlib import Path
 
 #: Thứ tự cột trong dòng epoch. Khoá là tên ta dùng, không phải tên của khung.
 METRICS = ("mAP50-95", "mAP50")
@@ -65,24 +65,61 @@ def unhush(changed) -> None:
         h.setLevel(old)
 
 
-def once_per_warning(*categories) -> None:
-    """Mỗi cảnh báo KHÁC NHAU hiện đúng một lần, thay vì mỗi iteration một lần.
+class _Dedupe(logging.Filter):
+    """Mỗi nội dung cảnh báo đúng một lần, đếm bằng set của chính ta."""
 
-    detectron2 gọi `torch.cuda.amp.autocast`, thứ torch 2.4 đã khai tử, và
-    cảnh báo đó bắn ra ở MỖI iteration. Nó ghi ra stderr còn thanh tiến trình
-    vẽ ra stdout, nên mỗi lần bắn là một lần thanh bị cắt đôi: 1500 iteration
-    thành 3000 dòng rác.
+    def __init__(self):
+        super().__init__()
+        self.seen: set[str] = set()
 
-    Dùng "once" chứ không phải "ignore" — đây là khác biệt quan trọng. "once"
-    lọc theo cặp (nội dung, loại), nên mọi cảnh báo KHÁC nội dung vẫn hiện
-    đầy đủ; chỉ bản sao thứ hai trở đi của cùng một cảnh báo bị bỏ. Không
-    giấu thông tin nào, chỉ thôi lặp lại.
+    def filter(self, record) -> bool:
+        msg = record.getMessage()
+        if msg in self.seen:
+            return False
+        self.seen.add(msg)
+        return True
 
-    Bộ lọc mới được chèn lên ĐẦU danh sách, nên nó thắng cả khi một thư viện
-    đã đặt `simplefilter("always")` lúc import.
+
+def warnings_to_file(path):
+    """Cảnh báo đi vào FILE thay vì stderr, mỗi nội dung đúng một lần.
+
+    Vì sao không dùng bộ lọc "once" của chính module warnings — đã thử và nó
+    KHÔNG ăn ở đây. CPython đánh dấu "cảnh báo này hiện rồi" trong một
+    registry, và `already_warned()` XOÁ SẠCH registry đó mỗi khi danh sách
+    filter đổi phiên bản. Mà `warnings.catch_warnings()` lúc thoát luôn gọi
+    `_filters_mutated()`. Trong vòng lặp train có thư viện dùng
+    catch_warnings ở mỗi mẫu, nên dấu vừa ghi xong đã bị xoá:
+
+        catch_warnings() mỗi iteration = False ->  1 dòng
+        catch_warnings() mỗi iteration = True  -> 30 dòng
+
+    Đó cũng là lý do cảnh báo lặp lại NGAY TỪ ĐẦU, trước khi ai đụng vào bộ
+    lọc: cơ chế gộp mặc định của Python bị vô hiệu bởi đúng chuyện đó.
+
+    Nên ở đây giành quyền ở ĐƯỜNG RA chứ không phải ở bộ lọc:
+    `captureWarnings` đẩy mọi cảnh báo qua logging, rồi một set của ta gộp
+    lại. Không registry nào xoá được set đó.
+
+    KHÔNG đụng vào `warnings.filters`. Đụng vào là bật lên cả những cảnh báo
+    Python đang ẩn mặc định — `DeprecationWarning` của pycocotools chẳng hạn
+    — tức là làm màn hình bẩn thêm chứ không sạch đi.
+
+    Trả về bộ lọc, để cuối lượt chạy đếm được có bao nhiêu loại.
     """
-    for c in (categories or (FutureWarning, DeprecationWarning, UserWarning)):
-        warnings.filterwarnings("once", category=c)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    logging.captureWarnings(True)
+    lg = logging.getLogger("py.warnings")
+    lg.propagate = False          # không cho rơi lên root rồi ra stderr
+    for h in list(lg.handlers):
+        lg.removeHandler(h)
+        h.close()
+    handler = logging.FileHandler(path, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    dedupe = _Dedupe()
+    handler.addFilter(dedupe)
+    lg.addHandler(handler)
+    return dedupe
 
 
 # ------------------------------------------------------------------ định dạng

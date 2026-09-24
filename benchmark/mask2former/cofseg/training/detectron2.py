@@ -477,7 +477,7 @@ class Detectron2Trainer(Trainer):
         # ra d2/log.txt. Bịt cái thứ nhất ở mức INFO; file vẫn nhận đủ.
         if not self.train_args.get("verbose"):
             progress.hush("detectron2", "fvcore")
-            progress.once_per_warning()
+            self.warned = progress.warnings_to_file(self.run_dir / "warnings.log")
         cls = self._trainer_cls(m2f)
         per_epoch = iters_per_epoch(self.n_train, self.train_args["batch"])
         print(f"{self.arch}: {self.train_args['epochs']} epoch x {per_epoch} iteration, "
@@ -558,6 +558,9 @@ class Detectron2Trainer(Trainer):
         label = f"test ({', '.join(fields)})" if fields else "test"
         rows.append((label, pair(test_segm.get("AP"), test_segm.get("AP50"))))
         rows.append(("thời gian", f"train {progress.fmt_time(seconds)}"))
+        seen = getattr(getattr(self, "warned", None), "seen", ())
+        if seen:
+            rows.append(("cảnh báo", f"{len(seen)} loại  ->  warnings.log"))
         # Đường dẫn tương đối với run dir: tên run dir đã nằm ở tiêu đề, lặp
         # lại cả đường dẫn tuyệt đối chỉ kéo khung rộng ra mà không thêm tin.
         try:

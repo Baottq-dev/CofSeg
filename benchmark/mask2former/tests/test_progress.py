@@ -188,44 +188,96 @@ def test_bar_close_goi_hai_lan_khong_gay(enabled):
 _KICH_BAN = """
 import sys, warnings
 sys.path.insert(0, {root!r})
-warnings.simplefilter("always")          # tệ nhất: thư viện đã bật "always"
 {setup}
 for _ in range(30):
-    warnings.warn("torch.cuda.amp.autocast(args...) is deprecated", FutureWarning)
+    if {ctx}:
+        # Thu vien nao do trong vong lap train dung catch_warnings: luc thoat
+        # no goi _filters_mutated(), va CPython xoa sach registry danh dau
+        # "canh bao nay hien roi". Day la thu da danh bai bo loc "once".
+        with warnings.catch_warnings():
+            pass
+    warnings.warn("autocast is deprecated", FutureWarning)
     warnings.warn("mot canh bao khac han", FutureWarning)
-    warnings.warn("lap lai", UserWarning)
 """
 
 
-def _chay(setup: str) -> list[str]:
+def _chay(setup: str, ctx: bool = True):
     root = str(pathlib.Path(__file__).resolve().parents[1])
-    code = _KICH_BAN.format(root=root, setup=setup)
+    code = _KICH_BAN.format(root=root, setup=setup, ctx=ctx)
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                        encoding="utf-8", errors="replace")
+    assert r.returncode == 0, r.stderr[-800:]
     return [l for l in r.stderr.splitlines() if "Warning:" in l]
 
 
-def test_khong_gop_thi_canh_bao_ngap_man_hinh():
-    """Mốc để so: 30 iteration x 3 cảnh báo = 90 dòng."""
-    assert len(_chay("")) == 90
+def test_khong_lam_gi_thi_canh_bao_ngap_man_hinh():
+    """Mốc để so: 30 iteration x 2 cảnh báo = 60 dòng ra stderr."""
+    assert len(_chay("")) == 60
 
 
-def test_canh_bao_lap_lai_chi_con_mot_lan():
-    lines = _chay("from cofseg import progress; progress.once_per_warning()")
-    assert len(lines) == 3, lines
+def test_bo_loc_once_cua_python_khong_cuu_duoc():
+    """Ghi lại VÌ SAO không dùng cách đơn giản đó: catch_warnings vô hiệu nó.
+
+    Không có catch_warnings thì "once" ăn; có thì thua hẳn. Vòng lặp train
+    thật rơi vào vế thứ hai.
+    """
+    setup = 'warnings.filterwarnings("once", category=FutureWarning)'
+    assert len(_chay(setup, ctx=False)) == 2
+    assert len(_chay(setup, ctx=True)) == 60
 
 
-def test_canh_bao_khac_noi_dung_khong_bi_nuot():
-    """"once" gộp theo nội dung, nên không giấu cảnh báo nào."""
-    lines = _chay("from cofseg import progress; progress.once_per_warning()")
+def test_chuyen_canh_bao_vao_file_thi_man_hinh_sach(tmp_path):
+    """Cách đang dùng: stderr không còn dòng nào, kể cả khi bị catch_warnings
+    quấy mỗi iteration."""
+    f = tmp_path / "warnings.log"
+    setup = ("from cofseg import progress; "
+             f"progress.warnings_to_file({str(f)!r})")
+    assert _chay(setup, ctx=True) == []
+
+
+def test_file_giu_moi_loai_dung_mot_lan(tmp_path):
+    """Không giấu cảnh báo nào: mỗi nội dung khác nhau vẫn còn nguyên."""
+    f = tmp_path / "warnings.log"
+    setup = ("from cofseg import progress; "
+             f"progress.warnings_to_file({str(f)!r})")
+    _chay(setup, ctx=True)
+    lines = [l for l in f.read_text(encoding="utf-8").splitlines() if "Warning:" in l]
+    assert len(lines) == 2, lines
     assert any("autocast" in l for l in lines)
     assert any("khac han" in l for l in lines)
-    assert any("lap lai" in l for l in lines)
 
 
-def test_chi_gop_loai_duoc_neu():
-    """Nêu FutureWarning thì UserWarning phải giữ nguyên 30 dòng."""
-    lines = _chay("from cofseg import progress; "
-                  "progress.once_per_warning(FutureWarning)")
-    assert len([l for l in lines if "UserWarning" in l]) == 30
-    assert len([l for l in lines if "FutureWarning" in l]) == 2
+def test_dem_duoc_so_loai_canh_bao(tmp_path):
+    """Khối tổng kết cần con số này để trỏ người đọc tới file."""
+    import warnings as w
+
+    dedupe = progress.warnings_to_file(tmp_path / "warnings.log")
+    for _ in range(10):
+        w.warn("lặp lại y hệt", FutureWarning)
+        w.warn("khác hẳn", FutureWarning)
+    assert len(dedupe.seen) == 2
+
+    logging.captureWarnings(False)
+    lg = logging.getLogger("py.warnings")
+    for h in list(lg.handlers):
+        lg.removeHandler(h)
+        h.close()
+
+
+def test_khong_dung_vao_bo_loc_cua_python(tmp_path):
+    """Đụng vào warnings.filters là BẬT LÊN những cảnh báo Python đang ẩn.
+
+    Lần trước tôi thêm "once" cho DeprecationWarning và làm lộ ra cảnh báo
+    của pycocotools vốn đang bị ẩn — màn hình bẩn thêm chứ không sạch đi.
+    """
+    import warnings as w
+
+    truoc = list(w.filters)
+    progress.warnings_to_file(tmp_path / "warnings.log")
+    assert list(w.filters) == truoc
+
+    logging.captureWarnings(False)
+    lg = logging.getLogger("py.warnings")
+    for h in list(lg.handlers):
+        lg.removeHandler(h)
+        h.close()

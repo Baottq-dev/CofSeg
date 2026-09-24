@@ -528,6 +528,9 @@ class MMDetTrainer(Trainer):
         label = f"test ({', '.join(fields)})" if fields else "test"
         rows.append((label, pair(test_segm.get("AP"), test_segm.get("AP50"))))
         rows.append(("thời gian", f"train {progress.fmt_time(seconds)}"))
+        seen = getattr(getattr(self, "warned", None), "seen", ())
+        if seen:
+            rows.append(("cảnh báo", f"{len(seen)} loại  ->  warnings.log"))
         try:
             shown = Path(weights).relative_to(self.run_dir)
         except ValueError:
@@ -554,7 +557,7 @@ class MMDetTrainer(Trainer):
             # iteration. Tên logger do Runner đặt theo experiment nên phải hỏi
             # chính nó, đoán "mmengine" là trật.
             progress.hush(runner.logger.name, "mmengine", "mmdet")
-            progress.once_per_warning()
+            self.warned = progress.warnings_to_file(self.run_dir / "warnings.log")
             runner.register_hook(self._epoch_reporter(), priority="LOWEST")
         runner.train()
         train_seconds = round(time.time() - t0, 1)

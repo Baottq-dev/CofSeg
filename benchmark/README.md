@@ -156,10 +156,29 @@ Màn hình chỉ bị **nâng ngưỡng lên WARNING**, không mất dòng nào 
 | `<run>/d2/log.txt` | detectron2: config đầy đủ, kiến trúc model, từng iteration, bảng COCO |
 | `<run>/mmdet/<timestamp>/<timestamp>.log` | mmengine: tương tự |
 | `<run>/results.csv` | một dòng mỗi lần ghi số liệu, có cột epoch |
+| `<run>/warnings.log` | cảnh báo của thư viện, mỗi nội dung một lần |
 
-Cảnh báo (`WARNING`) vẫn hiện ra màn hình — ví dụ dòng
+Cảnh báo từ `logging` (`WARNING`) vẫn hiện ra màn hình — ví dụ dòng
 `Skip loading parameter 'cls_score' ... (81, 1024) vs (2, 1024)`, là dấu hiệu
 đầu phân loại COCO 81 lớp được khởi tạo lại cho 1 lớp, đúng như mong muốn.
+
+Cảnh báo từ module `warnings` thì đi vào `<run>/warnings.log`, mỗi nội dung
+đúng một lần, và khối tổng kết cho biết có bao nhiêu loại. Chúng vốn bắn ra
+**mỗi iteration** — detectron2 gọi `torch.cuda.amp.autocast` đã bị khai tử —
+và vì chúng ra stderr còn thanh tiến trình vẽ ra stdout nên mỗi lần bắn là
+một lần thanh bị cắt đôi.
+
+Cơ chế gộp sẵn của Python không cứu được: nó đánh dấu "cảnh báo này hiện rồi"
+trong một registry mà CPython **xoá sạch** mỗi khi danh sách bộ lọc đổi phiên
+bản, và `warnings.catch_warnings()` lúc thoát luôn làm việc đó. Trong vòng lặp
+train có thư viện gọi nó ở mỗi mẫu:
+
+| | dòng cảnh báo / 30 iteration |
+|---|---|
+| không làm gì | 60 |
+| bộ lọc `"once"`, không ai gọi `catch_warnings` | 2 |
+| bộ lọc `"once"`, có `catch_warnings` mỗi iteration | **60** — thua |
+| chuyển vào file (cách đang dùng) | **0** trên màn hình, 2 trong file |
 
 Muốn xem đúng kiểu mặc định của khung thì thêm `--verbose true`. Đo trên một
 lượt Mask R-CNN 3 epoch: **1474 dòng** khi bật, **khoảng 30 dòng** khi tắt —

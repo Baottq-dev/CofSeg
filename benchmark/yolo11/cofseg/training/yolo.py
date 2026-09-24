@@ -175,7 +175,7 @@ class YoloTrainer(Trainer):
             name="ultralytics",
             exist_ok=True,
         )
-        progress.once_per_warning()
+        self.warned = progress.warnings_to_file(self.run_dir / "warnings.log")
         t0 = time.time()
         results = model.train(**args)
         train_seconds = round(time.time() - t0, 1)
@@ -229,6 +229,9 @@ class YoloTrainer(Trainer):
                  f"mAP50-95 {progress.fmt_num(pct('metrics/mAP50-95(M)'))}   "
                  f"mAP50 {progress.fmt_num(pct('metrics/mAP50(M)'))}"),
                 ("thời gian", f"train {progress.fmt_time(seconds)}")]
+        seen = getattr(getattr(self, "warned", None), "seen", ())
+        if seen:
+            rows.append(("cảnh báo", f"{len(seen)} loại  ->  warnings.log"))
         try:
             shown = Path(weights).relative_to(self.run_dir)
         except ValueError:
