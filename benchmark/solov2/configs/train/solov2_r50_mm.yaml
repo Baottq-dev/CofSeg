@@ -8,7 +8,7 @@
 # Chạy trên máy Linux có mmcv/mmdet (scripts/setup_env.py). Ở nhà
 # --print-config / --list-params chạy được; --probe và train cần mmcv.
 #
-#     python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --set data.root=data/export/f4 --workers 8
+#     python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --set data.root=data/export/block/f4 --workers 8
 #     python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --probe
 #     python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --set data.limit=16 --epochs 1   # khói
 
@@ -22,8 +22,8 @@ model:
   #                   không thì URL model zoo (mmengine tự tải về cache).
 
 data:
-  # Một fold do scripts/make_fold.py cắt ra; đổi fold: --set data.root=data/export/f2
-  root: data/export/f4
+  # Một fold do scripts/make_fold.py cắt ra; đổi fold: --set data.root=data/export/block/f2
+  root: data/export/block/f4
   train: train
   val: val
   test: test

@@ -22,7 +22,7 @@ SPLITS = {"train": "train", "val": "val", "test": "test"}
 
 def _over(n_train=600, aspect=9 / 16, limit=None, **kw):
     args = {**MM_DEFAULTS, **kw}
-    return build_overrides("solov2", "data/export/f4", SPLITS, n_train, args,
+    return build_overrides("solov2", "data/export/block/f4", SPLITS, n_train, args,
                            aspect=aspect, out_dir="out", load_from="w.pth", limit=limit)
 
 

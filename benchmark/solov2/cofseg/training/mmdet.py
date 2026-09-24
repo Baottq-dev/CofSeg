@@ -1,7 +1,7 @@
 """Trainer mmdetection: SOLOv2 R50-FPN — cùng benchmark/solov2/train.py, cùng khối
 `train:` với các trainer kia.
 
-    python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --set data.root=data/export/f4
+    python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --set data.root=data/export/block/f4
     python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --probe
 
 Cách nối vào mmdet: nạp config zoo đóng gói trong gói mmdet (không clone repo),
@@ -267,7 +267,7 @@ class MMDetTrainer(Trainer):
         self.weights = m.get("weights")
         self.train_args: dict = {**MM_DEFAULTS, **(cfg.get("train") or {})}
         d = cfg.get("data") or {}
-        self.root = Path(d.get("root", "data/export/f4"))
+        self.root = Path(d.get("root", "data/export/block/f4"))
         self.splits = {k: d.get(k, k) for k in ("train", "val", "test")}
         self.min_area = float(d.get("min_area", 0.0))
         self.limit = d.get("limit")
