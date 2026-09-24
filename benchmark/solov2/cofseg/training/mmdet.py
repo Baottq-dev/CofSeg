@@ -22,6 +22,7 @@ khói trên Linux trước khi tin.
 
 from __future__ import annotations
 
+import collections
 import csv
 import importlib.util
 import json
@@ -30,6 +31,7 @@ import shutil
 import time
 from pathlib import Path
 
+from .. import progress
 from ..datasets.coco import CocoDataset
 from ..datasets.instances import imread
 from ..registry import register
@@ -58,6 +60,10 @@ MM_DEFAULTS: dict = {
     "workers": 0,
     "seed": 0,
     "log_every": 20,
+    # verbose=True trả lại đúng cách mmengine in mặc định: dump toàn bộ config,
+    # dump env, một dòng mỗi `log_every` iteration. Bật khi cần soi lỗi của
+    # chính khung; lúc train bình thường thì phần lớn số dòng là hai dump đó.
+    "verbose": False,
 }
 #: arch -> config zoo trong gói mmdet, checkpoint COCO (cùng URL trong
 #: configs/weights.yaml), file ghi đè model trong thư mục người phụ trách,
@@ -317,6 +323,8 @@ class MMDetTrainer(Trainer):
             out["limit"] = int(self.limit)
         out["arch"] = self.arch
         out["iters_per_epoch"] = iters_per_epoch(self.n_train, self.train_args["batch"])
+        self.dataset_counts = {sp: out[sp]["images"] for sp in ("train", "val", "test")}
+        self.test_fields = sorted(out["test"].get("fields") or {})
         (self.run_dir / "dataset_check.json").write_text(
             json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8"
         )
@@ -384,6 +392,149 @@ class MMDetTrainer(Trainer):
             "note": "đỉnh đo trên 2 iteration; batch dày vùng hơn sẽ cao hơn một chút",
         }
 
+    def _epoch_reporter(self):
+        """Hook mmengine: thanh tiến trình trong epoch, một dòng khi epoch xong.
+
+        mmengine ĐÃ báo theo epoch, khác detectron2 ở chỗ đó. Cái nó thiếu là
+        một dòng gọn mỗi epoch đọc được bằng mắt, và tên chỉ số trùng với ba
+        model kia — nó gọi `coco/segm_mAP` theo thang 0..1, detectron2 gọi
+        `AP` theo thang 0..100.
+
+        Thứ tự trong một epoch của mmengine: các iteration, rồi
+        `after_train_epoch`, rồi ValLoop mới chạy và gọi `after_val_epoch`.
+        Nên phải GIỮ dòng lại ở `after_train_epoch` và chỉ in khi biết epoch
+        này có chấm val hay không — in sớm là in ra một dòng không có AP dù
+        một giây sau AP đã có.
+        """
+        from mmengine.hooks import Hook
+
+        a = self.train_args
+        per_epoch = iters_per_epoch(self.n_train, a["batch"])
+        epochs = int(a["epochs"])
+        total = per_epoch * epochs
+
+        class EpochReporter(Hook):
+            priority = "LOWEST"
+
+            def __init__(self):
+                self.bar = None
+                self.epoch = 0
+                self.best = None
+                self.started = None
+                self.pending = None
+                # Loss lấy từ `outputs` của after_train_iter chứ không từ
+                # message_hub: đó là nguồn mmengine đưa thẳng vào tay hook,
+                # có mặt kể cả khi log_processor được cấu hình khác đi.
+                self.losses = collections.deque(maxlen=int(a["log_every"]))
+
+            def _open(self):
+                self.epoch += 1
+                self.started = time.time()
+                self.bar = progress.Bar(per_epoch, f"epoch {self.epoch}/{epochs}")
+
+            def _close(self):
+                if self.bar is not None:
+                    self.bar.close()
+                    self.bar = None
+
+            def _report(self, metrics=None):
+                m = metrics or {}
+                # mmengine trả 0..1; ba model kia in 0..100.
+                ap = m.get("coco/segm_mAP")
+                ap50 = m.get("coco/segm_mAP_50")
+                ap = None if ap is None else float(ap) * 100
+                ap50 = None if ap50 is None else float(ap50) * 100
+                is_best = ap is not None and (self.best is None or ap > self.best)
+                if is_best:
+                    self.best = ap
+                loss, lr, mem = self.pending or (None, None, None)
+                print(progress.epoch_line(
+                    self.epoch, epochs, self.epoch * per_epoch, total,
+                    loss=loss, lr=lr, mem=mem,
+                    metrics={"mAP50-95": ap, "mAP50": ap50}, best=is_best,
+                    seconds=None if self.started is None else time.time() - self.started,
+                ), flush=True)
+                self.pending = None
+
+            # ------------------------------------------------------ vòng đời
+            def before_train_epoch(self, runner):
+                if self.pending is not None:      # epoch trước không chấm val
+                    self._report()
+                self._open()
+
+            def after_train_iter(self, runner, batch_idx, data_batch=None, outputs=None):
+                if isinstance(outputs, dict) and outputs.get("loss") is not None:
+                    try:
+                        self.losses.append(float(outputs["loss"]))
+                    except (TypeError, ValueError):
+                        pass
+                loss = self._loss()
+                if self.bar is not None:
+                    self.bar.advance(1, "" if loss is None else f"loss {loss:.3f}")
+
+            def after_train_epoch(self, runner):
+                self._close()
+                self.pending = (self._loss(), self._lr(runner), self._memory())
+
+            def after_val_epoch(self, runner, metrics=None):
+                if self.pending is not None:
+                    self._report(metrics)
+
+            def after_train(self, runner):
+                self._close()
+                if self.pending is not None:
+                    self._report()
+
+            # ------------------------------------------------------- số liệu
+            def _loss(self):
+                """Trung bình trượt trên `log_every` iteration gần nhất."""
+                return sum(self.losses) / len(self.losses) if self.losses else None
+
+            @staticmethod
+            def _lr(runner):
+                try:
+                    return float(runner.optim_wrapper.get_lr()["lr"][0])
+                except (KeyError, AttributeError, IndexError, TypeError):
+                    return None
+
+            @staticmethod
+            def _memory():
+                try:
+                    import torch
+
+                    if torch.cuda.is_available():
+                        peak = torch.cuda.max_memory_allocated() / 2 ** 30
+                        return peak or None
+                except ImportError:
+                    pass
+                return None
+
+        return EpochReporter()
+
+    def _print_summary(self, best_row, test_segm: dict, seconds, weights) -> None:
+        """Khối cuối lượt chạy, cùng dạng với ba model kia."""
+        def pair(ap, ap50):
+            return f"mAP50-95 {progress.fmt_num(ap)}   mAP50 {progress.fmt_num(ap50)}"
+
+        epochs = int(self.train_args["epochs"])
+        rows = [("epoch tốt nhất", f"{best_row['epoch']}/{epochs}" if best_row else "—")]
+        if best_row:
+            # results.csv giữ thang 0..1 của mmengine; màn hình dùng 0..100.
+            def pct(key):
+                got = best_row.get(key)
+                return None if got in (None, "") else float(got) * 100
+            rows.append(("val", pair(pct("coco/segm_mAP"), pct("coco/segm_mAP_50"))))
+        fields = getattr(self, "test_fields", []) or []
+        label = f"test ({', '.join(fields)})" if fields else "test"
+        rows.append((label, pair(test_segm.get("AP"), test_segm.get("AP50"))))
+        rows.append(("thời gian", f"train {progress.fmt_time(seconds)}"))
+        try:
+            shown = Path(weights).relative_to(self.run_dir)
+        except ValueError:
+            shown = weights
+        rows.append(("trọng số", str(shown)))
+        print(progress.summary(f"{self.arch} · {self.run_dir.name}", rows), flush=True)
+
     # ----------------------------------------------------------------- huấn luyện
     def fit(self) -> dict:
         require_mmdet()
@@ -396,6 +547,14 @@ class MMDetTrainer(Trainer):
               f"lr {cfg.optim_wrapper.optimizer.lr:g}, load_from {cfg.load_from}")
         t0 = time.time()
         runner = Runner.from_cfg(cfg)
+        if not self.train_args.get("verbose"):
+            # Sau from_cfg, vì chính nó dựng logger và gắn hai handler: một ra
+            # màn hình, một ra <work_dir>/<timestamp>/<timestamp>.log. Bịt cái
+            # thứ nhất ở mức INFO; file vẫn nhận đủ config, env và từng dòng
+            # iteration. Tên logger do Runner đặt theo experiment nên phải hỏi
+            # chính nó, đoán "mmengine" là trật.
+            progress.hush(runner.logger.name, "mmengine", "mmdet")
+            runner.register_hook(self._epoch_reporter(), priority="LOWEST")
         runner.train()
         train_seconds = round(time.time() - t0, 1)
 
@@ -420,6 +579,9 @@ class MMDetTrainer(Trainer):
         cfg_t = cfg.copy()
         cfg_t.load_from = str(best)
         cfg_t.work_dir = str(self.out_dir / "test")
+        n_test = (getattr(self, "dataset_counts", None) or {}).get("test")
+        where = f" trên {n_test} ảnh" if n_test else ""
+        print(f"\nChấm test bằng best.pth{where} ...", flush=True)
         metrics = Runner.from_cfg(cfg_t).test() or {}
         preds = self.out_dir / "test" / "pred.segm.json"
         pred_out = self.run_dir / "predictions.json"
@@ -434,6 +596,7 @@ class MMDetTrainer(Trainer):
 
         val_rows = [r for r in rows if r.get("coco/segm_mAP") not in (None, "")]
         best_row = max(val_rows, key=lambda r: float(r["coco/segm_mAP"])) if val_rows else None
+        self._print_summary(best_row, segm, train_seconds, best)
         return {
             "weights": {"best": str(best), "last": str(weights_dir / "last.pth")},
             "best_epoch": int(best_row["epoch"]) if best_row else -1,
