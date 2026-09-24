@@ -554,6 +554,7 @@ class MMDetTrainer(Trainer):
             # iteration. Tên logger do Runner đặt theo experiment nên phải hỏi
             # chính nó, đoán "mmengine" là trật.
             progress.hush(runner.logger.name, "mmengine", "mmdet")
+            progress.once_per_warning()
             runner.register_hook(self._epoch_reporter(), priority="LOWEST")
         runner.train()
         train_seconds = round(time.time() - t0, 1)

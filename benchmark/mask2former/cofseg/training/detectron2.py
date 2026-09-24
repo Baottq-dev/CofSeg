@@ -477,6 +477,7 @@ class Detectron2Trainer(Trainer):
         # ra d2/log.txt. Bịt cái thứ nhất ở mức INFO; file vẫn nhận đủ.
         if not self.train_args.get("verbose"):
             progress.hush("detectron2", "fvcore")
+            progress.once_per_warning()
         cls = self._trainer_cls(m2f)
         per_epoch = iters_per_epoch(self.n_train, self.train_args["batch"])
         print(f"{self.arch}: {self.train_args['epochs']} epoch x {per_epoch} iteration, "

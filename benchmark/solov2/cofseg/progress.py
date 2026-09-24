@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import warnings
 
 #: Thứ tự cột trong dòng epoch. Khoá là tên ta dùng, không phải tên của khung.
 METRICS = ("mAP50-95", "mAP50")
@@ -62,6 +63,26 @@ def hush(*names: str, level: int = logging.WARNING):
 def unhush(changed) -> None:
     for h, old in changed:
         h.setLevel(old)
+
+
+def once_per_warning(*categories) -> None:
+    """Mỗi cảnh báo KHÁC NHAU hiện đúng một lần, thay vì mỗi iteration một lần.
+
+    detectron2 gọi `torch.cuda.amp.autocast`, thứ torch 2.4 đã khai tử, và
+    cảnh báo đó bắn ra ở MỖI iteration. Nó ghi ra stderr còn thanh tiến trình
+    vẽ ra stdout, nên mỗi lần bắn là một lần thanh bị cắt đôi: 1500 iteration
+    thành 3000 dòng rác.
+
+    Dùng "once" chứ không phải "ignore" — đây là khác biệt quan trọng. "once"
+    lọc theo cặp (nội dung, loại), nên mọi cảnh báo KHÁC nội dung vẫn hiện
+    đầy đủ; chỉ bản sao thứ hai trở đi của cùng một cảnh báo bị bỏ. Không
+    giấu thông tin nào, chỉ thôi lặp lại.
+
+    Bộ lọc mới được chèn lên ĐẦU danh sách, nên nó thắng cả khi một thư viện
+    đã đặt `simplefilter("always")` lúc import.
+    """
+    for c in (categories or (FutureWarning, DeprecationWarning, UserWarning)):
+        warnings.filterwarnings("once", category=c)
 
 
 # ------------------------------------------------------------------ định dạng

@@ -8,6 +8,9 @@ và quan trọng nhất là hush() không được gỡ nhầm đường ghi ra 
 from __future__ import annotations
 
 import logging
+import pathlib
+import subprocess
+import sys
 
 import pytest
 
@@ -176,3 +179,53 @@ def test_bar_close_goi_hai_lan_khong_gay(enabled):
     bar = progress.Bar(3, enabled=enabled)
     bar.close()
     bar.close()
+
+
+# ------------------------------------------------------------------ cảnh báo
+# Chạy trong TIẾN TRÌNH CON, không phải trong pytest: pytest bọc mỗi test
+# trong warnings.catch_warnings() và tự thu cảnh báo, nên đo trong đó là đo
+# máy móc của pytest chứ không phải hành vi lúc train thật.
+_KICH_BAN = """
+import sys, warnings
+sys.path.insert(0, {root!r})
+warnings.simplefilter("always")          # tệ nhất: thư viện đã bật "always"
+{setup}
+for _ in range(30):
+    warnings.warn("torch.cuda.amp.autocast(args...) is deprecated", FutureWarning)
+    warnings.warn("mot canh bao khac han", FutureWarning)
+    warnings.warn("lap lai", UserWarning)
+"""
+
+
+def _chay(setup: str) -> list[str]:
+    root = str(pathlib.Path(__file__).resolve().parents[1])
+    code = _KICH_BAN.format(root=root, setup=setup)
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    return [l for l in r.stderr.splitlines() if "Warning:" in l]
+
+
+def test_khong_gop_thi_canh_bao_ngap_man_hinh():
+    """Mốc để so: 30 iteration x 3 cảnh báo = 90 dòng."""
+    assert len(_chay("")) == 90
+
+
+def test_canh_bao_lap_lai_chi_con_mot_lan():
+    lines = _chay("from cofseg import progress; progress.once_per_warning()")
+    assert len(lines) == 3, lines
+
+
+def test_canh_bao_khac_noi_dung_khong_bi_nuot():
+    """"once" gộp theo nội dung, nên không giấu cảnh báo nào."""
+    lines = _chay("from cofseg import progress; progress.once_per_warning()")
+    assert any("autocast" in l for l in lines)
+    assert any("khac han" in l for l in lines)
+    assert any("lap lai" in l for l in lines)
+
+
+def test_chi_gop_loai_duoc_neu():
+    """Nêu FutureWarning thì UserWarning phải giữ nguyên 30 dòng."""
+    lines = _chay("from cofseg import progress; "
+                  "progress.once_per_warning(FutureWarning)")
+    assert len([l for l in lines if "UserWarning" in l]) == 30
+    assert len([l for l in lines if "FutureWarning" in l]) == 2

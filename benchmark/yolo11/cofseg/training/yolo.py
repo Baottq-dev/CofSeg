@@ -175,6 +175,7 @@ class YoloTrainer(Trainer):
             name="ultralytics",
             exist_ok=True,
         )
+        progress.once_per_warning()
         t0 = time.time()
         results = model.train(**args)
         train_seconds = round(time.time() - t0, 1)
