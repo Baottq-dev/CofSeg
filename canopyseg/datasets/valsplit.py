@@ -108,6 +108,78 @@ def by_block(frames: Iterable[flightlog.Frame], graph: Graph, *,
     })
 
 
+# ------------------------------------------------------- trọn một đường bay
+def _key(name: str | Sequence[str]) -> tuple[str, str]:
+    """'field_1/10/4' hoặc ['field_1', '10/4'] -> ('field_1', '10/4')."""
+    if isinstance(name, str):
+        field, _, flight = name.partition("/")
+        return (field, flight)
+    field, flight = name
+    return (str(field), str(flight))
+
+
+def by_flight(frames: Iterable[flightlog.Frame], graph: Graph, *,
+              flights: Iterable[str | Sequence[str]], buffer: int = 20) -> Assignment:
+    """val = trọn một hoặc vài đường bay, đệm ở ranh giới nối liền.
+
+    Ưu điểm so với cắt khối: không xẻ đôi chuỗi ảnh nào, nên trong lòng val
+    không có ranh giới nào để rò rỉ.
+
+    Nhưng thư mục đường bay không phải lúc nào cũng là một chuyến bay riêng.
+    Ở bộ này cả ba ruộng nhiều thư mục đều là một chuyến liên tục bị cắt: bộ
+    đếm của máy bay chạy tiếp qua ranh giới (xem `flightlog.junctions`). Chỗ
+    nối đó cần đệm y như một điểm cắt giữa đường bay, nên ta bỏ `buffer` ảnh
+    ở phía train của mỗi ranh giới.
+
+    Đệm ở đây đếm theo ẢNH chứ không tra đồ thị, vì phép đo chồng lấn chạy
+    với scope=flight nên KHÔNG có cạnh nào bắc qua ranh giới hai thư mục —
+    tra đồ thị ở đúng chỗ cần nhất thì nó im lặng. `why` ghi lại ước lượng rò
+    rỉ còn lại theo p(k) để biết `buffer` chọn đã đủ chưa.
+
+    Đường bay nào thuộc ruộng test thì không có trong `frames`, tự động bỏ
+    qua; `why` ghi cả danh sách yêu cầu lẫn danh sách thực dùng.
+    """
+    fl = flightlog.flights(frames)
+    pool = {f.file_name for f in frames}
+    want = [_key(x) for x in flights]
+    used = [k for k in want if k in fl]
+
+    val: set[str] = set()
+    for k in used:
+        val |= {f.file_name for f in fl[k]}
+
+    drop: set[str] = set()
+    seams = []
+    for j in flightlog.junctions(frames):
+        before, after = (j.field, j.before), (j.field, j.after)
+        side = None
+        if after in used and before not in used:
+            side, names = "before", [f.file_name for f in fl[before]][-buffer:]
+        elif before in used and after not in used:
+            side, names = "after", [f.file_name for f in fl[after]][:buffer]
+        if side is None:
+            continue
+        drop |= set(names)
+        seams.append({
+            "field": j.field, "before": j.before, "after": j.after,
+            "counter_gap": j.counter_gap, "minutes": round(j.seconds / 60, 1),
+            "buffered_side": side, "buffered": len(names),
+            # Ước theo p(k): khoảng cách khung hình ở ranh giới là counter_gap,
+            # đã bỏ `buffer` ảnh phía train thì còn lại bao nhiêu ảnh val bẩn.
+            "estimated_val_images_left_dirty":
+                round(graph.expected_leak(j.counter_gap, buffer), 2),
+        })
+
+    drop |= _buffer(val, pool - drop, graph)
+    return Assignment(val=val, drop=drop - val, why={
+        "method": "flight",
+        "requested": ["/".join(k) for k in want],
+        "used": ["/".join(k) for k in used],
+        "buffer": buffer, "threshold": graph.threshold, "graph_scope": graph.scope,
+        "junctions": seams,
+    })
+
+
 # ------------------------------------------------------------------ chấm điểm
 def audit(a: Assignment, frames: Iterable[flightlog.Frame], graph: Graph,
           regions: dict[str, int] | None = None) -> dict:

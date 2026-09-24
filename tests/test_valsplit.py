@@ -159,3 +159,81 @@ def test_audit_says_the_graph_knows_nothing_when_it_is_empty(flight_run):
     assert rep["leak"]["val_images_touching_train"] == 0
     assert rep["leak"]["graph_scope"] == "none"
     assert a.drop == set()
+
+
+# -------------------------------------------------- trọn một đường bay
+def two_segments(flight_run, buffer_gap=8):
+    """Một chuyến bay liên tục bị cắt thành hai thư mục: bộ đếm chạy tiếp."""
+    return frames(flight_run("field_1", "10/1", "20260301", 75324, 1, 30),
+                  flight_run("field_1", "10/2", "20260301", 80700, 30 + buffer_gap, 30),
+                  flight_run("field_2", "10", "20260301", 151300, 1, 30))
+
+
+def test_flight_split_takes_whole_flights(flight_run):
+    fs = two_segments(flight_run)
+    g = sequential_graph(fs)
+    a = valsplit.by_flight(fs, g, flights=["field_1/10/2"], buffer=0)
+    assert a.val == {f.file_name for f in fs if f.flight == "10/2"}
+    assert len(a.val) == 30
+    assert a.why["used"] == ["field_1/10/2"]
+
+
+def test_a_flight_of_the_test_field_is_skipped_but_written_down(flight_run):
+    """Cấu hình khai cả hai đường bay cuối; lượt nào có ruộng đó làm test thì
+    đường bay ấy không nằm trong pool, phải tự bỏ qua chứ không gãy."""
+    fs = two_segments(flight_run)
+    g = sequential_graph(fs)
+    a = valsplit.by_flight(fs, g, flights=["field_1/10/2", "field_9/10/1"], buffer=0)
+    assert a.why["requested"] == ["field_1/10/2", "field_9/10/1"]
+    assert a.why["used"] == ["field_1/10/2"]
+
+
+def test_the_seam_between_two_folders_of_one_mission_gets_a_buffer(flight_run):
+    """10/1 và 10/2 là một chuyến bị cắt. Lấy 10/2 làm val thì phải bỏ ảnh ở
+    CUỐI 10/1 — phía train của chỗ nối."""
+    fs = two_segments(flight_run)
+    g = sequential_graph(fs)
+    a = valsplit.by_flight(fs, g, flights=["field_1/10/2"], buffer=5)
+    tail = [f.file_name for f in flightlog.flights(fs)[("field_1", "10/1")]][-5:]
+    assert set(tail) <= a.drop
+    (seam,) = a.why["junctions"]
+    assert seam["buffered_side"] == "before" and seam["buffered"] == 5
+    assert seam["counter_gap"] == 8
+
+
+def test_the_buffer_goes_on_the_other_side_when_val_comes_first(flight_run):
+    fs = two_segments(flight_run)
+    g = sequential_graph(fs)
+    a = valsplit.by_flight(fs, g, flights=["field_1/10/1"], buffer=4)
+    head = [f.file_name for f in flightlog.flights(fs)[("field_1", "10/2")]][:4]
+    assert set(head) <= a.drop
+    assert a.why["junctions"][0]["buffered_side"] == "after"
+
+
+def test_no_buffer_between_two_fields(flight_run):
+    """field_2 không nối với field_1, nên lấy nó làm val không tốn ảnh nào."""
+    fs = two_segments(flight_run)
+    g = sequential_graph(fs)
+    a = valsplit.by_flight(fs, g, flights=["field_2/10"], buffer=20)
+    assert a.why["junctions"] == []
+    assert a.drop == set()
+
+
+def test_the_seam_record_estimates_what_the_buffer_leaves_behind(flight_run):
+    fs = two_segments(flight_run)
+    g = sequential_graph(fs)
+    g.pairs_by_gap = {k: 1000 for k in range(1, 40)}
+    g.edges_by_gap = {k: (600 if k == 1 else 40) for k in range(1, 40)}
+    wide = valsplit.by_flight(fs, g, flights=["field_1/10/2"], buffer=30)
+    narrow = valsplit.by_flight(fs, g, flights=["field_1/10/2"], buffer=0)
+    assert (narrow.why["junctions"][0]["estimated_val_images_left_dirty"]
+            > wide.why["junctions"][0]["estimated_val_images_left_dirty"])
+
+
+def test_val_images_are_never_also_dropped(flight_run):
+    """Hai đường bay cùng làm val, cạnh nhau: ảnh của val này không được rơi
+    vào khoảng đệm của val kia."""
+    fs = two_segments(flight_run)
+    g = sequential_graph(fs)
+    a = valsplit.by_flight(fs, g, flights=["field_1/10/1", "field_1/10/2"], buffer=10)
+    assert a.val & a.drop == set()
