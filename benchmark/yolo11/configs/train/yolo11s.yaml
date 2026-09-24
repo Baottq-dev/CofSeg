@@ -12,7 +12,7 @@
 #
 # Độ phân giải ghi đè lúc chạy, tên thư mục run lấy giá trị thật:
 #     python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --imgsz 1024 --batch 4
-#     python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --set data.yaml=data/export/f2/data.yaml
+#     python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --set data.yaml=data/export/block/f2/data.yaml
 
 base: yolo26s.yaml
 name: yolo11s-seg

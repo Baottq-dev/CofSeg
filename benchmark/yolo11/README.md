@@ -24,15 +24,20 @@ Từ **gốc repo** (để `data/` và `weights/` dùng chung). Đặt `--runs` 
 này và `--name` theo đúng dạng `<model>_<fold>` — bảng tổng hợp đọc tên đó để
 biết model nào chấm trên ruộng nào.
 
+Lệnh dưới đây chạy trên bộ fold cắt theo cách val **block**
+(`data/export/block/`). Nhóm đang cân nhắc hai cách chia val; đổi sang cách
+kia chỉ cần `--set data.root=data/export/flight/$FOLD`. Cả hai bộ fold cắt ra
+bằng `scripts/make_fold.py`, xem `benchmark/README.md`.
+
 ```bash
 FOLD=f4
 
 # 1. huấn luyện (thêm --epochs 1 --fraction 0.05 để khói)
-python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --set data.yaml=data/export/$FOLD/data.yaml --runs benchmark/yolo11/runs --name yolo11s-$FOLD
+python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --set data.yaml=data/export/block/$FOLD/data.yaml --runs benchmark/yolo11/runs --name yolo11s-$FOLD
 
 # 2. chấm bằng trọng số tốt nhất
 RUN=$(ls -td benchmark/yolo11/runs/train/*_yolo11s-${FOLD}_* | head -1)
-python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo11s.yaml --set model.weights="$RUN/ultralytics/weights/best.pt" --set data.root=data/export/$FOLD --split test --runs benchmark/yolo11/runs --name yolo11s_$FOLD
+python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo11s.yaml --set model.weights="$RUN/ultralytics/weights/best.pt" --set data.root=data/export/block/$FOLD --split test --runs benchmark/yolo11/runs --name yolo11s_$FOLD
 
 # 3. dự đoán + kết quả nhỏ
 EV=$(ls -td benchmark/yolo11/runs/eval/*_yolo11s_${FOLD}_* | head -1)

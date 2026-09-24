@@ -15,8 +15,8 @@ model: weights/yolo26s-seg.pt
 
 data:
   # data.yaml của một fold do scripts/make_fold.py cắt ra. Đổi fold:
-  #     --set data.yaml=data/export/f2/data.yaml
-  yaml: data/export/f4/data.yaml
+  #     --set data.yaml=data/export/block/f2/data.yaml
+  yaml: data/export/block/f4/data.yaml
   # Ảnh dày nhất có 48 vùng; con số này để bước dò VRAM ước lượng đúng.
   max_objects_per_image: 48
 
