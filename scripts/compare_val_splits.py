@@ -55,9 +55,16 @@ def read_export(export: Path) -> tuple[dict[str, str], dict[str, int]]:
 
 
 def evaluate(recipe: dict, doc: dict, field: dict[str, str], regions: dict[str, int],
-             graph, *, override: dict | None = None) -> dict:
-    """Chạy một cách chia trên cả sáu lượt, trả về số liệu từng lượt và gộp."""
+             graph, *, override: dict | None = None, score_graph=None) -> dict:
+    """Chạy một cách chia trên cả sáu lượt, trả về số liệu từng lượt và gộp.
+
+    `score_graph` tách việc CHẤM khỏi việc CHIA. Bản "không đệm" chia bằng đồ
+    thị rỗng, nhưng phải được chấm bằng đồ thị thật — chấm bằng đồ thị rỗng
+    thì nó báo 0 ảnh bẩn vì không biết gì, và người đọc sẽ kết luận nhầm là
+    khoảng đệm chẳng mua được gì.
+    """
     recipe = {**recipe, **(override or {})}
+    scorer = score_graph if score_graph is not None else graph
     order = sorted(doc["folds"])
     rows, trained = [], set()
     for k, name in enumerate(order):
@@ -65,7 +72,7 @@ def evaluate(recipe: dict, doc: dict, field: dict[str, str], regions: dict[str, 
         keep = set(fields["train"])
         frames = flightlog.frames([n for n in field if field[n] in keep])
         a = valsplit.apply(recipe, frames, graph, slot=k, n_slots=len(order))
-        rep = valsplit.audit(a, frames, graph, regions)
+        rep = valsplit.audit(a, frames, scorer, regions)
         pool = {f.file_name for f in frames}
         trained |= pool - a.val - a.drop
         rows.append({"fold": name, "test": fields["test"][0], **rep})
@@ -169,7 +176,8 @@ def main(argv=None) -> int:
         if a.no_buffer:
             off = {"buffer": 0} if recipe["method"] == "flight" else {"edges": None}
             bare = valsplit.load_graph({**recipe, **off}) if "edges" in off else graph
-            r = evaluate(recipe, doc, field, regions, bare, override=off)
+            r = evaluate(recipe, doc, field, regions, bare, override=off,
+                         score_graph=graph)
             r["recipe"] = f"{recipe['_path']}  (KHÔNG đệm, để so)"
             results.append((recipe, bare, r))
 
