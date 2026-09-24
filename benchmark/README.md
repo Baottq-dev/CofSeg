@@ -105,6 +105,67 @@ python scripts/summarize_folds.py --eval benchmark/*/runs/eval --dataset block
 Nếu hai lần chấm trùng (cùng model, cùng bộ, cùng fold) thì bảng giữ lần mới
 nhất và **báo ra** — không im lặng đè.
 
+## Màn hình khi train, và log đầy đủ nằm đâu
+
+Cả bốn model in ra cùng một dạng, để bốn lượt train đọc được cạnh nhau:
+
+```
+Dữ liệu: train 470 ảnh / 7101 vùng | val 85 ảnh / 1078 vùng | test 280 ảnh / 3720 vùng (field_1)
+maskrcnn: 3 epoch x 30 iteration, batch 16, imgsz 1024, lr 0.02, max_iter 90
+epoch 1/3   iter 30/90   loss 2.627   lr 2.00e-02   9.3G   mAP50-95   3.76   mAP50  13.52   0:44   * tốt nhất
+epoch 2/3   iter 60/90   loss 1.987   lr 2.00e-02   9.5G   mAP50-95  12.81   mAP50  33.70   0:43   * tốt nhất
+epoch 3/3   iter 90/90   loss 1.800   lr 2.00e-02   9.5G   mAP50-95  27.61   mAP50  55.79   0:43   * tốt nhất
+
+Chấm test bằng best.pth trên 280 ảnh ...
+
+----------------------------------------------------------------
+maskrcnn · 2026-09-24_144830_maskrcnn-r50-d2_block-f1_i1024b16e3
+----------------------------------------------------------------
+  epoch tốt nhất   3/3
+  val              mAP50-95 27.61   mAP50 55.79
+  test (field_1)   mAP50-95 24.10   mAP50 51.30
+  thời gian        train 2:12
+  trọng số         weights/best.pth
+----------------------------------------------------------------
+```
+
+Trong lúc một epoch đang chạy có thanh tiến trình `tqdm` kèm loss. Thanh tự
+tắt khi stdout không phải terminal (`nohup`, `> log.txt`), lúc đó chỉ còn các
+dòng epoch.
+
+### Tên chỉ số
+
+Lấy theo cách gọi của YOLO cho **cả bốn** model. Cùng một đại lượng, mỗi khung
+một tên:
+
+| In ra | detectron2 | mmdet | Nghĩa |
+|---|---|---|---|
+| `mAP50-95` | `AP` | `segm_mAP` | AP trung bình trên IoU 0,50 → 0,95 |
+| `mAP50` | `AP50` | `segm_mAP_50` | AP tại IoU 0,50 |
+
+mmengine trả thang 0–1, ba khung kia trả 0–100; màn hình luôn là **0–100**.
+`results.csv` và `summary.json` giữ nguyên thang gốc của từng khung.
+
+### Log đầy đủ vẫn còn nguyên
+
+Màn hình chỉ bị **nâng ngưỡng lên WARNING**, không mất dòng nào trên đĩa:
+
+| File | Nội dung |
+|---|---|
+| `<run>/run.log` | bản sao đúng màn hình, kể cả thanh tiến trình |
+| `<run>/d2/log.txt` | detectron2: config đầy đủ, kiến trúc model, từng iteration, bảng COCO |
+| `<run>/mmdet/<timestamp>/<timestamp>.log` | mmengine: tương tự |
+| `<run>/results.csv` | một dòng mỗi lần ghi số liệu, có cột epoch |
+
+Cảnh báo (`WARNING`) vẫn hiện ra màn hình — ví dụ dòng
+`Skip loading parameter 'cls_score' ... (81, 1024) vs (2, 1024)`, là dấu hiệu
+đầu phân loại COCO 81 lớp được khởi tạo lại cho 1 lớp, đúng như mong muốn.
+
+Muốn xem đúng kiểu mặc định của khung thì thêm `--verbose true`. Đo trên một
+lượt Mask R-CNN 3 epoch: **1474 dòng** khi bật, **khoảng 30 dòng** khi tắt —
+1050 dòng trong số đó là dump config và kiến trúc model, riêng kiến trúc bị in
+hai lần.
+
 ## Cái giá của việc tách rời
 
 Bốn bản sao `cofseg/` xuất phát giống hệt nhau. Nếu một người sửa phần **chấm
