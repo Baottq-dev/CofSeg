@@ -421,6 +421,10 @@ class MMDetTrainer(Trainer):
                 self.epoch = 0
                 self.best = None
                 self.started = None
+                self.trained = None      # giây train của epoch, chưa tính val
+                self.val_bar = None
+                self.val_started = None
+                self.val_seconds = None
                 self.pending = None
                 # Loss lấy từ `outputs` của after_train_iter chứ không từ
                 # message_hub: đó là nguồn mmengine đưa thẳng vào tay hook,
@@ -430,6 +434,8 @@ class MMDetTrainer(Trainer):
             def _open(self):
                 self.epoch += 1
                 self.started = time.time()
+                self.trained = None
+                self.val_seconds = None
                 self.bar = progress.Bar(per_epoch, f"epoch {self.epoch}/{epochs}")
 
             def _close(self):
@@ -448,11 +454,13 @@ class MMDetTrainer(Trainer):
                 if is_best:
                     self.best = ap
                 loss, lr, mem = self.pending or (None, None, None)
+                whole = None if self.started is None else time.time() - self.started
+                train_s = self.trained if self.trained is not None else whole
                 print(progress.epoch_line(
                     self.epoch, epochs, self.epoch * per_epoch, total,
                     loss=loss, lr=lr, mem=mem,
                     metrics={"mAP50-95": ap, "mAP50": ap50}, best=is_best,
-                    seconds=None if self.started is None else time.time() - self.started,
+                    seconds=train_s, val_seconds=self.val_seconds,
                 ), flush=True)
                 self.pending = None
 
@@ -474,11 +482,36 @@ class MMDetTrainer(Trainer):
 
             def after_train_epoch(self, runner):
                 self._close()
+                if self.trained is None and self.started is not None:
+                    self.trained = time.time() - self.started
                 self.pending = (self._loss(), self._lr(runner), self._memory())
 
+            # mmengine cho hẳn ba móc riêng cho vòng val, nên thanh val ở đây
+            # dựng thẳng được — khác detectron2, nơi phải mượn evaluator.
+            def before_val_epoch(self, runner):
+                self.val_started = time.time()
+                self.val_bar = progress.Bar(self._val_total(runner), "val")
+
+            def after_val_iter(self, runner, batch_idx, data_batch=None, outputs=None):
+                if self.val_bar is not None:
+                    self.val_bar.advance(1)
+
             def after_val_epoch(self, runner, metrics=None):
+                if self.val_bar is not None:
+                    self.val_bar.close()
+                    self.val_bar = None
+                if self.val_started is not None:
+                    self.val_seconds = time.time() - self.val_started
+                    self.val_started = None
                 if self.pending is not None:
                     self._report(metrics)
+
+            @staticmethod
+            def _val_total(runner):
+                try:
+                    return len(runner.val_dataloader)
+                except (AttributeError, TypeError):
+                    return 0
 
             def after_train(self, runner):
                 self._close()

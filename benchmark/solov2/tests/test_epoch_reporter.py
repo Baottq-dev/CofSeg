@@ -29,6 +29,8 @@ def fake_mmengine(monkeypatch):
         def before_train_epoch(self, runner): ...
         def after_train_iter(self, runner, batch_idx, data_batch=None, outputs=None): ...
         def after_train_epoch(self, runner): ...
+        def before_val_epoch(self, runner): ...
+        def after_val_iter(self, runner, batch_idx, data_batch=None, outputs=None): ...
         def after_val_epoch(self, runner, metrics=None): ...
         def after_train(self, runner): ...
 
@@ -45,9 +47,10 @@ class _FakeRunner:
     """Chỉ những thứ hook thật sự hỏi tới; cái gì không có thì phải trả None
     chứ không được làm gãy lượt train."""
 
-    def __init__(self):
+    def __init__(self, n_val=85):
         self.message_hub = None
         self.optim_wrapper = None
+        self.val_dataloader = [None] * n_val
 
 
 def _trainer(tmp_path, epochs=3, batch=16, n_train=470):
@@ -68,6 +71,9 @@ def _run(reporter, epochs, per_epoch, ap_at):
             reporter.after_train_iter(runner, i, outputs={"loss": 2.5 - i * 0.01})
         reporter.after_train_epoch(runner)
         if ep in ap_at:                     # ValLoop chỉ chạy ở epoch có val
+            reporter.before_val_epoch(runner)
+            for i in range(len(runner.val_dataloader)):
+                reporter.after_val_iter(runner, i)
             reporter.after_val_epoch(runner, {"coco/segm_mAP": ap_at[ep],
                                               "coco/segm_mAP_50": ap_at[ep] * 2})
     reporter.after_train(runner)
@@ -152,3 +158,39 @@ def test_runner_thieu_thong_tin_khong_lam_gay_train(tmp_path, fake_mmengine, cap
     assert "lr" not in line
     assert "loss " in line
     assert "mAP50-95  10.00" in line
+
+
+def test_tach_thoi_gian_train_khoi_thoi_gian_val(tmp_path, fake_mmengine, capsys):
+    """Dòng epoch phải nói được train bao lâu, val bao lâu — không gộp."""
+    t = _trainer(tmp_path, epochs=1)
+    _run(t._epoch_reporter(), 1, 30, {1: 0.2761})
+    line = _lines(capsys)[0]
+    assert "+ val " in line, line
+
+
+def test_thanh_val_dem_du_so_anh(tmp_path, fake_mmengine):
+    """Tổng của thanh val lấy từ val_dataloader, không phải đoán."""
+    t = _trainer(tmp_path, epochs=1)
+    r = t._epoch_reporter()
+    runner = _FakeRunner(n_val=85)
+    r.before_train_epoch(runner)
+    r.before_val_epoch(runner)
+    assert r.val_bar.total == 85
+    for i in range(85):
+        r.after_val_iter(runner, i)
+    assert r.val_bar.n == 85
+    r.after_val_epoch(runner, {})
+
+
+def test_runner_khong_co_val_dataloader_khong_gay(tmp_path, fake_mmengine):
+    """Cấu hình không chấm val thì vẫn phải chạy, chỉ là thanh rỗng."""
+    t = _trainer(tmp_path, epochs=1)
+    r = t._epoch_reporter()
+
+    class Troi:
+        message_hub = None
+        optim_wrapper = None
+
+    r.before_train_epoch(Troi())
+    r.before_val_epoch(Troi())
+    assert r.val_bar.total == 0
