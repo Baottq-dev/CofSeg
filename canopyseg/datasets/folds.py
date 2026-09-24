@@ -29,6 +29,7 @@ import json
 import os
 import shutil
 from pathlib import Path
+from typing import Iterable
 
 import yaml
 
@@ -108,6 +109,9 @@ def make_fold(
     out: str | Path,
     copy: bool = False,
     labels: str = "auto",
+    val_images: Iterable[str] | None = None,
+    drop_images: Iterable[str] | None = None,
+    val_split: dict | None = None,
 ) -> dict:
     """Cắt <export> thành <out> theo `fields` ({split: [ruộng]}). Trả về tóm tắt.
 
@@ -117,9 +121,25 @@ def make_fold(
     `labels`: "auto" (chép nếu bản xuất có labels/, không thì sinh từ COCO),
     "copy" (bắt buộc chép, lỗi nếu bản xuất không có), "generate" (luôn sinh —
     dùng khi nghi labels/ của bản xuất đã cũ so với instances.json).
+
+    `val_images` chọn val ở mức ẢNH thay vì mức ruộng: ảnh có tên trong đó
+    sang val, phần còn lại của cùng ruộng vẫn ở train. Cần thiết vì yêu cầu
+    của đồ án là train đủ 5 ruộng, mà val lấy trọn một ruộng thì chỉ còn 4.
+
+    `drop_images` là khoảng đệm: những ảnh KHÔNG vào tập nào, vì chúng chồng
+    lấn với val. Bỏ hẳn chứ không đẩy sang train — để ở train là val nhìn thấy
+    chúng, mà đó đúng là thứ khoảng đệm sinh ra để chặn.
+
+    `val_split` là phần ghi chép của bên gọi (cách chia, tham số, điểm cắt,
+    rò rỉ đo lại) để `fold.json` giải thích được vì sao fold này trông như vậy.
     """
     if labels not in LABEL_MODES:
         raise ValueError(f"labels={labels!r} không hợp lệ; có: {LABEL_MODES}")
+    val_set = set(val_images or ())
+    drop_set = set(drop_images or ())
+    both = val_set & drop_set
+    if both:
+        raise ValueError(f"fold {name}: {len(both)} ảnh vừa là val vừa bị bỏ: {sorted(both)[:3]}")
     export, out = Path(export), Path(out)
     ann_file = export / "annotations" / "instances.json"
     if not ann_file.exists():
@@ -136,17 +156,31 @@ def make_fold(
 
     by_split: dict[str, list[dict]] = {sp: [] for sp in SPLITS}
     skipped: list[str] = []
+    dropped: list[str] = []
     for im in raw["images"]:
-        fld = field_of(im["file_name"])
+        nm = im["file_name"]
+        fld = field_of(nm)
         if fld not in known:
-            skipped.append(im["file_name"])
+            skipped.append(nm)
             continue
-        by_split[field_to_split[fld]].append(im)
+        sp = field_to_split[fld]
+        if sp != "test" and nm in drop_set:
+            dropped.append(nm)
+        elif sp != "test" and nm in val_set:
+            by_split["val"].append(im)
+        else:
+            by_split[sp].append(im)
+
+    stray = val_set - {im["file_name"] for im in by_split["val"]}
+    if stray:
+        raise ValueError(
+            f"fold {name}: {len(stray)} ảnh val không nằm trong ruộng train của fold này "
+            f"(hoặc không có trong bản xuất): {sorted(stray)[:3]}")
     empty = [sp for sp in SPLITS if not by_split[sp]]
     if empty:
         raise ValueError(
             f"fold {name}: tập {empty} không có ảnh nào — ruộng "
-            f"{[fields[sp] for sp in empty]} chưa có trong bản xuất?"
+            f"{[fields.get(sp, []) for sp in empty]} chưa có trong bản xuất?"
         )
 
     anns_by_image: dict[int, list[dict]] = {}
@@ -168,6 +202,8 @@ def make_fold(
         "images_skipped": skipped,
         "splits": {},
         "labels": label_mode,
+        "val_split": val_split,
+        "dropped": {"count": len(dropped), "files": sorted(dropped)},
     }
     how = {"link": 0, "copy": 0}
     (out / "annotations").mkdir(parents=True)
@@ -180,7 +216,8 @@ def make_fold(
             "annotations": anns,
         }
         doc.setdefault("info", {})
-        doc["info"] = {**doc["info"], "fold": name, "split": sp, "fields": fields[sp]}
+        doc["info"] = {**doc["info"], "fold": name, "split": sp,
+                       "fields": sorted({field_of(im["file_name"]) for im in images})}
         (out / "annotations" / f"instances_{sp}.json").write_text(
             json.dumps(doc, ensure_ascii=False), encoding="utf-8"
         )
@@ -204,7 +241,7 @@ def make_fold(
                 else:
                     dst.write_text("", encoding="utf-8")
         summary["splits"][sp] = {
-            "fields": fields[sp],
+            "fields": sorted({field_of(im["file_name"]) for im in images}),
             "images": len(images),
             "annotations": len(anns),
             "empty_images": n_bg,

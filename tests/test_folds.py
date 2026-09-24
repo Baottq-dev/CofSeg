@@ -207,3 +207,64 @@ def test_shipped_folds_yaml_is_consistent():
     for name, spec in doc["folds"].items():
         assert not set(spec["val"]) & set(doc["extrapolation"]), name
     assert set(doc["screening"]) <= set(doc["folds"])
+
+
+# ------------------------------------------------- val chọn ở mức ẢNH
+FIVE = {"train": ["field_1", "field_2"], "test": ["field_3"]}
+
+
+def test_val_images_leave_the_rest_of_their_field_in_train(export, tmp_path):
+    """Yêu cầu của đồ án là train đủ 5 ruộng, nên val phải cắt ra từ chính
+    các ruộng train chứ không chiếm trọn một ruộng."""
+    out = tmp_path / "f3"
+    s = foldmod.make_fold(export, "f3", FIVE, out,
+                          val_images=["field_2__10__1__b.jpg"])
+    assert s["splits"]["val"]["images"] == 1
+    assert s["splits"]["val"]["fields"] == ["field_2"]
+    # field_2 vẫn còn trong train: ảnh 'a' của nó không đi đâu cả.
+    assert s["splits"]["train"]["fields"] == ["field_1", "field_2"]
+    assert s["splits"]["train"]["images"] == 3
+    assert (out / "images" / "val" / "field_2__10__1__b.jpg").exists()
+    assert (out / "images" / "train" / "field_2__10__1__a.jpg").exists()
+
+
+def test_dropped_images_land_in_no_split_and_are_written_down(export, tmp_path):
+    """Khoảng đệm phải BỎ HẲN. Đẩy sang train là val nhìn thấy chúng, mà đó
+    đúng là thứ khoảng đệm sinh ra để chặn."""
+    out = tmp_path / "f3"
+    s = foldmod.make_fold(export, "f3", FIVE, out,
+                          val_images=["field_2__10__1__b.jpg"],
+                          drop_images=["field_2__10__1__a.jpg"])
+    assert s["dropped"]["count"] == 1
+    assert s["dropped"]["files"] == ["field_2__10__1__a.jpg"]
+    assert s["splits"]["train"]["images"] == 2          # chỉ còn field_1
+    assert s["splits"]["train"]["fields"] == ["field_1"]
+    for sp in foldmod.SPLITS:
+        assert not (out / "images" / sp / "field_2__10__1__a.jpg").exists()
+    fold = json.loads((out / "fold.json").read_text(encoding="utf-8"))
+    assert fold["dropped"]["files"] == ["field_2__10__1__a.jpg"]
+
+
+def test_the_fold_records_how_val_was_chosen(export, tmp_path):
+    why = {"method": "block", "frac": 0.15, "cuts": {"field_2/10/1": 1}}
+    s = foldmod.make_fold(export, "f3", FIVE, tmp_path / "f3",
+                          val_images=["field_2__10__1__b.jpg"], val_split=why)
+    assert s["val_split"] == why
+
+
+def test_a_val_image_outside_the_train_fields_is_refused(export, tmp_path):
+    """Lặng lẽ bỏ qua thì fold vẫn cắt xong mà val thiếu ảnh — hỏng ở chỗ
+    không ai nhìn. Gãy ngay lúc cắt thì thấy liền."""
+    with pytest.raises(ValueError, match="không nằm trong ruộng train"):
+        foldmod.make_fold(export, "f3", FIVE, tmp_path / "f3",
+                          val_images=["field_3__10__1__a.jpg"])
+    with pytest.raises(ValueError, match="không nằm trong ruộng train"):
+        foldmod.make_fold(export, "f3", FIVE, tmp_path / "f3b",
+                          val_images=["khong-co-anh-nay.jpg"])
+
+
+def test_an_image_cannot_be_val_and_buffer_at_once(export, tmp_path):
+    with pytest.raises(ValueError, match="vừa là val vừa bị bỏ"):
+        foldmod.make_fold(export, "f3", FIVE, tmp_path / "f3",
+                          val_images=["field_2__10__1__b.jpg"],
+                          drop_images=["field_2__10__1__b.jpg"])
