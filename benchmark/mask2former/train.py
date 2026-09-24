@@ -39,6 +39,7 @@ from cofseg import artifacts  # noqa: E402
 from cofseg import cli  # noqa: E402
 from cofseg import config as cfgmod  # noqa: E402
 from cofseg import console  # noqa: E402
+from cofseg import progress  # noqa: E402
 from cofseg import runlog  # noqa: E402
 from cofseg import training  # noqa: F401,E402 - nạp để đăng ký trainer
 from cofseg.registry import available, resolve  # noqa: E402
@@ -152,7 +153,10 @@ def main() -> int:
 
         info = trainer.prepare()
         if info:
-            print("Dữ liệu:", json.dumps(info, ensure_ascii=False)[:400])
+            # Đổ nguyên JSON rồi cắt ở ký tự thứ 400 là cách cũ; chỗ cắt đó rơi
+            # đúng vào khoá "val", nên số ảnh val và test không bao giờ hiện ra.
+            print("Dữ liệu:", progress.data_line(info)
+                  or json.dumps(info, ensure_ascii=False)[:400])
 
         if a.probe:
             p = trainer.probe()
