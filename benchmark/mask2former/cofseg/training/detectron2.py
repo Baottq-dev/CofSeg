@@ -283,17 +283,30 @@ class Detectron2Trainer(Trainer):
                 self.epoch = 0
                 self.best = None
                 self.started = None
+                self.trained = None      # giây train của epoch, chưa tính val
                 self.pending = False
 
             def _open(self):
                 self.epoch += 1
                 self.started = time.time()
+                self.trained = None
                 self.bar = progress.Bar(per_epoch, f"epoch {self.epoch}/{epochs}")
 
-            def _close(self):
+            def close_train_bar(self):
+                """Đóng thanh train và chốt thời gian train của epoch này.
+
+                Gọi từ EVALUATOR chứ không phải từ hook. Lý do: EvalHook chấm
+                val ngay trong after_step của chính nó, mà hook báo cáo lại
+                nằm cuối danh sách — tới lượt nó thì val đã xong. Chỗ duy
+                nhất biết "val vừa bắt đầu" là evaluator, lúc reset().
+
+                Gọi nhiều lần vẫn an toàn: lần sau không làm gì.
+                """
                 if self.bar is not None:
                     self.bar.close()
                     self.bar = None
+                if self.trained is None and self.started is not None:
+                    self.trained = time.time() - self.started
 
             def _report(self):
                 st = self.trainer.storage
@@ -301,13 +314,15 @@ class Detectron2Trainer(Trainer):
                 is_best = ap is not None and (self.best is None or ap > self.best)
                 if is_best:
                     self.best = ap
+                whole = None if self.started is None else time.time() - self.started
+                train_s = self.trained if self.trained is not None else whole
+                val_s = None if (whole is None or self.trained is None) else whole - self.trained
                 print(progress.epoch_line(
                     self.epoch, epochs, self.epoch * per_epoch, total,
                     loss=smoothed(st, "total_loss"), lr=value(st, "lr"),
                     mem=peak_memory(),
                     metrics={"mAP50-95": ap, "mAP50": value(st, "segm/AP50")},
-                    best=is_best,
-                    seconds=None if self.started is None else time.time() - self.started,
+                    best=is_best, seconds=train_s, val_seconds=val_s,
                 ), flush=True)
                 self.pending = False
 
@@ -320,7 +335,7 @@ class Detectron2Trainer(Trainer):
                 self.bar.advance(1, note(smoothed(self.trainer.storage, "total_loss")))
                 if done % per_epoch:
                     return
-                self._close()
+                self.close_train_bar()
                 if done >= self.trainer.max_iter - self.trainer.start_iter:
                     self.pending = True     # AP của epoch cuối chưa có, xem docstring
                 else:
@@ -328,7 +343,7 @@ class Detectron2Trainer(Trainer):
                     self._open()
 
             def after_train(self):
-                self._close()
+                self.close_train_bar()
                 if self.pending:
                     self._report()
 
@@ -349,14 +364,39 @@ class Detectron2Trainer(Trainer):
         reporter = None if not quiet else self._epoch_reporter()
 
         class QuietCOCOEvaluator(COCOEvaluator):
-            """pycocotools in bảng 12 dòng bằng print() thẳng ra stdout.
+            """Chấm im lặng, kèm thanh tiến trình riêng cho val/test.
 
-            Đó là lý do hush() một mình không đủ: nó chỉnh module logging, còn
-            chỗ này không đi qua logging. Hứng lại rồi đẩy vào logger để bảng
-            vẫn xuống d2/log.txt mà không lên màn hình.
+            pycocotools in bảng 12 dòng bằng print() thẳng ra stdout. Đó là lý
+            do hush() một mình không đủ: nó chỉnh module logging, còn chỗ này
+            không đi qua logging. Hứng lại rồi đẩy vào logger để bảng vẫn
+            xuống d2/log.txt mà không lên màn hình.
+
+            Thanh tiến trình đặt ở ĐÂY chứ không ở hook, vì đây là chỗ duy
+            nhất biết val bắt đầu và kết thúc lúc nào: `reset()` chạy trước
+            vòng suy luận, `process()` một lần mỗi ảnh, `evaluate()` sau cùng.
+            Hook báo cáo nằm cuối danh sách hook nên tới lượt nó thì val đã
+            chấm xong từ lâu.
             """
 
+            label = "val"
+            n_images = 0
+            on_start = None
+
+            def reset(self):
+                super().reset()
+                if self.on_start is not None:
+                    self.on_start()      # chốt giờ train, đóng thanh train
+                self._bar = progress.Bar(self.n_images, self.label) if quiet else None
+
+            def process(self, inputs, outputs):
+                super().process(inputs, outputs)
+                if getattr(self, "_bar", None) is not None:
+                    self._bar.advance(len(inputs))
+
             def evaluate(self, *args, **kw):
+                if getattr(self, "_bar", None) is not None:
+                    self._bar.close()
+                    self._bar = None
                 if not quiet:
                     return super().evaluate(*args, **kw)
                 buf = io.StringIO()
@@ -372,8 +412,17 @@ class Detectron2Trainer(Trainer):
             def build_evaluator(cls, cfg, dataset_name, output_folder=None):
                 if m2f is not None:
                     return base.build_evaluator(cfg, dataset_name, output_folder)
-                return QuietCOCOEvaluator(dataset_name, tasks=("segm",),
-                                          output_dir=output_folder or str(Path(cfg.OUTPUT_DIR) / "inference"))
+                ev = QuietCOCOEvaluator(
+                    dataset_name, tasks=("segm",),
+                    output_dir=output_folder or str(Path(cfg.OUTPUT_DIR) / "inference"))
+                # Tổng số ảnh cho thanh tiến trình. DatasetCatalog trả danh
+                # sách đã nạp sẵn nên phép đếm này không đọc lại đĩa.
+                from detectron2.data import DatasetCatalog
+
+                ev.n_images = len(DatasetCatalog.get(dataset_name))
+                ev.label = "test" if dataset_name.endswith("_test") else "val"
+                ev.on_start = None if reporter is None else reporter.close_train_bar
+                return ev
 
             def build_writers(self):
                 """Bỏ CommonMetricPrinter — đó chính là thứ in `iter: 19
