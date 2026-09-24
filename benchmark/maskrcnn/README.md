@@ -73,12 +73,18 @@ không còn so được với ba model kia. Sửa thì báo nhóm.
 
 ## Trạng thái
 
-- **Chưa chạy thật lần nào** — mới có code + config, chờ máy Linux có
-  detectron2. Việc đầu tiên, một lượt khói trước khi chạy cả fold:
+- **Đã chạy thật trên máy lab** (24/09/2026): một lượt khói 3 epoch trên
+  `block/f1`, đi hết đường train → chấm val mỗi epoch → chấm test trên
+  field_1. Val mAP50-95 lên 3,76 → 12,81 → 27,61 và vẫn đang dốc, tức là
+  đường chạy thông chứ chưa phải kết quả.
 
   ```bash
-  python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --data data/export/block/f1 --set data.limit=16 --epochs 1
+  python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --data data/export/block/f1 --imgsz 1024 --batch 16 --epochs 3 --workers 4
   ```
+
+  Một điểm phải theo dõi khi chạy đủ epoch: `APs` = 0,000 ở cả ba epoch và
+  `APm` chỉ 1,51 — gần như toàn bộ điểm đến từ tán `large`, tán nhỏ chưa bắt
+  được cái nào.
 
 - Bản torchvision chạy ở nhà trên Windows đã bị gỡ khỏi repo; giờ chỉ còn
   đường detectron2, nên phần này của bảng phải chờ máy Linux.
