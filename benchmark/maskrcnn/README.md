@@ -26,18 +26,23 @@ Từ **gốc repo** (để `data/` và `weights/` dùng chung). Đặt `--runs` 
 này và `--name` theo đúng dạng `<model>_<fold>` — bảng tổng hợp đọc tên đó để
 biết model nào chấm trên ruộng nào.
 
+Lệnh dưới đây chạy trên bộ fold cắt theo cách val **block**
+(`data/export/block/`). Nhóm đang cân nhắc hai cách chia val; đổi sang cách
+kia chỉ cần `--set data.root=data/export/flight/$FOLD`. Cả hai bộ fold cắt ra
+bằng `scripts/make_fold.py`, xem `benchmark/README.md`.
+
 ```bash
 FOLD=f4
 
 # 1. huấn luyện (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
-python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --set data.root=data/export/$FOLD --runs benchmark/maskrcnn/runs --name maskrcnn-$FOLD
+python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --set data.root=data/export/block/$FOLD --runs benchmark/maskrcnn/runs --name maskrcnn-$FOLD
 
 # 2. dự đoán test do trainer ghi ra -> preds/ để cả nhóm dùng chung
 RUN=$(ls -td benchmark/maskrcnn/runs/train/*_maskrcnn-${FOLD}_* | head -1)
 mkdir -p preds && cp "$RUN/predictions.json" preds/maskrcnn_$FOLD.json
 
 # 3. chấm: Boundary AP, Boundary IoU, sai số diện tích, bảng từng vùng
-python benchmark/maskrcnn/evaluate.py --config benchmark/maskrcnn/configs/eval/_coco.yaml --file preds/maskrcnn_$FOLD.json --set data.root=data/export/$FOLD --split test --runs benchmark/maskrcnn/runs --name maskrcnn_$FOLD
+python benchmark/maskrcnn/evaluate.py --config benchmark/maskrcnn/configs/eval/_coco.yaml --file preds/maskrcnn_$FOLD.json --set data.root=data/export/block/$FOLD --split test --runs benchmark/maskrcnn/runs --name maskrcnn_$FOLD
 
 # 4. chép file kết quả nhỏ vào results/ (runs/ không vào git)
 EV=$(ls -td benchmark/maskrcnn/runs/eval/*_maskrcnn_${FOLD}_* | head -1)
