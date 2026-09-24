@@ -7,6 +7,7 @@ hỏng trên máy người khác. Mọi thứ ở đây được dựng tại ch
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import shutil
 
@@ -14,6 +15,38 @@ import numpy as np
 import pytest
 
 IMG_W, IMG_H = 400, 300
+
+
+# --------------------------------------------------------- tên ảnh chuyến bay
+def _flight_name(field: str, flight: str, when: str, counter: int) -> str:
+    """'field_1', '10/1', '20260301075324', 1 -> tên ảnh đã làm phẳng."""
+    return f"{field}__{flight.replace('/', '__')}__DJI_{when}_{counter:04d}_D.jpg"
+
+
+@pytest.fixture
+def flight_name():
+    return _flight_name
+
+
+@pytest.fixture
+def flight_run():
+    """n ảnh liên tiếp của một đường bay: cách nhau `step` giây, bộ đếm của
+    máy bay chạy từ `first`.
+
+    Là fixture chứ không phải hàm import được: pytest chạy với
+    --import-mode=importlib nên file test không import lẫn nhau được, còn
+    fixture thì dùng chung được.
+    """
+
+    def make(field: str, flight: str, day: str, start_hhmmss: int,
+             first: int, n: int, step: int = 10) -> list[str]:
+        t0 = dt.datetime.strptime(day + f"{start_hhmmss:06d}", "%Y%m%d%H%M%S")
+        return [_flight_name(field, flight,
+                             (t0 + dt.timedelta(seconds=step * i)).strftime("%Y%m%d%H%M%S"),
+                             first + i)
+                for i in range(n)]
+
+    return make
 
 
 @pytest.fixture
