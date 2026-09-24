@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import shutil
 
 import numpy as np
@@ -66,8 +67,7 @@ def folds_yaml(tmp_path):
     p = tmp_path / "folds.yaml"
     p.write_text(yaml.safe_dump({
         "fields": FIELDS,
-        "folds": {"f3": {"test": ["field_3"], "val": ["field_2"]},
-                  "f1": {"test": ["field_1"], "val": ["field_2"]}},
+        "folds": {"f3": {"test": ["field_3"]}, "f1": {"test": ["field_1"]}},
     }))
     return p
 
@@ -75,10 +75,11 @@ def folds_yaml(tmp_path):
 def test_fold_keeps_ids_and_routes_background_images(export, folds_yaml, tmp_path):
     doc = foldmod.load_folds(folds_yaml)
     fields = foldmod.fold_fields(doc, "f3")
-    assert fields == {"train": ["field_1"], "val": ["field_2"], "test": ["field_3"]}
+    assert fields == {"train": ["field_1", "field_2"], "test": ["field_3"]}
 
     out = tmp_path / "f3"
-    s = foldmod.make_fold(export, "f3", fields, out)
+    s = foldmod.make_fold(export, "f3", fields, out,
+                          val_images=["field_2__10__1__a.jpg", "field_2__10__1__b.jpg"])
     assert s["splits"]["test"] == {"fields": ["field_3"], "images": 2,
                                    "annotations": 2, "empty_images": 1}
     assert s["splits"]["train"]["annotations"] == 4 and s["images_skipped"] == []
@@ -106,7 +107,8 @@ def test_fold_keeps_ids_and_routes_background_images(export, folds_yaml, tmp_pat
 def test_images_are_hardlinked_not_copied(export, folds_yaml, tmp_path):
     doc = foldmod.load_folds(folds_yaml)
     out = tmp_path / "f1"
-    s = foldmod.make_fold(export, "f1", foldmod.fold_fields(doc, "f1"), out)
+    s = foldmod.make_fold(export, "f1", foldmod.fold_fields(doc, "f1"), out,
+                          val_images=["field_2__10__1__b.jpg"])
     src = export / "images" / "field_1__10__1__a.jpg"
     dst = out / "images" / "test" / "field_1__10__1__a.jpg"
     # Cùng ổ đĩa (tmp_path) nên phải là hardlink: cùng inode, không thêm byte.
@@ -117,10 +119,12 @@ def test_images_are_hardlinked_not_copied(export, folds_yaml, tmp_path):
 def test_copy_flag_and_refusal_to_overwrite(export, folds_yaml, tmp_path):
     doc = foldmod.load_folds(folds_yaml)
     out = tmp_path / "f1"
-    s = foldmod.make_fold(export, "f1", foldmod.fold_fields(doc, "f1"), out, copy=True)
+    s = foldmod.make_fold(export, "f1", foldmod.fold_fields(doc, "f1"), out, copy=True,
+                          val_images=["field_2__10__1__b.jpg"])
     assert s["images_copied"] == 6
     with pytest.raises(FileExistsError):
-        foldmod.make_fold(export, "f1", foldmod.fold_fields(doc, "f1"), out)
+        foldmod.make_fold(export, "f1", foldmod.fold_fields(doc, "f1"), out,
+                          val_images=["field_2__10__1__b.jpg"])
 
 
 def test_labels_are_generated_when_the_export_has_none(export, folds_yaml, tmp_path):
@@ -133,7 +137,8 @@ def test_labels_are_generated_when_the_export_has_none(export, folds_yaml, tmp_p
 
     shutil.rmtree(export / "labels")
     out = tmp_path / "f1"
-    s = foldmod.make_fold(export, "f1", foldmod.fold_fields(foldmod.load_folds(folds_yaml), "f1"), out)
+    fields = foldmod.fold_fields(foldmod.load_folds(folds_yaml), "f1")
+    s = foldmod.make_fold(export, "f1", fields, out, val_images=["field_2__10__1__b.jpg"])
 
     assert s["labels"] == "generate"
     assert sum(v["labels"] for v in s["labels_generated"].values()) == 10   # 5 ảnh có vùng x 2
@@ -150,17 +155,17 @@ def test_label_mode_copy_needs_an_export_that_has_them(export, folds_yaml, tmp_p
     doc = foldmod.load_folds(folds_yaml)
     fields = foldmod.fold_fields(doc, "f1")
     # Bản xuất CÓ labels/ -> auto chép, giữ nguyên byte của bản xuất.
-    s = foldmod.make_fold(export, "f1", fields, tmp_path / "copied")
+    s = foldmod.make_fold(export, "f1", fields, tmp_path / "copied", val_images=["field_2__10__1__b.jpg"])
     assert s["labels"] == "copy" and "labels_generated" not in s
     assert (tmp_path / "copied" / "data.yaml").exists()
 
     # generate ép sinh lại dù bản xuất có sẵn (dùng khi nghi labels/ đã cũ).
-    s = foldmod.make_fold(export, "f1", fields, tmp_path / "gen", labels="generate")
+    s = foldmod.make_fold(export, "f1", fields, tmp_path / "gen", labels="generate", val_images=["field_2__10__1__b.jpg"])
     assert s["labels"] == "generate"
 
     shutil.rmtree(export / "labels")
     with pytest.raises(FileNotFoundError, match="labels"):
-        foldmod.make_fold(export, "f1", fields, tmp_path / "must_copy", labels="copy")
+        foldmod.make_fold(export, "f1", fields, tmp_path / "must_copy", labels="copy", val_images=["field_2__10__1__b.jpg"])
     with pytest.raises(ValueError, match="labels="):
         foldmod.make_fold(export, "f1", fields, tmp_path / "bad", labels="khong_co")
 
@@ -172,12 +177,15 @@ def test_bad_fold_configs_fail_before_writing(tmp_path, export):
         return p
 
     with pytest.raises(ValueError, match="không có trong"):
-        foldmod.load_folds(cfg({"x": {"test": ["field_9"], "val": ["field_2"]}}))
-    with pytest.raises(ValueError, match="vừa test vừa val"):
-        foldmod.load_folds(cfg({"x": {"test": ["field_1"], "val": ["field_1"]}}))
+        foldmod.load_folds(cfg({"x": {"test": ["field_9"]}}))
+    with pytest.raises(ValueError, match="ít nhất một ruộng test"):
+        foldmod.load_folds(cfg({"x": {"test": []}}))
     with pytest.raises(ValueError, match="train"):
-        foldmod.load_folds(cfg({"x": {"test": ["field_1", "field_3"], "val": ["field_2"]}}))
-    doc = foldmod.load_folds(cfg({"x": {"test": ["field_1"], "val": ["field_2"]}}))
+        foldmod.load_folds(cfg({"x": {"test": FIELDS}}))
+    # folds.yaml cũ còn khoá 'val' phải gãy chứ không được lặng lẽ đổi tập train.
+    with pytest.raises(ValueError, match="không còn nằm trong folds.yaml"):
+        foldmod.load_folds(cfg({"x": {"test": ["field_1"], "val": ["field_2"]}}))
+    doc = foldmod.load_folds(cfg({"x": {"test": ["field_1"]}}))
     with pytest.raises(KeyError):
         foldmod.fold_fields(doc, "nope")
 
@@ -201,12 +209,24 @@ def test_split_export_is_rejected(tmp_path):
 def test_shipped_folds_yaml_is_consistent():
     doc = foldmod.load_folds("configs/dataset/folds.yaml")
     tests = [f for name in doc["folds"] for f in doc["folds"][name]["test"]]
-    # Leave-one-field-out: mỗi ruộng làm test đúng một lần, val không bao giờ
-    # là ruộng ngoại suy.
+    # Leave-one-field-out: mỗi ruộng làm test đúng một lần, và mọi lượt còn
+    # đủ 5 ruộng để train — đó là yêu cầu của đồ án.
     assert sorted(tests) == sorted(doc["fields"])
-    for name, spec in doc["folds"].items():
-        assert not set(spec["val"]) & set(doc["extrapolation"]), name
+    for name in doc["folds"]:
+        assert len(foldmod.fold_fields(doc, name)["train"]) == len(doc["fields"]) - 1, name
     assert set(doc["screening"]) <= set(doc["folds"])
+    assert set(doc["interpolation"]) | set(doc["extrapolation"]) == set(doc["fields"])
+
+
+def test_shipped_val_recipes_are_valid():
+    from canopyseg.datasets import valsplit
+    block = valsplit.load_recipe("configs/dataset/val_block.yaml")
+    flight = valsplit.load_recipe("configs/dataset/val_flight.yaml")
+    assert block["method"] == "block" and block["rotate"] is True
+    assert flight["method"] == "flight" and flight["buffer"] >= 0
+    # Cả hai phải trỏ tới bảng cạnh có thật, không thì rò rỉ báo 0 vì không biết.
+    for r in (block, flight):
+        assert (pathlib.Path(r["edges"])).exists(), r["_path"]
 
 
 # ------------------------------------------------- val chọn ở mức ẢNH

@@ -1,0 +1,37 @@
+# Cách chia val 2: trọn hai đường bay cuối, cố định, đệm ở chỗ nối.
+#
+#     python scripts/make_fold.py --export data/export/dataset_v1 \
+#         --val configs/dataset/val_flight.yaml --all --out-root data/export/flight
+#
+# Val là trọn đường bay cuối của field_1 và của field_2 — hai ruộng duy nhất
+# có nhiều hơn một đường bay. Lượt nào lấy một trong hai ruộng đó làm test thì
+# đường bay của nó không có trong tập train, tự động chỉ còn đường bay của
+# ruộng kia làm val.
+#
+# Được: không xẻ đôi chuỗi ảnh nào, nên bên trong val không có ranh giới nào
+# để rò rỉ, và tập train giữ được nhiều ảnh hơn cách khối.
+#
+# Mất: val chỉ đến từ field_1 và field_2. Bốn ruộng còn lại mỗi ruộng chỉ có
+# một đường bay nên không góp ảnh val nào — trong đó có field_4 và field_6 là
+# hai ruộng dày tán nhất. Checkpoint sẽ được chọn bằng ảnh thưa tán rồi đem
+# chấm ruộng dày tán. Và vì cố định, ảnh của hai đường bay này không bao giờ
+# vào tập train của lượt nào.
+#
+# buffer: số ảnh bỏ ở phía train của chỗ nối. Cần vì bộ đếm của máy bay cho
+#   thấy field_1/10/3 -> 10/4 và field_2/10/1 -> 10/2 là MỘT chuyến bay liên
+#   tục bị cắt thành hai thư mục (chênh 4 và 2 khung hình), nên ranh giới thư
+#   mục nằm giữa một chuỗi ảnh chồng lấn nhau. Chạy scripts/inspect_flights.py
+#   để xem lại bằng chứng, và scripts/compare_val_splits.py --sweep-buffer để
+#   xem đệm bao nhiêu là đủ.
+
+method: flight
+
+flights:
+  - field_1/10/4
+  - field_2/10/2
+
+buffer: 20
+
+# Bảng cạnh dùng để chấm lại rò rỉ sau khi chia, và để ước phần còn sót ở chỗ
+# nối theo p(k). Sinh ra bằng: python scripts/export_overlap_edges.py
+edges: configs/dataset/overlap_edges.json

@@ -46,34 +46,45 @@ def field_of(file_name: str) -> str:
 # ------------------------------------------------------------------ cấu hình fold
 def load_folds(path: str | Path) -> dict:
     """Đọc folds.yaml và kiểm ngay: một fold sai thì hỏng cả bảng, tốt hơn là
-    hỏng trước khi cắt bất kỳ thứ gì."""
+    hỏng trước khi cắt bất kỳ thứ gì.
+
+    File này chỉ khai SÁU LƯỢT là gì — ruộng nào làm test ở lượt nào. Val
+    không còn ở đây: lấy trọn một ruộng làm val thì chỉ còn 4 ruộng để train,
+    trong khi yêu cầu là 5. Val cắt ở mức ảnh, khai trong file riêng
+    (configs/dataset/val_block.yaml, val_flight.yaml).
+    """
     doc = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     fields = list(doc.get("fields") or [])
     folds = doc.get("folds") or {}
     if not fields or not folds:
         raise ValueError(f"{path}: cần cả 'fields' lẫn 'folds'")
     for name, spec in folds.items():
-        test, val = list(spec.get("test") or []), list(spec.get("val") or [])
-        unknown = [f for f in test + val if f not in fields]
+        if spec.get("val"):
+            raise ValueError(
+                f"fold {name}: 'val' không còn nằm trong folds.yaml. Lấy trọn một ruộng "
+                "làm val thì chỉ còn 4 ruộng để train, mà yêu cầu là 5. Cách chia val "
+                "khai ở configs/dataset/val_block.yaml hoặc val_flight.yaml.")
+        test = list(spec.get("test") or [])
+        unknown = [f for f in test if f not in fields]
         if unknown:
             raise ValueError(f"fold {name}: ruộng không có trong 'fields': {unknown}")
-        if not test or not val:
-            raise ValueError(f"fold {name}: test và val đều phải có ít nhất một ruộng")
-        if set(test) & set(val):
-            raise ValueError(f"fold {name}: một ruộng vừa test vừa val: {set(test) & set(val)}")
-        if not [f for f in fields if f not in test and f not in val]:
+        if not test:
+            raise ValueError(f"fold {name}: phải có ít nhất một ruộng test")
+        if not [f for f in fields if f not in test]:
             raise ValueError(f"fold {name}: không còn ruộng nào cho train")
     return doc
 
 
 def fold_fields(doc: dict, name: str) -> dict[str, list[str]]:
-    """{'train': [...], 'val': [...], 'test': [...]} cho một fold."""
+    """{'train': [...], 'test': [...]} cho một fold — train là mọi ruộng còn lại.
+
+    Không có khoá 'val': val được chọn ở mức ảnh, bên trong chính các ruộng
+    train, và truyền vào `make_fold(val_images=...)`.
+    """
     if name not in doc["folds"]:
         raise KeyError(f"không có fold {name!r}; có: {sorted(doc['folds'])}")
-    spec = doc["folds"][name]
-    test, val = list(spec["test"]), list(spec["val"])
-    train = [f for f in doc["fields"] if f not in test and f not in val]
-    return {"train": train, "val": val, "test": test}
+    test = list(doc["folds"][name]["test"])
+    return {"train": [f for f in doc["fields"] if f not in test], "test": test}
 
 
 # ------------------------------------------------------------------- cắt fold
@@ -177,6 +188,11 @@ def make_fold(
             f"fold {name}: {len(stray)} ảnh val không nằm trong ruộng train của fold này "
             f"(hoặc không có trong bản xuất): {sorted(stray)[:3]}")
     empty = [sp for sp in SPLITS if not by_split[sp]]
+    if empty == ["val"] and not val_set:
+        raise ValueError(
+            f"fold {name}: không có ảnh val nào. Val được chọn ở mức ảnh, truyền qua "
+            "`val_images=`; từ dòng lệnh là --val configs/dataset/val_block.yaml "
+            "(hoặc val_flight.yaml).")
     if empty:
         raise ValueError(
             f"fold {name}: tập {empty} không có ảnh nào — ruộng "

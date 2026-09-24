@@ -21,10 +21,15 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field as dc_field
+from pathlib import Path
 from typing import Iterable, Sequence
 
-from . import flightlog
+import yaml
+
+from . import flightlog, overlap_graph
 from .overlap_graph import Graph
+
+METHODS = ("block", "flight")
 
 
 @dataclass
@@ -212,3 +217,55 @@ def audit(a: Assignment, frames: Iterable[flightlog.Frame], graph: Graph,
             "examples": dirty[:5],
         },
     }
+
+
+# --------------------------------------------------------------- công thức
+def load_recipe(path: str | Path) -> dict:
+    """Đọc val_block.yaml / val_flight.yaml và kiểm trước khi cắt gì.
+
+    Sai một tham số ở đây là sáu fold ra sai theo cùng một kiểu, mà nhìn thư
+    mục thì không thấy gì lạ — nên kiểm ngay lúc đọc.
+    """
+    p = Path(path)
+    doc = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    method = doc.get("method")
+    if method not in METHODS:
+        raise ValueError(f"{p}: 'method' phải là một trong {METHODS}, đang là {method!r}")
+    if method == "block":
+        frac = float(doc.get("frac", 0.15))
+        if not 0 < frac < 1:
+            raise ValueError(f"{p}: frac phải trong (0, 1), đang là {frac}")
+        if float(doc.get("slack", 0.5)) < 0:
+            raise ValueError(f"{p}: slack không được âm")
+    else:
+        if not doc.get("flights"):
+            raise ValueError(f"{p}: method=flight thì phải khai 'flights'")
+        if int(doc.get("buffer", 20)) < 0:
+            raise ValueError(f"{p}: buffer không được âm")
+    doc["_path"] = p.as_posix()
+    return doc
+
+
+def load_graph(recipe: dict, base: str | Path = ".") -> Graph:
+    """Bảng cạnh mà công thức khai. Không khai thì trả đồ thị rỗng — chia vẫn
+    chạy, nhưng `graph_scope` sẽ là "none" để không ai đọc nhầm "rò rỉ 0" là
+    "sạch"."""
+    edges = recipe.get("edges")
+    if not edges:
+        return overlap_graph.empty()
+    return overlap_graph.load(Path(base) / edges)
+
+
+def apply(recipe: dict, frames: Iterable[flightlog.Frame], graph: Graph, *,
+          slot: int | None = None, n_slots: int = 6) -> Assignment:
+    """Gọi đúng cách chia mà công thức khai. `slot` là thứ tự lượt (0..5),
+    chỉ dùng khi công thức bật `rotate`."""
+    if recipe["method"] == "block":
+        return by_block(frames, graph,
+                        frac=float(recipe.get("frac", 0.15)),
+                        slack=float(recipe.get("slack", 0.5)),
+                        slot=slot if recipe.get("rotate") else None,
+                        n_slots=n_slots)
+    return by_flight(frames, graph,
+                     flights=recipe["flights"],
+                     buffer=int(recipe.get("buffer", 20)))

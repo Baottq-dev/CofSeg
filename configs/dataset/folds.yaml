@@ -1,4 +1,4 @@
-# Chia leave-one-field-out cho benchmark: mỗi ruộng làm test đúng một lần.
+# Sáu lượt của benchmark: mỗi ruộng làm test đúng một lần.
 #
 # Vì sao chia theo RUỘNG chứ không theo ảnh hay đường bay: hai ruộng là hai
 # mảnh đất khác nhau, không có cặp ảnh nào chồng lấn bắc cầu giữa chúng, nên
@@ -9,25 +9,27 @@
 # Gộp 6 fold lại thì mọi ảnh trong bộ đều có dự đoán từ một model chưa thấy
 # ruộng của nó -> bảng metric theo từng ruộng cho toàn bộ dữ liệu.
 #
-# Val: luôn là một ruộng trong nhóm NỘI SUY (field_2 hoặc field_4, độ cao bay
-# trung bình, chồng tán nhẹ / không). Không bao giờ lấy field_3 (bay thấp) hay
-# field_5 (chồng tán mạnh) làm val: hai ruộng đó là hai cực của dữ liệu, dùng
-# để chọn checkpoint sẽ kéo model về phía cực đó. Khi test = field_2 thì val
-# đổi sang field_4 và ngược lại.
+# File này KHÔNG khai val. Trước đây val là trọn một ruộng (field_2 hoặc
+# field_4), nhưng như vậy chỉ còn 4 ruộng để train trong khi yêu cầu của đồ án
+# là train 5 ruộng, test 1 ruộng. Val nay được cắt ở mức ẢNH bên trong chính
+# 5 ruộng train, theo một trong hai cách khai ở file riêng:
 #
-# Train = các ruộng còn lại. Dùng:
-#     python scripts/make_fold.py --export data/export/all_v2 --fold f4
-#     python scripts/make_fold.py --export data/export/all_v2 --all
+#     configs/dataset/val_block.yaml    khối ảnh cuối mỗi đường bay, trượt theo lượt
+#     configs/dataset/val_flight.yaml   trọn hai đường bay cuối, cố định
+#
+# Dùng:
+#     python scripts/make_fold.py --export data/export/dataset_v1 \
+#         --val configs/dataset/val_block.yaml --all --out-root data/export/block
 
 fields: [field_1, field_2, field_3, field_4, field_5, field_6]
 
 folds:
-  f1: {test: [field_1], val: [field_4]}
-  f2: {test: [field_2], val: [field_4]}
-  f3: {test: [field_3], val: [field_4]}
-  f4: {test: [field_4], val: [field_2]}
-  f5: {test: [field_5], val: [field_2]}
-  f6: {test: [field_6], val: [field_2]}
+  f1: {test: [field_1]}
+  f2: {test: [field_2]}
+  f3: {test: [field_3]}
+  f4: {test: [field_4]}
+  f5: {test: [field_5]}
+  f6: {test: [field_6]}
 
 # Vòng sàng chạy hai fold này trước (một ruộng bay cao không chồng tán, một
 # ruộng bay trung chồng tán nhẹ) rồi mới chạy đủ 6.

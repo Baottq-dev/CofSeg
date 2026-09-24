@@ -1,0 +1,34 @@
+# Cách chia val 1: khối ảnh cuối mỗi đường bay, trượt theo lượt, đệm theo đồ thị.
+#
+#     python scripts/make_fold.py --export data/export/dataset_v1 \
+#         --val configs/dataset/val_block.yaml --all --out-root data/export/block
+#
+# Val là một dải ảnh liên tiếp lấy ra từ MỌI đường bay của 5 ruộng train, nên
+# val có mặt đủ 5 ruộng và mật độ tán sát với cả bộ. Đổi lại phải trả khoảng
+# đệm ở hai đầu dải.
+#
+# Ba lựa chọn trong file này, và lý do:
+#
+# frac: dải val chiếm bao nhiêu phần đường bay. 0.15 cho val cỡ 15% tập train.
+#
+# slack: cho ranh giới trượt quanh vị trí danh nghĩa bao nhiêu (tính theo bề
+#   rộng dải), rồi lấy chỗ cắt ít cạnh chồng lấn nhất. Đáng làm vì 15% là con
+#   số ta tự đặt, còn chỗ máy bay quay đầu là do địa hình: cắt đúng khúc quay
+#   đầu thì hai luống bị xẻ đôi và phải bỏ cả chục ảnh train, xê dịch vài ảnh
+#   là cắt vào khe giữa hai cụm. 14% hay 21% đều là val hợp lệ như nhau.
+#
+# rotate: dải val nằm ở chỗ khác nhau qua 6 lượt. Để cố định thì những ảnh đó
+#   làm val ở 5 lượt và làm test ở lượt thứ 6 — không lượt nào học chúng, mất
+#   khoảng một phần năm bộ dữ liệu khỏi tập train. Trượt thì mỗi ảnh đều được
+#   học ở ít nhất một lượt, giá phải trả là mỗi lượt bỏ nhiều ảnh đệm hơn vì
+#   dải nằm giữa đường bay có hai ranh giới thay vì một.
+
+method: block
+
+frac: 0.15
+slack: 0.5
+rotate: true
+
+# Đệm = bỏ đúng những ảnh train có cạnh chồng lấn sang val. Cần bảng cạnh;
+# sinh ra bằng: python scripts/export_overlap_edges.py
+edges: configs/dataset/overlap_edges.json
