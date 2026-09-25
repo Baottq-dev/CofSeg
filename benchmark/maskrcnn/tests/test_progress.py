@@ -363,3 +363,47 @@ def test_drop_from_console_khong_dung_den_file(tmp_path):
     fh.close()
     lg.handlers.clear()
     assert "giữ trong file" in f.read_text(encoding="utf-8")
+
+
+def test_is_console_khong_nham_duong_ghi_ra_dia_cua_detectron2(tmp_path):
+    """`setup_logger` của detectron2 dựng file bằng StreamHandler, KHÔNG FileHandler.
+
+        ch = logging.StreamHandler(stream=sys.stdout)          # màn hình
+        fh = logging.StreamHandler(_cached_log_stream(fname))  # d2/log.txt
+
+    Lọc theo lớp coi cả hai là màn hình. Đó là lý do mỗi cảnh báo của fvcore ra
+    màn hình hai lần, và d2/log.txt rỗng.
+    """
+    f = (tmp_path / "log.txt").open("w", encoding="utf-8")
+    kieu_detectron2 = logging.StreamHandler(f)          # ra đĩa, không FileHandler
+    man_hinh = logging.StreamHandler(stream=sys.stdout)
+
+    assert not progress.is_console(kieu_detectron2)
+    assert progress.is_console(man_hinh)
+    f.close()
+
+
+def test_hush_khong_bit_duong_ghi_ra_dia_kieu_detectron2(tmp_path):
+    lg = logging.getLogger("thu_nghiem_d2_file")
+    lg.handlers.clear()
+    lg.setLevel(logging.DEBUG)
+    f = tmp_path / "log.txt"
+    fh = logging.StreamHandler(f.open("w", encoding="utf-8"))
+    fh.setFormatter(logging.Formatter("%(message)s"))
+    lg.addHandler(fh)
+
+    progress.hush("thu_nghiem_d2_file")
+    assert fh.level == logging.NOTSET, "bịt nhầm đường ghi ra đĩa"
+
+    lg.info("dòng INFO phải nằm trong file")
+    fh.stream.close()
+    lg.handlers.clear()
+    assert "dòng INFO" in f.read_text(encoding="utf-8")
+
+
+def test_is_console_nhan_ca_stderr():
+    assert progress.is_console(logging.StreamHandler(stream=sys.stderr))
+
+
+def test_is_console_tra_false_cho_handler_khong_co_luong():
+    assert not progress.is_console(logging.NullHandler())

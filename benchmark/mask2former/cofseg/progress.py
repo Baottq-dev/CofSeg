@@ -36,6 +36,32 @@ METRICS = ("mAP50-95", "mAP50")
 
 
 # --------------------------------------------------------------------- logger
+def is_console(h: logging.Handler) -> bool:
+    """Handler này có ghi ra MÀN HÌNH không? Hỏi LUỒNG, không hỏi lớp.
+
+    Phân biệt theo lớp là sai, và sai im lặng. `setup_logger` của detectron2
+    dựng đường ghi ra đĩa bằng `logging.StreamHandler(_cached_log_stream(f))`
+    chứ KHÔNG bằng `logging.FileHandler`:
+
+        ch = logging.StreamHandler(stream=sys.stdout)          # màn hình
+        fh = logging.StreamHandler(_cached_log_stream(fname))  # d2/log.txt
+
+    Nên phép kiểm `not isinstance(h, logging.FileHandler)` coi cả hai là màn
+    hình. Hậu quả đo được trên log 24/09: mỗi cảnh báo của fvcore ra màn hình
+    HAI lần, một bản theo định dạng console có màu, một bản theo định dạng
+    file — chính là bản đáng lẽ nằm trong d2/log.txt. Và d2/log.txt thì rỗng
+    từ đó trở đi.
+
+    mmengine không dính vì nó dùng `FileHandler` thật, nên lỗi này chỉ lộ ra
+    ở detectron2.
+    """
+    if not isinstance(h, logging.StreamHandler):
+        return False
+    stream = getattr(h, "stream", None)
+    return any(stream is s for s in
+               (sys.stdout, sys.stderr, sys.__stdout__, sys.__stderr__))
+
+
 def hush(*loggers, level: int = logging.WARNING):
     """Nâng ngưỡng của handler ra MÀN HÌNH lên `level`; handler ra file giữ nguyên.
 
@@ -50,9 +76,9 @@ def hush(*loggers, level: int = logging.WARNING):
     "Skip loading parameter ... incompatible shapes" là WARNING. Gỡ handler
     thì mất cả hai; nâng ngưỡng thì chỉ mất loại thứ nhất.
 
-    `logging.FileHandler` là lớp con của `StreamHandler`, nên phải loại trừ nó
-    tường minh — nếu không thì bịt luôn đường ghi ra đĩa, tức là xoá mất bản
-    log đầy đủ thay vì chỉ giấu nó khỏi màn hình.
+    Đâu là "ra màn hình" thì hỏi `is_console()` — hỏi luồng chứ không hỏi
+    lớp, xem docstring ở đó. Nhận nhầm đường ghi ra đĩa là màn hình thì bịt
+    luôn nó, tức là xoá mất bản log đầy đủ thay vì chỉ giấu nó khỏi màn hình.
 
     Trả về [(handler, ngưỡng cũ)] để `unhush()` trả lại được.
     """
@@ -60,7 +86,7 @@ def hush(*loggers, level: int = logging.WARNING):
     for item in loggers:
         lg = item if isinstance(item, logging.Logger) else logging.getLogger(item)
         for h in lg.handlers:
-            if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
+            if is_console(h):
                 changed.append((h, h.level))
                 h.setLevel(level)
     return changed
@@ -99,7 +125,7 @@ def drop_from_console(*loggers, name: str, startswith: str):
     for item in loggers:
         lg = item if isinstance(item, logging.Logger) else logging.getLogger(item)
         for h in lg.handlers:
-            if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
+            if is_console(h):
                 h.addFilter(f)
     return f
 
