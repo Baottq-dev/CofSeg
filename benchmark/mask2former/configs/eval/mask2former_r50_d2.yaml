@@ -1,4 +1,4 @@
-# Mask2Former R50 (repo gốc trên detectron2). Trọng số: --set model.weights=<best.pth>
+# Mask2Former R50 (repo gốc trên detectron2). Trọng số: --weights <best.pth>
 # Cần detectron2 + submodule benchmark/mask2former/upstream; ở máy không có, chấm
 # predictions.json của run bằng benchmark/mask2former/configs/eval/_coco.yaml.
 base: _base.yaml

@@ -2,7 +2,7 @@
 Mask2Former R50 (và PointRend nếu đưa config) — cùng benchmark/mask2former/train.py, cùng
 khối `train:` với hai trainer kia.
 
-    python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/maskrcnn_r50_d2.yaml --set data.root=data/export/block/f4
+    python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/maskrcnn_r50_d2.yaml --data data/export/block/f4
     python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --probe
 
 Khác biệt có chủ đích với trainer torchvision/YOLO:
@@ -175,6 +175,83 @@ def iters_per_epoch(n_train: int, batch: int) -> int:
 
 @register("trainer", "detectron2")
 class Detectron2Trainer(Trainer):
+    # ----------------------------------------------------------------- backbone
+    #: Các bản CÓ trọng số COCO và nạp được bằng get_cfg() + merge_from_file.
+    #:
+    #: Bốn bản mạnh nhất của model zoo (new_baselines LSJ, mask AP 40.3-42.5)
+    #: KHÔNG có ở đây: chúng là LazyConfig .py, phải chạy qua
+    #: lazyconfig_train_net chứ không qua DefaultTrainer. Đáng nhớ một điều từ
+    #: bảng đó: R50 + LSJ 100 epoch (40.3) hơn X101 3x (39.5) — recipe, không
+    #: phải backbone.
+    #:
+    #: C4 và DC5 (R50/R101) đều thấp hơn FPN cùng lịch nên không đưa vào.
+    BACKBONES = {
+        "maskrcnn": {
+            "r50": dict(
+                config="COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml",
+                note="mốc số 0 — mask AP 37.2, 3.4 GB, 0.261 s/iter"),
+            "r101": dict(
+                config="COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml",
+                note="mask AP 38.6, 4.6 GB, 0.340 s/iter — backbone DUY NHẤT Mask2Former cũng có"),
+            "x101": dict(
+                config="COCO-InstanceSegmentation/mask_rcnn_X_101_32x8d_FPN_3x.yaml",
+                note="mask AP 39.5, 7.2 GB, 0.690 s/iter — nặng nhất, dò --probe trước"),
+            "r50-dconv": dict(
+                config="Misc/mask_rcnn_R_50_FPN_3x_dconv_c3-c5.yaml",
+                note="mask AP 38.5, 3.5 GB, 0.349 s/iter — bằng R101 mà vẫn vừa batch 16"),
+            "r50-gn": dict(
+                config="Misc/mask_rcnn_R_50_FPN_3x_gn.yaml",
+                note="mask AP 38.6, 5.6 GB, 0.309 s/iter — GroupNorm thay BatchNorm"),
+        },
+        "cascade": {
+            "r50": dict(
+                config="Misc/cascade_mask_rcnn_R_50_FPN_3x.yaml",
+                note="mask AP 38.5, 4.0 GB, 0.328 s/iter"),
+            "x152": dict(
+                config="Misc/cascade_mask_rcnn_X_152_32x8d_FPN_IN5k_gn_dconv.yaml",
+                note="mask AP 44.0, 15.1 GB — IN5k + GN + dconv, KHÔNG so được với R50"),
+        },
+        # Repo Mask2Former không nằm trong model zoo API nên checkpoint phải
+        # khai thẳng; đường dẫn config là đường dẫn BÊN TRONG upstream/.
+        "mask2former": {
+            "r50": dict(
+                config="configs/coco/instance-segmentation/maskformer2_R50_bs16_50ep.yaml",
+                checkpoint="https://dl.fbaipublicfiles.com/maskformer/mask2former/coco/instance/"
+                           "maskformer2_R50_bs16_50ep/model_final_3c8ec9.pkl",
+                note="mask AP 43.7 — mặc định, cùng backbone với hai model R-CNN"),
+            "r101": dict(
+                config="configs/coco/instance-segmentation/maskformer2_R101_bs16_50ep.yaml",
+                checkpoint="https://dl.fbaipublicfiles.com/maskformer/mask2former/coco/instance/"
+                           "maskformer2_R101_bs16_50ep/model_final_eba159.pkl",
+                note="mask AP 44.2 — chỉ hơn R50 0.5 điểm trên COCO"),
+            "swin-t": dict(
+                config="configs/coco/instance-segmentation/swin/maskformer2_swin_tiny_bs16_50ep.yaml",
+                checkpoint="https://dl.fbaipublicfiles.com/maskformer/mask2former/coco/instance/"
+                           "maskformer2_swin_tiny_bs16_50ep/model_final_86143f.pkl",
+                note="mask AP 45.0 — đổi hẳn họ backbone sang transformer"),
+            "swin-s": dict(
+                config="configs/coco/instance-segmentation/swin/maskformer2_swin_small_bs16_50ep.yaml",
+                checkpoint="https://dl.fbaipublicfiles.com/maskformer/mask2former/coco/instance/"
+                           "maskformer2_swin_small_bs16_50ep/model_final_1e7f22.pkl",
+                note="mask AP 46.3"),
+            "swin-b": dict(
+                config="configs/coco/instance-segmentation/swin/maskformer2_swin_base_384_bs16_50ep.yaml",
+                checkpoint="https://dl.fbaipublicfiles.com/maskformer/mask2former/coco/instance/"
+                           "maskformer2_swin_base_384_bs16_50ep/model_final_f6e0f6.pkl",
+                note="mask AP 46.7 — nặng, dò --probe trước"),
+            "swin-b-in21k": dict(
+                config="configs/coco/instance-segmentation/swin/maskformer2_swin_base_IN21k_384_bs16_50ep.yaml",
+                checkpoint="https://dl.fbaipublicfiles.com/maskformer/mask2former/coco/instance/"
+                           "maskformer2_swin_base_IN21k_384_bs16_50ep/model_final_83d103.pkl",
+                note="mask AP 48.1 — tiền huấn luyện IN21k, khác nguồn dữ liệu"),
+            "swin-l-in21k": dict(
+                config="configs/coco/instance-segmentation/swin/maskformer2_swin_large_IN21k_384_bs16_100ep.yaml",
+                checkpoint="https://dl.fbaipublicfiles.com/maskformer/mask2former/coco/instance/"
+                           "maskformer2_swin_large_IN21k_384_bs16_100ep/model_final_e5f453.pkl",
+                note="mask AP 50.1 — nặng nhất repo, gần như chắc chắn OOM ở batch 16"),
+        },
+    }
+
     def __init__(self, cfg: dict, run_dir):
         super().__init__(cfg, run_dir)
         m = cfg.get("model") or {}
@@ -191,6 +268,11 @@ class Detectron2Trainer(Trainer):
         self.min_area = float(d.get("min_area", 0.0))
         self.limit = d.get("limit")
         self.out_dir = self.run_dir / "d2"
+
+    @classmethod
+    def arch_of(cls, cfg: dict) -> str:
+        m = cfg.get("model") or {}
+        return str(m.get("arch") or "mask2former")
 
     # -------------------------------------------------------------------- tham số
     @classmethod

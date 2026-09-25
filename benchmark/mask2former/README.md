@@ -74,12 +74,12 @@ hoặc `f1` — có ba chỗ trong khối lệnh, sửa hết cả ba. Hai bộ 
 
 ```bash
 # 1. huấn luyện — chỉ train + val, không đụng tới split test
-#    (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
+#    (thêm --limit 16 --epochs 1 để khói, kiểm đường chạy trước)
 python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/block/f1 --runs benchmark/mask2former/runs --name mask2former --workers 8
 
 # 2. chấm test bằng trọng số tốt nhất
 RUN=$(ls -td benchmark/mask2former/runs/train/*_mask2former_block-f1_* | head -1)
-python benchmark/mask2former/evaluate.py --config benchmark/mask2former/configs/eval/mask2former_r50_d2.yaml --set model.weights="$RUN/weights/best.pth" --data data/export/block/f1 --split test --runs benchmark/mask2former/runs --name mask2former
+python benchmark/mask2former/evaluate.py --config benchmark/mask2former/configs/eval/mask2former_r50_d2.yaml --weights "$RUN/weights/best.pth" --data data/export/block/f1 --split test --runs benchmark/mask2former/runs --name mask2former
 
 # 3. dự đoán + kết quả nhỏ
 EV=$(ls -td benchmark/mask2former/runs/eval/*_mask2former_block-f1_* | head -1)
@@ -142,44 +142,67 @@ python benchmark/mask2former/evaluate.py \
   --config benchmark/mask2former/configs/eval/mask2former_r50_d2.yaml \
   --data data/export/field/f1 --split test \
   --runs benchmark/mask2former/runs --name mask2former \
-  --set model.weights=benchmark/mask2former/runs/train/<...>/weights/best.pth \
-  --set model.arch=mask2former --set model.repo=benchmark/mask2former/upstream \
-  --set model.conf=0.05 --set model.max_det=100 \
-  --set eval.iou_thr=0.5 --set eval.band_ratio=0.02 \
-  --set eval.dilation_ratio=0.02 --set eval.nsd_tau=2.0
+  --weights benchmark/mask2former/runs/train/<...>/weights/best.pth \
+  --arch mask2former --repo benchmark/mask2former/upstream \
+  --conf 0.05 --max_det 100 \
+  --iou-thr 0.5 --band-ratio 0.02 \
+  --dilation-ratio 0.02 --nsd-tau 2.0
 ```
 
-`--set model.*` đi vào khối `model:` của config chấm, `--set eval.*` vào khối
-`eval:`. Bốn khoá `eval:` là định nghĩa của phép đo, đổi chúng là số không so
-được với ba model kia nữa: `iou_thr` ngưỡng ghép cặp, `band_ratio` bề rộng
-vành biên theo cỡ tán, `dilation_ratio` bề rộng vành của Boundary AP (2%
-đường chéo ảnh, đúng bài báo), `nsd_tau` dung sai của NSD.
+Mọi tham số ở đây là **cờ thật**, không qua `--set`: `--weights` trọng số của
+lần train, `--conf`/`--max_det` (và các khoá khác của lớp model) đi vào khối
+`model:`, còn `--iou-thr`/`--band-ratio`/`--dilation-ratio`/`--nsd-tau` đi vào
+khối `eval:`. Bốn khoá `eval:` là định nghĩa của phép đo, đổi chúng là số
+không so được với ba model kia nữa: `iou_thr` ngưỡng ghép cặp, `band_ratio`
+bề rộng vành biên theo cỡ tán, `dilation_ratio` bề rộng vành của Boundary AP
+(2% đường chéo ảnh, đúng bài báo), `nsd_tau` dung sai của NSD.
 
 ### Đổi backbone
 
-R50 là mặc định vì ba model dùng chung nó, nhờ vậy chênh lệch giữa chúng quy
-về cơ chế. Đổi backbone ở **một** model là mất tính chất đó — đổi thì đổi cả
-ba, hoặc báo cáo riêng như thí nghiệm phụ.
-
-`model.config_file` là đường dẫn **bên trong** `upstream/`, và với repo này
-thì trọng số COCO không suy ra được từ config nên phải khai luôn:
+`--backbone <tên>` đổi backbone ngay trên dòng lệnh; `--list-backbones` in
+bảng lựa chọn kèm mask AP trên COCO rồi thoát:
 
 ```bash
-# R101
-python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml \
-  --data data/export/field/f1 --runs benchmark/mask2former/runs --name mask2former-r101 \
-  --set model.config_file=configs/coco/instance-segmentation/maskformer2_R101_bs16_50ep.yaml \
-  --set model.weights=https://dl.fbaipublicfiles.com/maskformer/mask2former/coco/instance/maskformer2_R101_bs16_50ep/model_final_eba159.pkl
-
-# Swin-T
-python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml \
-  --data data/export/field/f1 --runs benchmark/mask2former/runs --name mask2former-swint \
-  --set model.config_file=configs/coco/instance-segmentation/swin/maskformer2_swin_tiny_bs16_50ep.yaml \
-  --set model.weights=https://dl.fbaipublicfiles.com/maskformer/mask2former/coco/instance/maskformer2_swin_tiny_bs16_50ep/model_final_86143f.pkl
+python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --list-backbones
 ```
 
-Có sẵn trong `upstream/configs/coco/instance-segmentation/`: R50, R101, và
-Swin T/S/B/L. Bản Swin nặng hơn R50 nhiều — dò `--probe` trước khi đặt lịch.
+| `--backbone` | mask AP COCO | ghi chú |
+|---|---|---|
+| `r50` | 43,7 | mặc định, cùng backbone với hai model R-CNN |
+| `r101` | 44,2 | chỉ hơn R50 **0,5 điểm** |
+| `swin-t` | 45,0 | đổi hẳn họ backbone sang transformer |
+| `swin-s` | 46,3 | |
+| `swin-b` | 46,7 | nặng, `--probe` trước |
+| `swin-b-in21k` | 48,1 | tiền huấn luyện IN21k — **khác nguồn dữ liệu**, không chỉ khác backbone |
+| `swin-l-in21k` | 50,1 | nặng nhất repo, gần như chắc chắn OOM ở batch 16 |
+
+Config và trọng số lấy từ `MODEL_ZOO.md` của repo Mask2Former; đường dẫn
+config là đường dẫn **bên trong** `upstream/`, trainer tự ghép.
+
+```bash
+python benchmark/mask2former/train.py \
+  --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml \
+  --data data/export/field/f1 --runs benchmark/mask2former/runs \
+  --backbone r101 --workers 8
+```
+
+Không cần `--name`: thiếu nó thì tên thư mục run lấy theo backbone
+(`mask2former-r101`), nên hai backbone không rơi vào cùng một tên thư mục.
+
+Hai dòng `in21k` đổi cả nguồn tiền huấn luyện, nên chênh lệch của chúng không
+quy về backbone được — nếu dùng thì phải nói rõ trong phần phương pháp.
+
+**Đọc cái này trước khi đổi.** Sáu lượt R50 trên `field/f1..f6` cho AP50
+trung bình **92,5** nhưng AP chỉ **64,6**, và epoch tốt nhất rơi vào **16–23**
+trên ngân sách 50. Việc *tìm* tán gần như xong; chỗ mất điểm nằm ở IoU cao,
+tức chất lượng đường biên, và model đã bão hoà trước khi hết lịch. Backbone
+sâu hơn mua chủ yếu AP50 — thứ đang còn ít dư địa nhất — và thêm tham số vào
+một bộ 453 ảnh train thì bão hoà còn sớm hơn.
+
+Đổi backbone ở **một** model cũng làm mất tính chất "bốn model cùng R50 nên
+chênh lệch quy về cơ chế". Mà đổi đồng bộ cả bốn thì không làm được: YOLO
+không có backbone để đổi, còn SOLOv2 không có trọng số COCO cho R101 thường.
+Nên để phần này **ngoài bảng chính**, báo cáo riêng như thí nghiệm phụ.
 
 ## Trong thư mục này
 

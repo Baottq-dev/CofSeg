@@ -10,7 +10,7 @@
 #
 # Cần submodule benchmark/mask2former/upstream + op MSDeformAttn đã biên dịch
 # (scripts/setup_env.py):
-#     python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --set data.root=data/export/block/f4 --workers 8
+#     python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/block/f4 --workers 8
 base: _base_d2.yaml
 name: mask2former-r50-d2
 model:
