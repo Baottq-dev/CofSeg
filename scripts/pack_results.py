@@ -28,6 +28,10 @@ TRAIN_FILES = [
     "weights/d2_config.yaml", "weights/mmdet_config.py",   # để dựng lại model ở nhà
     "results.csv", "config.yaml", "env.json", "dataset_check.json",
     "summary.json", "test_metrics.json", "predictions.json", "run.log",
+    # Ba trainer kia ghi results.csv ngay trong thư mục lần chạy; ultralytics
+    # ghi vào cây con của nó. Thiếu hai dòng này là mang về nhà mất đúng đường
+    # cong huấn luyện của YOLO, trong khi ba model còn lại đều có.
+    "ultralytics/results.csv", "ultralytics/args.yaml",
 ]
 #: File lấy trong mỗi thư mục runs/eval/<lần chấm>/
 EVAL_FILES = ["metrics.json", "cocoeval.txt", "per_region.csv", "per_image.csv",
