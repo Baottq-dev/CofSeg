@@ -36,8 +36,14 @@ METRICS = ("mAP50-95", "mAP50")
 
 
 # --------------------------------------------------------------------- logger
-def hush(*names: str, level: int = logging.WARNING):
+def hush(*loggers, level: int = logging.WARNING):
     """Nâng ngưỡng của handler ra MÀN HÌNH lên `level`; handler ra file giữ nguyên.
+
+    Nhận TÊN hoặc thẳng đối tượng Logger. Phải nhận được đối tượng vì
+    `MMLogger` của mmengine gọi `Logger.__init__(self, "mmengine")` mà KHÔNG
+    đăng ký vào `logging.Logger.manager.loggerDict`. Nên
+    `logging.getLogger("mmengine")` trả về một logger khác hẳn, rỗng handler,
+    và bịt nó thì không tác động gì tới log thật.
 
     Nâng ngưỡng chứ không gỡ hẳn, vì hai loại dòng nằm ở hai mức khác nhau:
     dump config và kiến trúc model là INFO, còn những dòng đáng đọc như
@@ -51,8 +57,8 @@ def hush(*names: str, level: int = logging.WARNING):
     Trả về [(handler, ngưỡng cũ)] để `unhush()` trả lại được.
     """
     changed: list[tuple[logging.Handler, int]] = []
-    for name in names:
-        lg = logging.getLogger(name)
+    for item in loggers:
+        lg = item if isinstance(item, logging.Logger) else logging.getLogger(item)
         for h in lg.handlers:
             if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
                 changed.append((h, h.level))

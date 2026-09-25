@@ -281,3 +281,45 @@ def test_khong_dung_vao_bo_loc_cua_python(tmp_path):
     for h in list(lg.handlers):
         lg.removeHandler(h)
         h.close()
+
+
+def test_hush_nhan_thang_doi_tuong_logger():
+    """mmengine buộc phải có đường này.
+
+    `MMLogger` gọi `Logger.__init__(self, "mmengine")` nhưng KHÔNG đăng ký vào
+    `logging.Logger.manager`, nên `logging.getLogger("mmengine")` trả về một
+    logger khác hẳn, rỗng handler. Bịt theo TÊN không chạm được tới log thật —
+    đó đúng là lý do log SOLOv2 vẫn ngập màn hình dù đã gọi hush.
+    """
+    # Dựng y như mmengine: logger không nằm trong manager.
+    khong_dang_ky = logging.Logger("mmengine")
+    console = logging.StreamHandler()
+    console.setLevel(logging.DEBUG)
+    khong_dang_ky.addHandler(console)
+
+    # Bịt theo tên: trượt, vì getLogger trả về một đối tượng khác.
+    progress.hush("mmengine")
+    assert console.level == logging.DEBUG, "bịt theo tên không thể với tới"
+
+    # Bịt theo đối tượng: trúng.
+    changed = progress.hush(khong_dang_ky)
+    assert console.level == logging.WARNING
+    progress.unhush(changed)
+
+
+def test_hush_tron_lan_ten_va_doi_tuong():
+    theo_ten = logging.getLogger("thu_nghiem_tron")
+    theo_ten.handlers.clear()
+    h1 = logging.StreamHandler()
+    h1.setLevel(logging.DEBUG)
+    theo_ten.addHandler(h1)
+
+    theo_doi_tuong = logging.Logger("roi_ngoai")
+    h2 = logging.StreamHandler()
+    h2.setLevel(logging.DEBUG)
+    theo_doi_tuong.addHandler(h2)
+
+    progress.hush("thu_nghiem_tron", theo_doi_tuong)
+    assert h1.level == logging.WARNING
+    assert h2.level == logging.WARNING
+    theo_ten.handlers.clear()
