@@ -31,22 +31,24 @@ kia chỉ cần `--set data.root=data/export/flight/$FOLD`. Cả hai bộ fold c
 bằng `scripts/make_fold.py`, xem `benchmark/README.md`.
 
 ```bash
+SET=block        # bộ fold: block hoặc flight
 FOLD=f4
 
 # 1. huấn luyện (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
-python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --set data.root=data/export/block/$FOLD --runs benchmark/solov2/runs --name solov2-$FOLD
+python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --set data.root=data/export/$SET/$FOLD --runs benchmark/solov2/runs --name solov2-$FOLD
 
 # 2. dự đoán test do trainer ghi ra -> preds/ để cả nhóm dùng chung
-RUN=$(ls -td benchmark/solov2/runs/train/*_solov2-${FOLD}_* | head -1)
-mkdir -p preds && cp "$RUN/predictions.json" preds/solov2_$FOLD.json
+#    Tên file có cả $SET: hai bộ fold cùng đặt tên f1..f6, thiếu nó là đè nhau.
+RUN=$(ls -td benchmark/solov2/runs/train/*_solov2-${FOLD}_${SET}-${FOLD}_* | head -1)
+mkdir -p preds && cp "$RUN/predictions.json" preds/solov2_${SET}_$FOLD.json
 
 # 3. chấm: Boundary AP, Boundary IoU, sai số diện tích, bảng từng vùng
-python benchmark/solov2/evaluate.py --config benchmark/solov2/configs/eval/_coco.yaml --file preds/solov2_$FOLD.json --set data.root=data/export/block/$FOLD --split test --runs benchmark/solov2/runs --name solov2_$FOLD
+python benchmark/solov2/evaluate.py --config benchmark/solov2/configs/eval/_coco.yaml --file preds/solov2_${SET}_$FOLD.json --set data.root=data/export/$SET/$FOLD --split test --runs benchmark/solov2/runs --name solov2_$FOLD
 
 # 4. chép file kết quả nhỏ vào results/ (runs/ không vào git)
-EV=$(ls -td benchmark/solov2/runs/eval/*_solov2_${FOLD}_* | head -1)
-cp "$EV/metrics.json"   benchmark/solov2/results/solov2_${FOLD}_metrics.json
-cp "$EV/per_region.csv" benchmark/solov2/results/solov2_${FOLD}_per_region.csv
+EV=$(ls -td benchmark/solov2/runs/eval/*_solov2_${FOLD}_${SET}-${FOLD}_* | head -1)
+cp "$EV/metrics.json"   benchmark/solov2/results/solov2_${SET}_${FOLD}_metrics.json
+cp "$EV/per_region.csv" benchmark/solov2/results/solov2_${SET}_${FOLD}_per_region.csv
 
 # test của thư mục này, chạy trước khi commit
 cd benchmark/solov2 && python -m pytest tests

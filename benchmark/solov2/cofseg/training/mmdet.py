@@ -44,6 +44,10 @@ MM_DEFAULTS: dict = {
     "batch": 4,
     "epochs": 50,
     "lr": None,
+    "weight_decay": 1e-4,
+    "momentum": 0.9,
+    "lr_steps": [0.7, 0.9],
+    "lr_gamma": 0.1,
     "warmup_iters": 200,
     "amp": True,
     "fliplr": 0.5,
@@ -181,8 +185,12 @@ def build_overrides(arch: str, root: str | Path, splits: dict, n_train: int, arg
     def ann(split: str) -> str:
         return str(root / "annotations" / f"instances_{split}.json")
 
-    # MultiStepLR theo epoch ở 70 % và 90 %; epoch ít thì không được rơi về 0.
-    milestones = sorted({max(1, int(0.7 * epochs)), max(1, int(0.9 * epochs))})
+    # MultiStepLR theo EPOCH. lr_steps nhận phần của lịch (0.7 = 70% số epoch)
+    # hoặc số epoch tuyệt đối, phân biệt bằng < 1 — ghi theo phần thì đổi
+    # epochs không phải tính lại mốc. Epoch ít thì mốc không được rơi về 0.
+    milestones = sorted({max(1, int(float(x) * epochs) if float(x) < 1 else int(x))
+                         for x in (args.get("lr_steps") or ())
+                         if 0 < (float(x) * epochs if float(x) < 1 else float(x)) <= epochs})
 
     return dict(
         default_scope="mmdet",
@@ -216,13 +224,15 @@ def build_overrides(arch: str, root: str | Path, splits: dict, n_train: int, arg
         test_cfg=dict(type="TestLoop"),
         optim_wrapper=dict(
             type="AmpOptimWrapper" if args["amp"] else "OptimWrapper",
-            optimizer=dict(type="SGD", lr=float(lr), momentum=0.9, weight_decay=1e-4),
+            optimizer=dict(type="SGD", lr=float(lr),
+                           momentum=float(args["momentum"]),
+                           weight_decay=float(args["weight_decay"])),
             clip_grad=dict(max_norm=35, norm_type=2)),
         param_scheduler=[
             dict(type="LinearLR", start_factor=1.0 / 3, by_epoch=False, begin=0,
                  end=min(int(args["warmup_iters"]), max_iter)),
             dict(type="MultiStepLR", begin=0, end=epochs, by_epoch=True,
-                 milestones=milestones, gamma=0.1),
+                 milestones=milestones, gamma=float(args["lr_gamma"])),
         ],
         default_hooks=dict(
             logger=dict(type="LoggerHook", interval=int(args["log_every"])),
