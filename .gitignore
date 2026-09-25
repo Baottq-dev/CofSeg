@@ -162,3 +162,4 @@ benchmark/*/upstream/**/build/
 benchmark/*/upstream/**/*.egg-info/
 
 .authors.local
+.mailmap
