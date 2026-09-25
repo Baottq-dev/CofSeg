@@ -14,7 +14,7 @@
 # Không file nào trong số này ghim torch: bản torch phụ thuộc GPU chứ không
 # phụ thuộc model. Ghim trong từng file là cách chắc chắn để bốn file trôi ra
 # xa nhau rồi không cài chung một env được nữa.
--r yolo11/requirements.txt
+-r yolo/requirements.txt
 -r solov2/requirements.txt
 -r maskrcnn/requirements.txt
 -r mask2former/requirements.txt

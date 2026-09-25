@@ -29,7 +29,7 @@ TRAINERS = {
     "maskrcnn": "cofseg/training/detectron2.py",
     "mask2former": "cofseg/training/detectron2.py",
     "solov2": "cofseg/training/mmdet.py",
-    "yolo11": "cofseg/training/yolo.py",
+    "yolo": "cofseg/training/yolo.py",
 }
 MODELS = tuple(TRAINERS)
 
@@ -101,7 +101,7 @@ def test_readme_cham_bang_trong_so_tot_nhat(model):
     """Bước chấm phải trỏ vào best của lượt train vừa xong."""
     doc = _readme(model)
     assert "evaluate.py" in doc and "--split test" in doc, f"{model}: thiếu bước chấm"
-    assert re.search(r'--set model\.weights="\$RUN/\S*best\.p', doc), \
+    assert re.search(r'--weights "\$RUN/\S*best\.p', doc), \
         f"{model}: bước chấm không nhận trọng số tốt nhất từ lượt train"
 
 
@@ -116,6 +116,6 @@ def test_dong_thoi_gian_khong_goi_val_la_train(model):
 
 def test_time_row_noi_ro_khi_khong_tach_duoc():
     """Không có reporter thì phải nói đó là TỔNG, không phải train."""
-    base = (BENCH / "yolo11" / "cofseg" / "training" / "base.py").read_text(encoding="utf-8")
+    base = (BENCH / "yolo" / "cofseg" / "training" / "base.py").read_text(encoding="utf-8")
     assert "def _time_row" in base, "thiếu _time_row trong Trainer"
     assert '"train + val ' in base, "nhánh không tách được phải nói rõ là tổng"

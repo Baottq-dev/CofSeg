@@ -26,7 +26,7 @@ CAI_DAT = {
     "maskrcnn": ("maskrcnn_r50_d2.yaml", "training/detectron2.py", "D2_DEFAULTS"),
     "mask2former": ("mask2former_r50_d2.yaml", "training/detectron2.py", "D2_DEFAULTS"),
     "solov2": ("solov2_r50_mm.yaml", "training/mmdet.py", "MM_DEFAULTS"),
-    "yolo11": ("yolo11s.yaml", None, None),
+    "yolo": ("yolo11s.yaml", None, None),
 }
 MODELS = tuple(CAI_DAT)
 
@@ -116,7 +116,7 @@ def test_lenh_train_khong_bo_sot_tham_so_dang_ke(model):
     """Những tham số quyết định kết quả phải có mặt, không để người đọc đoán."""
     doc = _co_trong_readme(model, "train.py")
     can = {"imgsz", "batch", "epochs"}
-    if model != "yolo11":
+    if model != "yolo":
         can |= {"lr", "weight_decay", "lr_steps", "warmup_iters", "amp",
                 "val_conf", "val_batch", "max_det"}
     thieu = can - set(doc)
@@ -126,7 +126,7 @@ def test_lenh_train_khong_bo_sot_tham_so_dang_ke(model):
 @pytest.mark.parametrize("model", MODELS)
 def test_lenh_cham_tro_dung_trong_so_cua_lan_train(model):
     doc = (BENCH / model / "README.md").read_text(encoding="utf-8")
-    duoi = "best.pt" if model == "yolo11" else "best.pth"
+    duoi = "best.pt" if model == "yolo" else "best.pth"
     assert f"weights/{duoi}" in doc, f"{model}: lệnh chấm không trỏ vào best của run"
 
 

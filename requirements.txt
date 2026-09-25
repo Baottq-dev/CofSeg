@@ -7,7 +7,7 @@
 # của chúng loại trừ nhau (mmcv của SOLOv2 khoá ở torch 2.4/cu121, còn GPU đời
 # Blackwell lại đòi torch >= 2.7):
 #
-#     benchmark/yolo11/requirements.txt
+#     benchmark/yolo/requirements.txt
 #     benchmark/solov2/requirements.txt
 #     benchmark/maskrcnn/requirements.txt
 #     benchmark/mask2former/requirements.txt

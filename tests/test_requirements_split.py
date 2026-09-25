@@ -19,7 +19,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 BENCH = ROOT / "benchmark"
-MODELS = ("yolo11", "solov2", "maskrcnn", "mask2former")
+MODELS = ("yolo", "solov2", "maskrcnn", "mask2former")
 
 
 def _lines(path: Path) -> list[str]:
@@ -136,13 +136,13 @@ def test_mask2former_khai_du_goi_cua_repo_goc():
         assert goi in pins
 
 
-def test_yolo11_co_y_khong_cai_albumentations():
+def test_yolo_co_y_khong_cai_albumentations():
     """ultralytics TỰ BẬT tăng cường khi thấy gói này, im lặng bỏ qua khi không.
 
     Có hay không có nó cho ra hai pipeline huấn luyện khác nhau mà không dòng
     config nào nói ra. Để ngoài là lựa chọn có chủ đích, và phải ghi lại.
     """
-    path = _req("yolo11")
+    path = _req("yolo")
     assert "albumentations" not in _pins(_lines(path))
     assert "albumentations" in path.read_text(encoding="utf-8"), \
         "bỏ gói thì phải để lại ghi chú vì sao, không thì lần sau có người thêm vào"

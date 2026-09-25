@@ -24,7 +24,7 @@ CAI_DAT = {
     "maskrcnn": ("training/detectron2.py", "D2_DEFAULTS", "models/detectron2.py", "Detectron2Model"),
     "mask2former": ("training/detectron2.py", "D2_DEFAULTS", "models/detectron2.py", "Detectron2Model"),
     "solov2": ("training/mmdet.py", "MM_DEFAULTS", "models/mmdet.py", "MMDetModel"),
-    "yolo11": ("training/yolo.py", None, "models/yolo_seg.py", "YoloSegModel"),
+    "yolo": ("training/yolo.py", None, "models/yolo_seg.py", "YoloSegModel"),
 }
 MODELS = tuple(CAI_DAT)
 
@@ -119,23 +119,74 @@ def test_co_train_deu_la_tham_so_that(model):
 
 
 def test_co_train_cua_yolo_deu_la_tham_so_ultralytics():
-    khoi = _muc(_readme("yolo11"), "### Lệnh đầy đủ")
+    khoi = _muc(_readme("yolo"), "### Lệnh đầy đủ")
     lenh = _khoi_lenh(khoi, "train.py")
     for co in re.findall(r"--([a-z0-9_-]+)", lenh):
         assert co in CUA_TRAIN_PY or _co_trong_ultralytics(co), \
-            f"yolo11: --{co} không có trong cfg của ultralytics"
+            f"yolo: --{co} không có trong cfg của ultralytics"
+
+
+#: Cờ của evaluate.py không đi vào khối model: — script tự xử lý.
+CUA_EVAL_PY = {"config", "data", "split", "limit", "runs", "name", "weights",
+               "native", "native-data", "device", "batch", "file", "set"}
+#: Cờ đi vào khối eval:, viết bằng gạch ngang.
+CO_EVAL = {"iou-thr", "band-ratio", "nsd-tau", "dilation-ratio"}
 
 
 @pytest.mark.parametrize("model", MODELS)
-def test_set_model_va_set_eval_deu_dung_khoa(model):
-    """`--set model.k=` phải là đối số của lớp model; `--set eval.k=` phải
-    thuộc bốn khoá định nghĩa phép đo."""
-    doc = _readme(model)
-    hop_le = _tham_so_model(model) | KHOA_MODEL_CONFIG
-    for k in re.findall(r"--set model\.([a-z0-9_]+)=", doc):
-        assert k in hop_le, f"{model}: model.{k} không phải đối số của lớp model"
-    for k in re.findall(r"--set eval\.([a-z0-9_]+)=", doc):
-        assert k in EVAL_KEYS, f"{model}: eval.{k} không phải khoá của khối eval"
+def test_lenh_cham_khong_con_dung_set(model):
+    """Lệnh trong README phải là cờ thật. `--set` còn trong mã làm lối thoát,
+    nhưng lệnh mẫu mà dùng nó thì người đọc sẽ học theo."""
+    khoi = _muc(_readme(model), "### Lệnh đầy đủ")
+    lenh = _khoi_lenh(khoi, "evaluate.py")
+    assert "--set " not in lenh, f"{model}: lệnh chấm vẫn còn --set"
+
+
+@pytest.mark.parametrize("model", MODELS)
+def test_co_cham_deu_la_co_that(model):
+    """Mọi cờ trong lệnh chấm phải là cờ của evaluate.py, khoá của khối eval:,
+    hoặc đối số khởi tạo của chính lớp model."""
+    khoi = _muc(_readme(model), "### Lệnh đầy đủ")
+    lenh = _khoi_lenh(khoi, "evaluate.py")
+    hop_le = _tham_so_model(model) | KHOA_MODEL_CONFIG | CUA_EVAL_PY | CO_EVAL
+    for co in re.findall(r"--([a-z0-9_-]+)", lenh):
+        assert co in hop_le, f"{model}: --{co} không phải cờ của evaluate.py"
+
+
+@pytest.mark.parametrize("model", MODELS)
+def test_bon_nguong_cham_van_duoc_ghi_ra(model):
+    """Bốn khoá của khối eval: là định nghĩa phép đo; lệnh mẫu phải ghi chúng
+    ra để ai đọc cũng thấy con số mình đang so là con số nào."""
+    khoi = _muc(_readme(model), "### Lệnh đầy đủ")
+    lenh = _khoi_lenh(khoi, "evaluate.py")
+    thieu = [c for c in sorted(CO_EVAL) if f"--{c} " not in lenh]
+    assert not thieu, f"{model}: lệnh chấm thiếu {thieu}"
+
+
+def _backbone_cua(model: str, cfg_name: str) -> set:
+    """Tên backbone hợp lệ, hỏi chính trainer của thư mục đó."""
+    import importlib.util
+    import sys
+
+    d = BENCH / model
+    sys.path.insert(0, str(d))
+    try:
+        for m in [k for k in sys.modules if k == "cofseg" or k.startswith("cofseg.")]:
+            del sys.modules[m]
+        spec = importlib.util.spec_from_file_location("cofseg", d / "cofseg" / "__init__.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["cofseg"] = mod
+        spec.loader.exec_module(mod)
+        import cofseg.config as cfgmod
+        import cofseg.training  # noqa: F401  đăng ký trainer
+        from cofseg.registry import resolve
+
+        c = cfgmod.load(d / "configs" / "train" / cfg_name)
+        return set(resolve("trainer", c["trainer"]).backbones(c))
+    finally:
+        sys.path.remove(str(d))
+        for m in [k for k in sys.modules if k == "cofseg" or k.startswith("cofseg.")]:
+            del sys.modules[m]
 
 
 # ------------------------------------------------------------ đổi backbone
@@ -149,20 +200,27 @@ def test_doi_backbone_nhac_cai_gia_phai_tra(model):
 
 
 def test_yolo_noi_ro_khong_doi_backbone_duoc():
-    khoi = _muc(_readme("yolo11"), "### Đổi backbone")
-    assert "không đổi backbone được" in khoi, "yolo11: phải nói rõ nó khác ba model kia"
-    assert "yolo11m-seg.pt" in khoi, "yolo11: thiếu cách đổi CỠ model"
+    khoi = _muc(_readme("yolo"), "### Đổi backbone")
+    assert "không đổi backbone được" in khoi, "yolo: phải nói rõ nó khác ba model kia"
+    assert "yolo11m-seg.pt" in khoi, "yolo: thiếu cách đổi CỠ model"
 
 
 def test_checkpoint_mask2former_khop_model_zoo():
-    """URL trọng số phải là URL có thật trong MODEL_ZOO.md của submodule."""
+    """URL trọng số trong bảng BACKBONES phải có thật trong MODEL_ZOO.md.
+
+    Bảng nằm ở trainer chứ không ở README: URL là thứ mã dùng, để trong tài
+    liệu thì hai bên trôi ra xa nhau lúc nào không biết.
+    """
     zoo = BENCH / "mask2former" / "upstream" / "MODEL_ZOO.md"
     if not zoo.exists():
         pytest.skip("chưa init submodule")
     noi_dung = zoo.read_text(encoding="utf-8")
-    doc = _readme("mask2former")
-    urls = re.findall(r"https://dl\.fbaipublicfiles\.com/\S+\.pkl", doc)
-    assert urls, "mask2former: mục đổi backbone không có trọng số nào"
+    src = (BENCH / "mask2former" / "cofseg" / "training" / "detectron2.py").read_text(
+        encoding="utf-8")
+    urls = re.findall(r'"(https://dl\.fbaipublicfiles\.com/\S+?)"\s*\n?\s*"?(\S*\.pkl)"',
+                      src)
+    urls = [a + b for a, b in urls]
+    assert len(urls) >= 7, f"mask2former: bảng backbone chỉ có {len(urls)} trọng số"
     for u in urls:
         assert u.rsplit("/", 2)[-2] + "/" + u.rsplit("/", 1)[-1] in noi_dung, \
             f"mask2former: {u} không có trong MODEL_ZOO.md"
@@ -171,7 +229,28 @@ def test_checkpoint_mask2former_khop_model_zoo():
 def test_checkpoint_solov2_la_ban_co_trong_so_that():
     """mmdet có config R101 không-DCN nhưng KHÔNG phát hành trọng số COCO cho
     nó; chọn nhầm bản đó là khởi đầu từ ImageNet."""
+    src = (BENCH / "solov2" / "cofseg" / "training" / "mmdet.py").read_text(encoding="utf-8")
+    assert "solov2_r101_dcn_fpn_3x_coco" in src, "solov2: thiếu trọng số R101-DCN"
+    assert "solov2/solov2_r101_fpn_ms-3x_coco.py" not in src, \
+        "solov2: R101 không-DCN không có trọng số COCO, không được đưa vào bảng"
     khoi = _muc(_readme("solov2"), "### Đổi backbone")
-    assert "solov2_r101_dcn_fpn_3x_coco" in khoi, "solov2: thiếu trọng số R101-DCN"
-    assert "không** DCN" in khoi or "không DCN" in khoi, \
+    assert "r101-dcn" in khoi, "solov2: README không nói cách đi lên R101"
+    assert "không có R101 thường" in khoi, \
         "solov2: không cảnh báo bản R101 thiếu trọng số COCO"
+
+
+@pytest.mark.parametrize("model,cfg", (
+    ("maskrcnn", "maskrcnn_r50_d2.yaml"),
+    ("mask2former", "mask2former_r50_d2.yaml"),
+    ("solov2", "solov2_r50_mm.yaml"),
+))
+def test_lenh_doi_backbone_dung_co_that(model, cfg):
+    """Mục đổi backbone phải dùng --backbone, và tên backbone phải có trong
+    bảng của chính trainer đó."""
+    khoi = _muc(_readme(model), "### Đổi backbone")
+    assert "--set " not in khoi, f"{model}: mục đổi backbone vẫn còn --set"
+    ten = re.findall(r"--backbone ([a-z0-9-]+)", khoi)
+    assert ten, f"{model}: mục đổi backbone không có lệnh --backbone nào"
+    co = _backbone_cua(model, cfg)
+    for t in ten:
+        assert t in co, f"{model}: --backbone {t} không có trong bảng ({sorted(co)})"

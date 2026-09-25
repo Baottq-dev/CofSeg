@@ -22,7 +22,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 BENCH = ROOT / "benchmark"
-MODELS = ("maskrcnn", "mask2former", "solov2", "yolo11")
+MODELS = ("maskrcnn", "mask2former", "solov2", "yolo")
 
 
 def _yaml(path: Path) -> dict:
@@ -40,14 +40,14 @@ def test_yolo_khong_co_tang_cuong_rieng_no_moi_co():
     Bật chúng là cho một model thêm dữ liệu huấn luyện mà ba model kia không
     được hưởng, rồi ghi chênh lệch đó vào cột "kiến trúc".
     """
-    t = _train_block("yolo11", "yolo26s.yaml")
+    t = _train_block("yolo", "yolo26s.yaml")
     assert float(t.get("degrees", 0)) == 0.0, "degrees phải 0: ba model kia không xoay góc bất kỳ"
     assert float(t.get("copy_paste", 0)) == 0.0, "copy_paste phải 0: chỉ YOLO có"
 
 
 @pytest.mark.parametrize("model,cfg", [
     ("maskrcnn", "_base_d2.yaml"), ("mask2former", "_base_d2.yaml"),
-    ("solov2", "solov2_r50_mm.yaml"), ("yolo11", "yolo26s.yaml")])
+    ("solov2", "solov2_r50_mm.yaml"), ("yolo", "yolo26s.yaml")])
 def test_lat_ngang_doc_giong_nhau_o_ca_bon(model, cfg):
     """Lật ngang và lật dọc là mẫu số chung: bốn model đều phải có, cùng 0.5."""
     t = _train_block(model, cfg)
@@ -58,7 +58,7 @@ def test_lat_ngang_doc_giong_nhau_o_ca_bon(model, cfg):
 # --------------------------------------------------- cùng ngân sách, cùng luật
 def test_yolo_khong_dung_som():
     """Dừng ở epoch 40 rồi so với model chạy đủ 100 là so hai ngân sách."""
-    t = _train_block("yolo11", "yolo26s.yaml")
+    t = _train_block("yolo", "yolo26s.yaml")
     assert int(t.get("patience", 0)) == 0, "patience phải 0 (tắt dừng sớm)"
 
 
@@ -66,7 +66,7 @@ def test_yolo_chon_best_theo_mask_ap():
     """Ultralytics chọn best.pt theo `seg.fitness() + box.fitness()`, tức trộn
     cả chỉ số HỘP vào. Ba model kia chọn thuần mask AP (`segm/AP`,
     `coco/segm_mAP`), nên trainer phải giữ thêm một bản theo đúng cột đó."""
-    src = (BENCH / "yolo11" / "cofseg" / "training" / "yolo.py").read_text(encoding="utf-8")
+    src = (BENCH / "yolo" / "cofseg" / "training" / "yolo.py").read_text(encoding="utf-8")
     assert 'FITNESS_KEY = "metrics/mAP50-95(M)"' in src, "thiếu cột chọn best"
     assert "add_callback" in src and "on_fit_epoch_end" in src, \
         "thiếu callback giữ best theo mask AP"
@@ -121,7 +121,7 @@ CHUNG = {"imgsz": 1024, "batch": 16}
 
 @pytest.mark.parametrize("model,cfg", [
     ("maskrcnn", "_base_d2.yaml"), ("mask2former", "_base_d2.yaml"),
-    ("solov2", "solov2_r50_mm.yaml"), ("yolo11", "yolo26s.yaml")])
+    ("solov2", "solov2_r50_mm.yaml"), ("yolo", "yolo26s.yaml")])
 def test_bon_model_cung_imgsz_va_batch(model, cfg):
     """imgsz và batch không phải lựa chọn của từng người.
 
@@ -139,7 +139,7 @@ def test_bon_model_cung_imgsz_va_batch(model, cfg):
 
 @pytest.mark.parametrize("model,cfg,epochs", [
     ("maskrcnn", "_base_d2.yaml", 50), ("solov2", "solov2_r50_mm.yaml", 50),
-    ("yolo11", "yolo26s.yaml", 50),
+    ("yolo", "yolo26s.yaml", 50),
     ("mask2former", "mask2former_r50_d2.yaml", 100)])
 def test_ngan_sach_epoch(model, cfg, epochs):
     """50 epoch cho ba model; Mask2Former 100 vì query hội tụ chậm hơn — đó là
@@ -205,3 +205,94 @@ def test_giu_du_de_resume_duoc(model):
     """
     src = (BENCH / model / "cofseg" / "training" / "detectron2.py").read_text(encoding="utf-8")
     assert "max(1, int(a[" in src and "keep_ckpts" in src,         f"{model}: keep_ckpts phải được kẹp về tối thiểu 1"
+
+
+# ------------------------------------------------------------- đổi backbone
+def _bang_backbone(model: str) -> dict:
+    """BACKBONES của trainer trong thư mục đó, đọc bằng AST để khỏi cần
+    detectron2/mmcv — hai gói không dựng được trên máy phát triển."""
+    import ast
+
+    rel = "training/mmdet.py" if model == "solov2" else "training/detectron2.py"
+    ten = "ZOO_BACKBONES" if model == "solov2" else "BACKBONES"
+    src = (BENCH / model / "cofseg" / rel).read_text(encoding="utf-8")
+    cay = ast.parse(src)
+    # mmdet ghép URL từ hằng U ở đầu file; gom mọi hằng chuỗi cấp module lại
+    # để _hang() tra được, thay vì trả về tên biến.
+    hang = {}
+    for node in cay.body:
+        d = getattr(node, "target", None) or (getattr(node, "targets", [None])[0])
+        if isinstance(d, ast.Name) and isinstance(node.value, ast.Constant) \
+                and isinstance(node.value.value, str):
+            hang[d.id] = node.value.value
+    for node in ast.walk(cay):
+        dich = getattr(node, "target", None) or (getattr(node, "targets", [None])[0])
+        if isinstance(dich, ast.Name) and dich.id == ten:
+            # Các giá trị là dict(...) nên literal_eval không nuốt được; dựng tay.
+            ra = {}
+            for arch, bang in zip(node.value.keys, node.value.values):
+                o = {}
+                for k, v in zip(bang.keys, bang.values):
+                    o[k.value] = {kw.arg: _hang(kw.value, hang) for kw in v.keywords}
+                ra[arch.value] = o
+            return ra
+    raise AssertionError(f"{model}: không thấy {ten}")
+
+
+def _hang(node, hang: dict):
+    """Chuỗi ghép nhiều dòng ("a" "b") và ghép bằng + với hằng cấp module."""
+    import ast
+
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name):
+        return hang.get(node.id, node.id)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _hang(node.left, hang) + _hang(node.right, hang)
+    return ast.unparse(node)
+
+
+@pytest.mark.parametrize("model", ("maskrcnn", "mask2former", "solov2"))
+def test_bang_backbone_co_r50_va_mo_ta(model):
+    """R50 phải còn là một lựa chọn: nó là mốc mà ba model chia nhau, bỏ nó ra
+    khỏi bảng là không quay về mốc được nữa. Mỗi ô phải có `note` vì
+    --list-backbones in cột đó để người chạy chọn bằng số."""
+    bang = _bang_backbone(model)
+    assert bang, f"{model}: bảng backbone rỗng"
+    for arch, o in bang.items():
+        assert o, f"{model}/{arch}: không có backbone nào"
+        for ten, spec in o.items():
+            assert spec.get("config"), f"{model}/{arch}/{ten}: thiếu config"
+            assert spec.get("note"), f"{model}/{arch}/{ten}: thiếu note cho --list-backbones"
+    goc = "r50" if model != "maskrcnn" else "r50"
+    assert goc in bang[list(bang)[0]], f"{model}: bảng không còn {goc}"
+
+
+def test_backbone_detectron2_la_yaml_khong_phai_lazyconfig():
+    """`new_baselines` LSJ mạnh hơn nhưng là LazyConfig .py: get_cfg() +
+    merge_from_file không nạp được, phải chạy lazyconfig_train_net. Đưa nhầm
+    một file .py vào bảng thì lỗi chỉ hiện ra trên máy thuê."""
+    for model in ("maskrcnn", "mask2former"):
+        for arch, o in _bang_backbone(model).items():
+            for ten, spec in o.items():
+                assert spec["config"].endswith(".yaml"), \
+                    f"{model}/{arch}/{ten}: {spec['config']} không phải config yaml"
+
+
+def test_backbone_mmdet_deu_co_trong_so_coco():
+    """mmdet có config không kèm checkpoint (R101 không-DCN); chọn phải bản đó
+    là lặng lẽ khởi đầu từ ImageNet thay vì COCO."""
+    for arch, o in _bang_backbone("solov2").items():
+        for ten, spec in o.items():
+            assert spec.get("checkpoint", "").startswith("https://"), \
+                f"solov2/{arch}/{ten}: không có trọng số COCO"
+
+
+def test_backbone_zoo_cua_detectron2_ton_tai():
+    """Đường dẫn trong bảng phải là đường dẫn model_zoo có thật KÈM checkpoint.
+    Cần detectron2 nên chỉ chạy trên máy thuê; ở nhà thì bỏ qua."""
+    model_zoo = pytest.importorskip("detectron2.model_zoo")
+    for arch, o in _bang_backbone("maskrcnn").items():
+        for ten, spec in o.items():
+            model_zoo.get_config_file(spec["config"])
+            assert model_zoo.get_checkpoint_url(spec["config"]), f"maskrcnn/{arch}/{ten}"

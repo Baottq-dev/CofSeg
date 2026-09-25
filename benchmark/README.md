@@ -10,7 +10,7 @@ import thư mục nào, không ai phải chờ ai để sửa phần của mình
 |---|---|---|---|---|
 | `maskrcnn/` | VanNguyen | @vnguyen123 | Mask R-CNN R50-FPN | **mốc số 0** — mọi model khác báo Δ% mAP so với nó |
 | `solov2/` | PhuongQuynh | @Phquynh2312 | SOLOv2 R50-FPN | box-free: lưới + kernel động, không box |
-| `yolo11/` | QuangBao | @Baottq-dev | YOLOv11-Seg | một giai đoạn, thời gian thực |
+| `yolo/` | QuangBao | @Baottq-dev | YOLO-Seg (v8 / 11 / 26) | một giai đoạn, thời gian thực |
 | `mask2former/` | AnhVu | @tranphuocanhvu2103 | Mask2Former R50 | query / transformer, mask toàn ảnh |
 
 Ba model dùng chung backbone ResNet-50 (Mask R-CNN, SOLOv2, Mask2Former) nên

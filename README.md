@@ -9,7 +9,7 @@ Hướng dẫn chạy
 |---|---|---|---|
 | `benchmark/maskrcnn/` | VanNguyen | Mask R-CNN R50-FPN | mốc số 0 của bảng |
 | `benchmark/solov2/` | PhuongQuynh | SOLOv2 R50-FPN | box-free |
-| `benchmark/yolo11/` | QuangBao | YOLOv11-Seg | một giai đoạn, real-time |
+| `benchmark/yolo/` | QuangBao | YOLO-Seg (v8 / 11 / 26) | một giai đoạn, real-time |
 | `benchmark/mask2former/` | AnhVu | Mask2Former R50 | query / transformer |
 
 Mỗi thư mục `benchmark/` chứa TRỌN model của một người: code (bản sao lõi

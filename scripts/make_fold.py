@@ -17,8 +17,8 @@ Cách cắt val khai riêng trong --val, vì có ba cách và chúng cho ba bộ
 khác nhau — nên để cạnh nhau mà so, đừng chồng lên nhau.
 
 Mỗi fold ra một thư mục đúng bố cục mà train.py / evaluate.py đọc:
-    --set data.root=data/export/block/f4          (detectron2, mmdet, evaluate)
-    --set data.yaml=data/export/block/f4/data.yaml   (YOLO)
+    --data data/export/block/f4          (detectron2, mmdet, evaluate)
+    --data data/export/block/f4   (YOLO)
 
 Ảnh được hardlink, không chép: 12 fold vẫn gần như không tốn thêm đĩa. id ảnh
 giữ nguyên từ bản xuất gốc. Thư mục fold đã có thì script dừng — xoá tay rồi

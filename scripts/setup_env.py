@@ -1,6 +1,6 @@
 """Dựng môi trường trên máy Linux có GPU (máy lab / máy thuê).
 
-    python scripts/setup_env.py --models yolo11,maskrcnn,mask2former
+    python scripts/setup_env.py --models yolo,maskrcnn,mask2former
     python scripts/setup_env.py --models solov2      # env RIÊNG, xem bên dưới
     python scripts/setup_env.py --dry-run            # in ra sẽ làm gì, không chạy
     python scripts/setup_env.py --from mmdet         # chạy lại từ một bước
@@ -222,7 +222,7 @@ def step_torch() -> None:
 #: torch — nó cài trước bằng bước `torch`, nên cài bốn file vào MỘT env hay
 #: vào BỐN env riêng đều ra cùng một bản torch.
 BENCH_REQS = {
-    "yolo11": "benchmark/yolo11/requirements.txt",
+    "yolo": "benchmark/yolo/requirements.txt",
     "solov2": "benchmark/solov2/requirements.txt",
     "maskrcnn": "benchmark/maskrcnn/requirements.txt",
     "mask2former": "benchmark/mask2former/requirements.txt",
