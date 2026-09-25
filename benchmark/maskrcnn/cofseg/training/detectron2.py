@@ -623,6 +623,7 @@ class Detectron2Trainer(Trainer):
         """metrics.json (một JSON mỗi dòng) của detectron2 -> results.csv có cột
         epoch, cùng tinh thần với các trainer khác."""
         src = self.out_dir / "metrics.json"
+        epochs = int(self.train_args["epochs"])
         rows: list[dict] = []
         if not src.exists():
             return rows
@@ -635,7 +636,13 @@ class Detectron2Trainer(Trainer):
             d = json.loads(line)
             if "iteration" not in d:
                 continue
-            row = {"epoch": d["iteration"] // per_epoch + 1}
+            # Chặn trên ở số epoch thật. detectron2 tăng self.iter lên
+            # max_iter TRƯỚC khi gọi after_train (để after_train phân biệt
+            # được "train xong tử tế" với "chết giữa chừng"), mà EvalHook lại
+            # cố tình để dành val của epoch CUỐI cho after_train. Nên AP quan
+            # trọng nhất của cả lượt chạy được ghi ở iteration = max_iter, và
+            # 90 // 30 + 1 ra epoch 4 của một lượt 3 epoch.
+            row = {"epoch": min(d["iteration"] // per_epoch + 1, epochs)}
             row.update({k: d[k] for k in keep if k in d})
             rows.append(row)
         out = self.run_dir / "results.csv"
