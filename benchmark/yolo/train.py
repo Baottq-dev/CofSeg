@@ -1,22 +1,22 @@
-# Bản của benchmark/yolo11: chạy hoàn toàn trong thư mục này (cofseg/ là bản sao
+# Bản của benchmark/yolo: chạy hoàn toàn trong thư mục này (cofseg/ là bản sao
 # lõi của riêng thư mục). Chạy từ GỐC REPO để data/ và weights/ dùng chung:
 #
-#     python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml
+#     python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo11s.yaml
 """Huấn luyện một model bất kỳ. Model do config chỉ định, không phải script.
 
-    python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml
-    python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --probe
-    python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --print-config
+    python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo11s.yaml
+    python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo11s.yaml --probe
+    python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo11s.yaml --print-config
 
 Truyền siêu tham số thẳng trên dòng lệnh — mọi tham số của trainer đều nhận:
 
-    python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --epochs 100 --imgsz 640 --batch 16 
+    python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo11s.yaml --epochs 100 --imgsz 640 --batch 16 
     
 Tên viết gạch nối cũng được (--cos-lr = --cos_lr). Cờ không kèm giá trị nghĩa
 là bật: --amp tương đương --amp true. Gõ sai tên thì script BÁO LỖI kèm gợi ý,
 thay vì im lặng bỏ qua rồi để bạn chờ ba tiếng mới biết tham số không vào.
 
-Vẫn giữ --set cho các khoá lồng nhau ngoài nhóm train, vd --set data.yaml=...
+Vẫn giữ --set làm lối thoát cho khoá lồng nhau chưa có cờ riêng.
 
 Script này KHÔNG biết YOLO tồn tại. Nó đọc khoá `trainer` trong config, tra sổ
 đăng ký, rồi gọi ba phương thức của hợp đồng. Danh sách tham số hợp lệ và các
@@ -50,7 +50,12 @@ console.setup()
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+        # Không cho viết tắt. Mặc định của argparse nhận mọi tiền tố không
+        # nhập nhằng, nên `--conf 0.05` bị nuốt thành `--config 0.05` và lỗi
+        # hiện ra ở tận chỗ mở file. Siêu tham số của model phải rơi xuống
+        # parse_known_args để đi đúng đường kiểm tên.
+        allow_abbrev=False,
     )
     ap.add_argument("--config", required=True)
     ap.add_argument(
@@ -58,7 +63,7 @@ def main() -> int:
         dest="overrides",
         action="append",
         default=[],
-        help="ghi đè khoá lồng nhau bất kỳ, vd --set data.yaml=duong/dan.yaml",
+        help="lối thoát cho khoá lồng nhau chưa có cờ riêng, vd --set model.repo=...",
     )
     ap.add_argument(
         "--probe",
@@ -80,9 +85,17 @@ def main() -> int:
         action="store_true",
         help="run.log gộp mỗi dòng một lần và bỏ mã màu (mặc định: chép nguyên văn)",
     )
+    ap.add_argument("--backbone", default=None, metavar="TÊN",
+                    help="đổi backbone, vd r101 — xem --list-backbones")
+    ap.add_argument("--model", default=None, metavar="TÊN",
+                    help="đổi phiên bản/cỡ model (họ YOLO), vd yolo11m-seg")
+    ap.add_argument("--list-backbones", dest="list_backbones", action="store_true",
+                    help="liệt kê backbone dùng được với config này rồi dừng")
     ap.add_argument("--data", default=None, metavar="THƯ_MỤC_FOLD",
                     help="thư mục fold, vd data/export/block/f1 — viết thẳng ra để "
                          "nhìn lệnh là biết đang train fold nào")
+    ap.add_argument("--limit", type=int, default=None, metavar="N",
+                    help="chỉ dùng N ảnh đầu của mỗi split — để chạy khói, không để báo cáo")
     ap.add_argument("--runs", default="runs", help="thư mục gốc chứa kết quả")
     ap.add_argument("--name", default=None, help="tên lần chạy (mặc định lấy từ config)")
     a, extra = ap.parse_known_args()
@@ -102,6 +115,22 @@ def main() -> int:
         raise SystemExit(f"config thiếu khoá 'trainer'. Hiện có: {available('trainer')}")
     trainer_cls = resolve("trainer", cfg["trainer"])
     locked = trainer_cls.locked_params()
+
+    if a.list_backbones:
+        print(trainer_cls.describe_backbones(cfg))
+        return 0
+
+    # Đổi kiến trúc phải xong TRƯỚC khi đọc khối train: và trước khi đặt tên
+    # thư mục run — tên thư mục phải nói đúng thứ vừa chạy. Hai cờ này ghi vào
+    # khối `model:`, không phải khối `train:`, nên chúng không đi qua
+    # parse_overrides.
+    if a.limit is not None:
+        cfg.setdefault("data", {})["limit"] = int(a.limit)
+    goi_y = None
+    if a.backbone:
+        goi_y = trainer_cls.apply_backbone(cfg, a.backbone)
+    if a.model:
+        goi_y = trainer_cls.apply_model(cfg, a.model)
 
     if a.list_params:
         d = trainer_cls.param_defaults()
@@ -124,7 +153,7 @@ def main() -> int:
             print(f"  {k:<18} {merged[k]!r}{src}")
         return 0
 
-    name = a.name or cfg.get("name") or Path(a.config).stem
+    name = a.name or goi_y or cfg.get("name") or Path(a.config).stem
     # Nhãn sinh từ tham số ĐÃ GỘP (config + dòng lệnh), nên tên thư mục luôn
     # mô tả đúng thứ vừa chạy kể cả khi bạn ghi đè imgsz hay batch.
     # Bộ fold đứng trước nhãn tham số: hai bộ fold cùng đặt tên f1..f6, nên

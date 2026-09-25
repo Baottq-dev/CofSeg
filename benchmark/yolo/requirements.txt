@@ -10,12 +10,12 @@
 # CUDA 12.8 là bản đầu tiên có sm_120 (Blackwell) và vẫn giữ các đời cũ.
 # Máy phải có nvcc 12.x: lệch major giữa nvcc và torch.version.cuda là
 # detectron2/mmcv gãy lúc build_ext. Xem Bước 0 trong benchmark/README.md.
-#     pip install -r benchmark/yolo11/requirements.txt
+#     pip install -r benchmark/yolo/requirements.txt
 #
 # Xem benchmark/README.md mục "Dựng môi trường" cho bảng chọn phiên bản.
 #
-# KHÔNG cần `pip install -e .`: benchmark/yolo11/train.py tự thêm thư mục của
-# nó vào sys.path nên nạp benchmark/yolo11/cofseg/, không phải canopyseg.
+# KHÔNG cần `pip install -e .`: benchmark/yolo/train.py tự thêm thư mục của
+# nó vào sys.path nên nạp benchmark/yolo/cofseg/, không phải canopyseg.
 
 ultralytics==8.4.143
 

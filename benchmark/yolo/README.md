@@ -1,4 +1,4 @@
-# YOLOv11-Seg — họ một giai đoạn, thời gian thực
+# YOLO-Seg — họ một giai đoạn, thời gian thực
 
 **Người phụ trách:** QuangBao (@Baottq-dev)
 **Framework:** ultralytics (`trainer: yolo`)
@@ -15,8 +15,10 @@ trực tiếp thì độ chính xác giảm bao nhiêu** — so ms/ảnh và mAP
   cỡ **n**.
 - Mask từ 32 prototype ở stride 4 (~10 px một ô ở ảnh gốc) rồi cắt theo box:
   mịn hơn ROI 28×28 nhưng tán chạm nhau dễ dính mép cây bên — đo trên field_5.
-- v11 là bản hiện hành, v8 là bản các bài trước hay dùng, cùng cơ chế mask;
-  chạy cả hai nếu còn giờ (`yolo26s` cũng có sẵn config).
+- Thư mục này giữ cả **họ** YOLO chứ không một phiên bản: v11 là bản hiện
+  hành, v8 là bản các bài trước hay dùng, 26 là bản đầu-cuối không NMS. Ba
+  phiên bản có config riêng vì chúng khác nhau ở phần phát hiện; **cỡ** model
+  thì đổi bằng `--model`, không cần file riêng.
 
 ## Dựng môi trường riêng
 
@@ -28,9 +30,9 @@ Nhẹ nhất trong bốn: không gói nào phải biên dịch, nên không cầ
 và đây là model duy nhất chạy được trên Windows.
 
 ```bash
-conda create -y -n cofseg-yolo11 python=3.12 && conda activate cofseg-yolo11
+conda create -y -n cofseg-yolo python=3.12 && conda activate cofseg-yolo
 pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 --index-url https://download.pytorch.org/whl/cu128
-pip install -r benchmark/yolo11/requirements.txt
+pip install -r benchmark/yolo/requirements.txt
 
 python -c "
 import torch, torchvision, ultralytics
@@ -60,18 +62,18 @@ hoặc `f1` — có ba chỗ trong khối lệnh, sửa hết cả ba. Hai bộ 
 
 ```bash
 # 1. huấn luyện (thêm --epochs 1 --fraction 0.05 để khói)
-python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --data data/export/block/f1 --runs benchmark/yolo11/runs --name yolo11s --workers 8
+python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo11s.yaml --data data/export/block/f1 --runs benchmark/yolo/runs --name yolo11s --workers 8
 
 # 2. chấm bằng trọng số tốt nhất (weights/best.pt: chọn theo mask AP thuần,
 #    không phải best.pt của ultralytics vốn cộng cả chỉ số hộp)
-RUN=$(ls -td benchmark/yolo11/runs/train/*_yolo11s_block-f1_* | head -1)
-python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo11s.yaml --set model.weights="$RUN/weights/best.pt" --data data/export/block/f1 --split test --runs benchmark/yolo11/runs --name yolo11s
+RUN=$(ls -td benchmark/yolo/runs/train/*_yolo11s_block-f1_* | head -1)
+python benchmark/yolo/evaluate.py --config benchmark/yolo/configs/eval/yolo11s.yaml --weights "$RUN/weights/best.pt" --data data/export/block/f1 --split test --runs benchmark/yolo/runs --name yolo11s
 
 # 3. dự đoán + kết quả nhỏ
-EV=$(ls -td benchmark/yolo11/runs/eval/*_yolo11s_block-f1_* | head -1)
+EV=$(ls -td benchmark/yolo/runs/eval/*_yolo11s_block-f1_* | head -1)
 mkdir -p preds && cp "$EV/predictions.json" preds/yolo11s_block_f1.json
-cp "$EV/metrics.json"   benchmark/yolo11/results/yolo11s_block_f1_metrics.json
-cp "$EV/per_region.csv" benchmark/yolo11/results/yolo11s_block_f1_per_region.csv
+cp "$EV/metrics.json"   benchmark/yolo/results/yolo11s_block_f1_metrics.json
+cp "$EV/per_region.csv" benchmark/yolo/results/yolo11s_block_f1_per_region.csv
 
 # test của thư mục này, chạy trước khi commit
 cd benchmark/yolo11 && python -m pytest tests
@@ -89,9 +91,9 @@ danh sách, `--print-config` in config đã gộp mà không chạy gì, `--prob
 dò VRAM rồi thoát.
 
 ```bash
-python benchmark/yolo11/train.py \
-  --config benchmark/yolo11/configs/train/yolo11s.yaml \
-  --data data/export/field/f1 --runs benchmark/yolo11/runs --name yolo11s \
+python benchmark/yolo/train.py \
+  --config benchmark/yolo/configs/train/yolo11s.yaml \
+  --data data/export/field/f1 --runs benchmark/yolo/runs --name yolo11s \
   --imgsz 1024 --batch 16 --epochs 50 --patience 0 \
   --optimizer auto --cos_lr true --amp true \
   --mask_ratio 4 --overlap_mask true \
@@ -119,22 +121,24 @@ này lợi thế không đến từ kiến trúc.
 Lệnh chấm, đầy đủ tham số:
 
 ```bash
-python benchmark/yolo11/evaluate.py \
-  --config benchmark/yolo11/configs/eval/yolo11s.yaml \
+python benchmark/yolo/evaluate.py \
+  --config benchmark/yolo/configs/eval/yolo11s.yaml \
   --data data/export/field/f1 --split test \
-  --runs benchmark/yolo11/runs --name yolo11s \
-  --set model.weights=benchmark/yolo11/runs/train/<...>/weights/best.pt \
-  --set model.imgsz=1024 --set model.conf=0.05 --set model.iou=0.7 \
-  --set model.max_det=100 --set model.retina_masks=true \
-  --set eval.iou_thr=0.5 --set eval.band_ratio=0.02 \
-  --set eval.dilation_ratio=0.02 --set eval.nsd_tau=2.0
+  --runs benchmark/yolo/runs --name yolo11s \
+  --weights benchmark/yolo/runs/train/<...>/weights/best.pt \
+  --imgsz 1024 --conf 0.05 --iou 0.7 \
+  --max_det 100 --retina_masks true \
+  --iou-thr 0.5 --band-ratio 0.02 \
+  --dilation-ratio 0.02 --nsd-tau 2.0
 ```
 
-`--set model.*` đi vào khối `model:` của config chấm, `--set eval.*` vào khối
-`eval:`. Bốn khoá `eval:` là định nghĩa của phép đo, đổi chúng là số không so
-được với ba model kia nữa: `iou_thr` ngưỡng ghép cặp, `band_ratio` bề rộng
-vành biên theo cỡ tán, `dilation_ratio` bề rộng vành của Boundary AP (2%
-đường chéo ảnh, đúng bài báo), `nsd_tau` dung sai của NSD.
+Mọi tham số ở đây là **cờ thật**, không qua `--set`: `--weights` trọng số của
+lần train, `--conf`/`--max_det` (và các khoá khác của lớp model) đi vào khối
+`model:`, còn `--iou-thr`/`--band-ratio`/`--dilation-ratio`/`--nsd-tau` đi vào
+khối `eval:`. Bốn khoá `eval:` là định nghĩa của phép đo, đổi chúng là số
+không so được với ba model kia nữa: `iou_thr` ngưỡng ghép cặp, `band_ratio`
+bề rộng vành biên theo cỡ tán, `dilation_ratio` bề rộng vành của Boundary AP
+(2% đường chéo ảnh, đúng bài báo), `nsd_tau` dung sai của NSD.
 
 `model.imgsz` lúc chấm phải bằng `--imgsz` lúc train, không thì model học ở
 một độ phân giải rồi bị chấm ở độ phân giải khác.
@@ -147,30 +151,59 @@ Còn một đường chấm thứ hai, `--native`, gọi thẳng `model.val()` c
 — đúng thứ `yolo val` chạy, giữ để đối chiếu với các báo cáo YOLO khác:
 
 ```bash
-python benchmark/yolo11/evaluate.py --native \
-  --weights benchmark/yolo11/runs/train/<...>/weights/best.pt \
+python benchmark/yolo/evaluate.py --native \
+  --weights benchmark/yolo/runs/train/<...>/weights/best.pt \
   --data data/export/field/f1 --split test --imgsz 1024 --batch 4 --max-det 100
 ```
 
 ### Đổi backbone
 
 Model này **không đổi backbone được**, khác ba model kia: backbone của YOLO
-gắn liền với kiến trúc, không có chỗ cắm ResNet vào. Thứ đổi được là **cỡ
-model** — n / s / m / l / x, cùng kiến trúc, khác độ rộng và độ sâu:
+gắn liền với kiến trúc, không có chỗ cắm ResNet vào. Thứ đổi được là **phiên
+bản** và **cỡ** model, cả hai qua `--model`:
 
 ```bash
-python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml \
-  --data data/export/field/f1 --runs benchmark/yolo11/runs --name yolo11m \
-  --set model=weights/yolo11m-seg.pt
+python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo11s.yaml --list-backbones
 ```
 
-Thiếu file thì ultralytics tự tải về đúng đường dẫn đó. Chọn cỡ `s` cho bảng
-vì đo trên chính 6521 vùng của bộ này thì nút thắt là **độ phân giải** chứ
-không phải dung lượng model: lưới mặt nạ của YOLO là `imgsz/4`, nên đổi `l`
-lấy imgsz thấp là đánh đổi lỗ.
+| họ | cỡ có trọng số COCO |
+|---|---|
+| `yolov8` | n s m l x |
+| `yolo11` | n s m l x |
+| `yolo26` | n s m l x |
+| `yolov9` | c e |
 
-Hai họ YOLO khác chạy được bằng đúng đường này, config có sẵn:
-`configs/train/yolov8s.yaml` và `configs/train/yolo26s.yaml`.
+17 checkpoint, đọc từ `GITHUB_ASSETS_NAMES` của ultralytics 8.4.143.
+`yolo12-seg` có file kiến trúc trong gói nhưng **không có trọng số COCO** —
+chọn nó là train từ đầu, không so được với ba model kia.
+
+```bash
+python benchmark/yolo/train.py \
+  --config benchmark/yolo/configs/train/yolo11s.yaml \
+  --data data/export/field/f1 --runs benchmark/yolo/runs \
+  --model yolo11m-seg --workers 8
+```
+
+Tên trần được nở thành `weights/yolo11m-seg.pt`; thiếu file thì ultralytics tự
+tải bản phát hành về đúng đường dẫn đó. Không cần `--name`: thiếu nó thì tên
+thư mục run lấy theo model (`yolo11m-seg`).
+
+`--model` là **cờ**, không phải siêu tham số. `model` nằm trong 114 tham số
+của ultralytics nên trước đây `--model` lọt qua đường siêu tham số rồi rơi vào
+khối `train:`, mà `YOLO.train()` nạp lại trọng số từ đối tượng đã dựng chứ
+không từ tham số đó — kết quả là vẫn train model cũ, chỉ có `args.yaml` ghi
+tên model mới. Giờ khoá đó bị chặn ở `locked_params()`.
+
+Chọn cỡ `s` cho bảng vì đo trên chính bộ này thì nút thắt là **độ phân giải**
+chứ không phải dung lượng model: lưới mặt nạ của YOLO là `imgsz/4`, nên đổi
+`l` lấy imgsz thấp là đánh đổi lỗ. Từ cỡ `m` trở lên phải `--probe` lại:
+`batch 16 @ imgsz 1024` đo cho cỡ `s` (10,1 M tham số / 35,8 GFLOPs), còn
+`yolo11x` là 62,1 M / 320,2 GFLOPs.
+
+Ba phiên bản đã có config sẵn: `configs/train/yolov8s.yaml`,
+`configs/train/yolo11s.yaml`, `configs/train/yolo26s.yaml`. Chúng khác nhau ở
+phần phát hiện (v8/v11 dùng NMS, 26 đầu-cuối), nên giữ mỗi phiên bản một file;
+còn **cỡ** thì không cần file riêng, đã có `--model`.
 
 ## Trong thư mục này
 

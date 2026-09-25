@@ -81,7 +81,66 @@ class YoloTrainer(Trainer):
 
     @classmethod
     def locked_params(cls) -> frozenset[str]:
-        return frozenset({"data", "project", "name", "exist_ok"})
+        """`model` bị khoá vì nó là cái bẫy im lặng.
+
+        `model` nằm trong 114 tham số của ultralytics, nên không khoá thì
+        `--model yolo11m-seg.pt` được nhận và rơi vào khối `train:`. Nhưng
+        `YOLO.train()` nạp lại trọng số từ đối tượng đã dựng chứ không từ
+        tham số đó:
+
+            self.trainer.model = self.trainer.get_model(weights=weights,
+                                                        cfg=self.model.yaml)
+
+        nên nó vẫn train đúng model cũ, chỉ có args.yaml của lần chạy ghi tên
+        model mới. Đổi model là việc của cờ --model, thứ ghi vào khoá
+        `model:` ở cấp cao nhất — xem apply_model.
+        """
+        return frozenset({"data", "project", "name", "exist_ok", "model"})
+
+    # ----------------------------------------------------------------- model
+    #: Họ model ultralytics CÓ trọng số COCO cho tác vụ segment, đọc từ
+    #: ultralytics.utils.downloads.GITHUB_ASSETS_NAMES của 8.4.143.
+    #:
+    #: yolo12-seg có file kiến trúc trong gói nhưng KHÔNG có checkpoint COCO —
+    #: chọn nó là train từ đầu, không so được với ba model kia vốn đều khởi
+    #: đầu từ COCO. Vì vậy nó không nằm ở đây.
+    SCALES = {
+        "yolov8": "nsmlx",
+        "yolo11": "nsmlx",
+        "yolo26": "nsmlx",
+        "yolov9": "ce",
+    }
+
+    @classmethod
+    def apply_backbone(cls, cfg: dict, name: str) -> str:
+        raise SystemExit(
+            "YOLO không đổi backbone được: backbone của nó gắn liền với kiến "
+            "trúc, không có chỗ cắm ResNet vào. Thứ đổi được là PHIÊN BẢN và "
+            "CỠ model — dùng --model, vd --model yolo11m-seg."
+        )
+
+    @classmethod
+    def describe_backbones(cls, cfg: dict) -> str:
+        dong = ["YOLO không đổi backbone được; đổi phiên bản/cỡ bằng --model:", ""]
+        for ho, cac_co in cls.SCALES.items():
+            dong.append(f"  {ho:<8} {' '.join(f'{ho}{c}-seg' for c in cac_co)}")
+        dong += ["", "Thiếu file thì ultralytics tự tải bản phát hành COCO về weights/."]
+        return "\n".join(dong)
+
+    @classmethod
+    def apply_model(cls, cfg: dict, name: str) -> str:
+        """`--model yolo11m-seg` hoặc `--model weights/yolo11m-seg.pt`.
+
+        Tên trần được nở thành `weights/<tên>.pt` để mọi lần chạy tải về cùng
+        một chỗ, thay vì rải checkpoint theo thư mục làm việc lúc đó.
+        """
+        ten = str(name).strip().replace("\\", "/")
+        if "/" not in ten and not ten.endswith((".pt", ".yaml", ".yml")):
+            ten = f"weights/{ten}.pt"
+        elif "/" not in ten and ten.endswith(".pt"):
+            ten = f"weights/{ten}"
+        cfg["model"] = ten
+        return Path(ten).stem
 
     # -------------------------------------------------------------------- đặt tên
     #: Tham số đưa vào tên thư mục, kèm tiền tố ngắn. Ba cái này quyết định cả

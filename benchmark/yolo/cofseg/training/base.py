@@ -1,6 +1,6 @@
 """Hợp đồng cho trainer.
 
-benchmark/yolo11/train.py chỉ làm việc với lớp này. Thêm Mask R-CNN, detectron2, hay
+benchmark/yolo/train.py chỉ làm việc với lớp này. Thêm Mask R-CNN, detectron2, hay
 model tự viết = thêm một file trong cofseg/training/ có @register, không
 sửa dòng nào ở script.
 """
@@ -62,12 +62,75 @@ class Trainer(ABC):
         return (f"data.{cls.DATA_KEY}",
                 f"{p}/data.yaml" if cls.DATA_KEY == "yaml" else p)
 
+    # ----------------------------------------------------------------- backbone
+    #: arch -> {tên ngắn: phần config quyết định backbone}. Rỗng nghĩa là họ
+    #: model này không đổi backbone được; YOLO là trường hợp đó, backbone của
+    #: nó gắn liền với kiến trúc nên chỗ đổi là CỠ model, không phải backbone.
+    BACKBONES: dict = {}
+
+    @classmethod
+    def arch_of(cls, cfg: dict) -> str:
+        """Kiến trúc config đang chọn — nó quyết định bảng backbone nào áp dụng."""
+        m = cfg.get("model")
+        return str(m.get("arch", "")) if isinstance(m, dict) else ""
+
+    @classmethod
+    def backbones(cls, cfg: dict) -> dict:
+        return cls.BACKBONES.get(cls.arch_of(cfg), {})
+
+    @classmethod
+    def apply_backbone(cls, cfg: dict, name: str) -> str:
+        """Đặt backbone `name` vào `cfg`, trả về tên gợi ý cho thư mục run.
+
+        Mặc định này hợp với detectron2: `model.config_file` chọn kiến trúc và
+        `model.weights` chọn checkpoint COCO đi kèm. Trainer nào khai config
+        kiểu khác thì cài đè.
+        """
+        bang = cls.backbones(cfg)
+        arch = cls.arch_of(cfg) or "model này"
+        if not bang:
+            raise SystemExit(f"{arch} không đổi backbone được.")
+        if name not in bang:
+            raise SystemExit(
+                f"--backbone {name!r} không có với {arch}. Có: {', '.join(sorted(bang))}"
+            )
+        spec = bang[name]
+        m = cfg.setdefault("model", {})
+        m["config_file"] = spec["config"]
+        # checkpoint None = suy ra từ chính config đó (model_zoo của detectron2).
+        if spec.get("checkpoint"):
+            m["weights"] = spec["checkpoint"]
+        else:
+            m.pop("weights", None)
+        return f"{cls.arch_of(cfg)}-{name}"
+
+    @classmethod
+    def apply_model(cls, cfg: dict, name: str) -> str:
+        """Đổi model/cỡ model. Chỉ họ YOLO dùng; ba họ kia đổi bằng --backbone."""
+        raise SystemExit(
+            "--model chỉ dùng cho họ YOLO. Model này đổi kiến trúc bằng --config "
+            "và đổi backbone bằng --backbone."
+        )
+
+    @classmethod
+    def describe_backbones(cls, cfg: dict) -> str:
+        bang = cls.backbones(cfg)
+        arch = cls.arch_of(cfg) or "model này"
+        if not bang:
+            return f"{arch} không đổi backbone được."
+        rong = max(len(k) for k in bang)
+        dong = [f"{len(bang)} backbone dùng được với arch {arch!r}:", ""]
+        for k in sorted(bang):
+            spec = bang[k]
+            dong.append(f"  {k:<{rong}}  {spec.get('note', spec['config'])}")
+        return "\n".join(dong)
+
     # ------------------------------------------------------------------ tham số
     @classmethod
     def param_defaults(cls) -> dict | None:
         """Tên -> mặc định của mọi tham số mà khối `train:` nhận.
 
-        benchmark/yolo11/train.py dùng nó để bắt lỗi gõ sai tên và để in --list-params.
+        benchmark/yolo/train.py dùng nó để bắt lỗi gõ sai tên và để in --list-params.
         None nghĩa là trainer không liệt kê được (mọi tên đều được nhận) — đó là
         một lựa chọn phải có chủ đích, vì gõ sai sẽ không có gì báo.
         """

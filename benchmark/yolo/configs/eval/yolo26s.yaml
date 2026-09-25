@@ -1,5 +1,5 @@
-# YOLO26s-seg qua đường chấm chung. Trọng số: --set model.weights=<best.pt>
-#     python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo26s.yaml --set model.weights=runs/train/<...>/weights/best.pt --imgsz 1024
+# YOLO26s-seg qua đường chấm chung. Trọng số: --weights <best.pt>
+#     python benchmark/yolo/evaluate.py --config benchmark/yolo/configs/eval/yolo26s.yaml --weights runs/train/<...>/weights/best.pt --imgsz 1024
 base: _base.yaml
 name: yolo26s-seg
 model:

@@ -15,8 +15,35 @@ def test_yolo_trainer_declares_ultralytics_params():
 
     names = YoloTrainer.param_names()
     assert names is not None and {"imgsz", "batch", "epochs", "mask_ratio"} <= names
-    assert YoloTrainer.locked_params() == {"data", "project", "name", "exist_ok"}
+    # "model" bị khoá có chủ đích: nó nằm trong 114 tham số của ultralytics
+    # nên không khoá thì --model lọt vào khối train: rồi KHÔNG đổi trọng số
+    # thật, chỉ đổi args.yaml của lần chạy. Đổi model là việc của apply_model.
+    assert YoloTrainer.locked_params() == {"data", "project", "name", "exist_ok", "model"}
     assert YoloTrainer.locked_params() <= names
+
+
+def test_doi_model_ghi_vao_khoa_cap_cao_nhat():
+    """--model phải đổi đúng thứ YOLO() nạp, và trả về tên cho thư mục run."""
+    from cofseg.training.yolo import YoloTrainer
+
+    cfg = {"trainer": "yolo", "model": "weights/yolo11s-seg.pt"}
+    assert YoloTrainer.apply_model(cfg, "yolo11m-seg") == "yolo11m-seg"
+    assert cfg["model"] == "weights/yolo11m-seg.pt"
+    # Đường dẫn có sẵn thì giữ nguyên, không nở thêm lần nữa.
+    assert YoloTrainer.apply_model(cfg, "weights/yolov9c-seg.pt") == "yolov9c-seg"
+    assert cfg["model"] == "weights/yolov9c-seg.pt"
+
+
+def test_yolo_khong_doi_backbone_duoc():
+    """Bảng backbone rỗng, và thông báo phải chỉ sang --model chứ không chỉ
+    nói 'không được'."""
+    from cofseg.training.yolo import YoloTrainer
+
+    cfg = {"trainer": "yolo", "model": "weights/yolo11s-seg.pt"}
+    assert YoloTrainer.backbones(cfg) == {}
+    with pytest.raises(SystemExit, match="--model"):
+        YoloTrainer.apply_backbone(cfg, "r101")
+    assert "yolo26x-seg" in YoloTrainer.describe_backbones(cfg)
 
 
 def test_memory_wall_scales_with_the_card(monkeypatch):
