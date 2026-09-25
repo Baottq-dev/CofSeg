@@ -34,14 +34,30 @@ METRICS = [
     ("ms_img", ("summary", "ms_per_image"), 0, 1),
 ]
 REFERENCE = "maskrcnn"
-_RUN_NAME = re.compile(r"^(?P<model>.+)_(?P<fold>f\d+)$")
+#: Tên lần chạy có thể còn đuôi fold theo quy ước cũ ("maskrcnn_f4"); đuôi đó
+#: là tuỳ chọn vì fold nay lấy từ đường dẫn dữ liệu.
+_RUN_NAME = re.compile(r"^(?P<model>.+?)[_-](?P<fold>f\d+)$")
+#: Nhãn bộ dữ liệu do artifacts.dataset_tag sinh: "block-f4", hoặc chỉ "f4".
+_DATA_TAG = re.compile(r"^(?:(?P<dataset>.+)-)?(?P<fold>f\d+)$")
 # Thư mục lần chấm: <YYYY-MM-DD_HHMMSS>_<tên>_<split>[_i<imgsz>][~n]
 _RUN_DIR = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{6}_(?P<name>.+?)_(?:train|val|test)(?:_i\d+)?(?:~\d+)?$")
 
 
-def parse_run_name(name: str) -> tuple[str, str] | None:
-    m = _RUN_NAME.match(name.strip())
-    return (m["model"], m["fold"]) if m else None
+def parse_run_name(name: str) -> tuple[str, str | None]:
+    """'maskrcnn_f4' -> ('maskrcnn', 'f4'); 'maskrcnn' -> ('maskrcnn', None).
+
+    Đuôi fold là tuỳ chọn. Quy ước mới chỉ đặt tên model, vì fold đọc được từ
+    đường dẫn dữ liệu đã chấm — chỗ đó không gõ nhầm được.
+    """
+    name = name.strip()
+    m = _RUN_NAME.match(name)
+    return (m["model"], m["fold"]) if m else (name, None)
+
+
+def parse_data_tag(tag: str) -> tuple[str, str | None]:
+    """'block-f4' -> ('block', 'f4'); 'f4' -> ('', 'f4'); khác -> ('', None)."""
+    m = _DATA_TAG.match((tag or "").strip())
+    return ((m["dataset"] or "", m["fold"]) if m else ("", None))
 
 
 def _dig(d: dict, path: tuple) -> float | None:
@@ -78,18 +94,25 @@ def collect(eval_root: str | Path | list, folds_yaml: str | Path,
         if not (cfg_p.exists() and met_p.exists()):
             continue
         cfg = yaml.safe_load(cfg_p.read_text(encoding="utf-8")) or {}
-        parsed = parse_run_name(str(cfg.get("name", "")))
-        if not parsed:
-            # Lần chấm cũ: config.yaml còn giữ tên của file config, lấy từ tên thư mục.
+        # Bộ fold VÀ fold đều suy từ đường dẫn dữ liệu đã chấm, không từ tên
+        # người đặt: gõ --name maskrcnn_f4 mà trỏ vào f5 thì tên nói dối, còn
+        # đường dẫn thì không. Tên chỉ còn dùng để biết model nào.
+        ds, fold_path = parse_data_tag(artifacts.dataset_tag(cfg))
+        model, fold_named = parse_run_name(str(cfg.get("name", "")))
+        if fold_path is None and fold_named is None:
+            # Lần chấm cũ: config.yaml giữ tên của FILE config chứ không phải
+            # tên lần chạy, và chưa ghi data.root. Tên thư mục còn giữ cả hai.
             m = _RUN_DIR.match(run.name)
-            parsed = parse_run_name(m["name"]) if m else None
-        if not parsed or parsed[1] not in test_field:
+            if m:
+                from_dir = parse_run_name(m["name"])
+                if from_dir[1]:
+                    model, fold_named = from_dir
+        if fold_path and fold_named and fold_path != fold_named and warn:
+            warn(f"  {run.name}: tên ghi {fold_named} nhưng dữ liệu là {fold_path}; "
+                 f"lấy theo dữ liệu")
+        fold = fold_path or fold_named
+        if not model or fold not in test_field:
             continue
-        model, fold = parsed
-        # Bộ fold suy từ chính đường dẫn dữ liệu đã chấm, không từ tên người
-        # đặt — tên có thể đặt nhầm, đường dẫn thì không.
-        ds = artifacts.dataset_tag(cfg)
-        ds = ds[: -len(fold) - 1] if ds.endswith("-" + fold) else (ds if ds != fold else "")
         if dataset is not None and ds != dataset:
             continue
         met = json.loads(met_p.read_text(encoding="utf-8"))

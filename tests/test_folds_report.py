@@ -99,10 +99,21 @@ def test_collect_merges_several_eval_dirs(tmp_path, folds_yaml):
 
 
 def test_run_names():
+    """Đuôi fold là TUỲ CHỌN: quy ước mới chỉ đặt tên model, fold đọc từ
+    đường dẫn dữ liệu."""
     assert rep.parse_run_name("mask2former_f4") == ("mask2former", "f4")
     assert rep.parse_run_name("yolo11s_f12") == ("yolo11s", "f12")
-    assert rep.parse_run_name("maskrcnn-r50-d2") is None
-    assert rep.parse_run_name("f4") is None
+    assert rep.parse_run_name("yolo11s-f2") == ("yolo11s", "f2")
+    assert rep.parse_run_name("mask2former") == ("mask2former", None)
+    assert rep.parse_run_name("maskrcnn-r50-d2") == ("maskrcnn-r50-d2", None)
+
+
+def test_data_tags():
+    assert rep.parse_data_tag("block-f4") == ("block", "f4")
+    assert rep.parse_data_tag("flight-f12") == ("flight", "f12")
+    assert rep.parse_data_tag("f4") == ("", "f4")
+    assert rep.parse_data_tag("dataset_v1") == ("", None)
+    assert rep.parse_data_tag("") == ("", None)
 
 
 def test_older_runs_are_recognised_from_the_directory_name(tmp_path, folds_yaml):
@@ -112,7 +123,7 @@ def test_older_runs_are_recognised_from_the_directory_name(tmp_path, folds_yaml)
     # fold f4 không có trong folds.yaml của test -> bị bỏ; thêm fold rồi thử lại.
     assert rep.collect(ev, folds_yaml) == []
     doc = yaml.safe_load(folds_yaml.read_text())
-    doc["folds"]["f4"] = {"test": ["field_3"], "val": ["field_2"]}
+    doc["folds"]["f4"] = {"test": ["field_3"]}
     folds_yaml.write_text(yaml.safe_dump(doc))
     rows = rep.collect(ev, folds_yaml)
     assert [(r["model"], r["fold"], r["field"]) for r in rows] == [("maskrcnn", "f4", "field_3")]
@@ -189,3 +200,29 @@ def test_a_run_without_a_data_root_still_lands_in_the_table(tmp_path, folds_yaml
     _run(ev, "2026-09-30_100000", "maskrcnn_f1", 0.50)
     rows = rep.collect(ev, folds_yaml, warn=None)
     assert len(rows) == 1 and rows[0]["dataset"] == ""
+
+
+def test_the_fold_comes_from_the_data_not_from_the_typed_name(tmp_path, folds_yaml):
+    """Gõ --name maskrcnn_f1 nhưng chấm trên f2: hàng phải là f2.
+
+    Tên do người gõ, đường dẫn do lệnh chạy thật — chỉ một trong hai nói dối
+    được, và bảng phải tin cái kia.
+    """
+    ev = tmp_path / "eval"
+    _run(ev, "2026-09-30_100000", "maskrcnn_f1", 0.5, data_root="data/export/block/f2")
+    said: list[str] = []
+    rows = rep.collect(ev, folds_yaml, warn=said.append)
+    assert [(r["model"], r["dataset"], r["fold"], r["field"]) for r in rows] == [
+        ("maskrcnn", "block", "f2", "field_2")]
+    assert len(said) == 1 and "f1" in said[0] and "f2" in said[0]
+
+
+def test_a_name_without_a_fold_suffix_is_enough(tmp_path, folds_yaml):
+    """Quy ước mới: --name maskrcnn. Fold và bộ fold đến từ data.root, nên
+    tên thư mục không còn lặp lại fold hai lần."""
+    ev = tmp_path / "eval"
+    _run(ev, "2026-09-30_100000", "maskrcnn", 0.5, data_root="data/export/block/f1")
+    _run(ev, "2026-09-30_100100", "maskrcnn", 0.4, data_root="data/export/flight/f1")
+    rows = rep.collect(ev, folds_yaml, warn=None)
+    assert [(r["model"], r["dataset"], r["fold"]) for r in rows] == [
+        ("maskrcnn", "block", "f1"), ("maskrcnn", "flight", "f1")]
