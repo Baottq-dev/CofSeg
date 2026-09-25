@@ -25,6 +25,8 @@ import json
 import time
 from pathlib import Path
 
+import yaml
+
 from .. import progress
 from ..registry import register
 from . import memory
@@ -50,6 +52,7 @@ class YoloTrainer(Trainer):
         self.model_name: str = cfg["model"]
         self.data_yaml = Path(cfg["data"]["yaml"])
         self.train_args: dict = {**AERIAL_DEFAULTS, **(cfg.get("train") or {})}
+        self._local_yaml: Path | None = None
 
     # -------------------------------------------------------------------- tham số
     @classmethod
@@ -80,6 +83,37 @@ class YoloTrainer(Trainer):
         )
 
     # ------------------------------------------------------------------ chuẩn bị
+    def _portable_yaml(self) -> Path:
+        """data.yaml của fold mang `path:` TUYỆT ĐỐI của máy đã cắt fold.
+
+        Cắt fold ở Windows rồi train ở Linux thì dòng đó thành rác, mà hỏng
+        theo kiểu khó đọc nhất: `F:/CoffeeSeg/...` không phải đường dẫn tuyệt
+        đối trên POSIX, nên ultralytics nối nó vào thư mục dataset của chính
+        nó (`check_det_dataset`: `if not path.exists() and not
+        path.is_absolute(): path = (DATASETS_DIR / path).resolve()`) và báo
+        thiếu một đường dẫn ghép chẳng ai viết bao giờ:
+
+            /home/student/.../LightCoral/F:/CoffeeSeg/data/export/block/f1/images/val
+
+        Thông tin đó vốn thừa: data.yaml LUÔN nằm ở gốc fold, cạnh images/ và
+        labels/ — đó là bố cục mà scripts/make_fold.py cắt ra. Nên ghi đè
+        `path:` bằng chính thư mục chứa nó, tuyệt đối theo máy đang chạy.
+
+        Bản sửa ghi vào run_dir chứ không đụng vào data/ — data/ là dữ liệu
+        dùng chung của cả nhóm, và bản trong run_dir còn nói lại được sau này
+        lượt chạy ấy đã nạp đúng cái gì.
+        """
+        if self._local_yaml is None:
+            doc = yaml.safe_load(self.data_yaml.read_text(encoding="utf-8")) or {}
+            doc["path"] = str(self.data_yaml.resolve().parent).replace("\\", "/")
+            out = self.run_dir / "data.yaml"
+            out.write_text(
+                yaml.safe_dump(doc, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+            self._local_yaml = out
+        return self._local_yaml
+
     def prepare(self) -> dict:
         """Để ultralytics tự xác nhận bộ dữ liệu trước khi đụng GPU.
 
@@ -92,9 +126,10 @@ class YoloTrainer(Trainer):
             raise FileNotFoundError(
                 f"Không thấy {self.data_yaml}. Cắt fold trước: scripts/make_fold.py --export <bản xuất> --all"
             )
-        info = check_det_dataset(str(self.data_yaml), autodownload=False)
+        info = check_det_dataset(str(self._portable_yaml()), autodownload=False)
         out = {
             "data_yaml": str(self.data_yaml),
+            "data_yaml_used": str(self._portable_yaml()),
             "nc": info.get("nc"),
             "names": info.get("names"),
             "splits": {
@@ -167,7 +202,7 @@ class YoloTrainer(Trainer):
         # Ultralytics tự quản lý cây thư mục riêng của nó; neo vào run_dir để
         # mọi thứ của một lần chạy nằm chung một chỗ.
         args.update(
-            data=str(self.data_yaml.resolve()),
+            data=str(self._portable_yaml().resolve()),
             # Đường dẫn TUYỆT ĐỐI: với đường dẫn tương đối, ultralytics nối nó
             # vào thư mục runs của chính nó và kết quả rơi vào
             # runs/segment/<đường dẫn của ta>/ thay vì vào run_dir.
