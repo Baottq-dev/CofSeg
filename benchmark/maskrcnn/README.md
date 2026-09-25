@@ -168,6 +168,50 @@ Ba cột giữa là của `MODEL_ZOO.md` (detectron2, COCO val2017). Cột cuố
 tỉ lệ với R50 nhân số đo thật của lượt R50 — **ước lượng**, phải `--probe`
 trước khi đặt lịch.
 
+#### ViTDet — backbone transformer
+
+| `--backbone` | mask AP COCO | tham số | ghi chú |
+|---|---|---|---|
+| `vit-b` | 45,9 | 86 M | bản duy nhất trong nhóm còn hy vọng vừa card |
+| `vit-l` | 49,2 | 304 M | cần batch rất nhỏ |
+| `vit-h` | 50,2 | 632 M | ghi cho đủ bảng, khó chạy |
+
+Đây là **Mask R-CNN với backbone ViT** (Li et al. 2022), không phải kiến trúc
+khác, nên nó nằm cùng bảng với `r50`. Chênh lệch với `r50` là +8,7 điểm — lớn
+hơn hẳn mọi backbone CNN ở bảng trên (`x101` chỉ +2,3).
+
+```bash
+python benchmark/maskrcnn/train.py \
+  --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml \
+  --data data/export/field/f1 --runs benchmark/maskrcnn/runs \
+  --backbone vit-b --batch 4 --keep_ckpts 1 --workers 8
+```
+
+**Ba thứ lượt ViT tự đổi, và bạn phải nói ra khi báo cáo:**
+
+| | `r50` | `vit-b` | vì sao |
+|---|---|---|---|
+| optimizer | SGD 0,02 | **AdamW 1e-4** | ViT tiền huấn luyện MAE, SGD 0,02 phá đặc trưng ngay vài trăm vòng đầu |
+| `weight_decay` | 1e-4 | **0,1** | recipe AdamW của detectron2 |
+| lr theo độ sâu | không | **layer-wise decay 0,7** | recipe ViTDet |
+| kênh ảnh | BGR | **RGB** | trọng số MAE dùng mean/std ImageNet RGB |
+
+Lịch học thì **không** đổi: `max_iter`, `lr_steps`, `warmup_iters` và số epoch
+giữ nguyên, nên lượt ViT vẫn cùng ngân sách với ba model kia. Có test khoá
+điều này (`tests/test_r50_khong_doi.py`).
+
+`--batch 4` trong lệnh trên là **phỏng đoán, chưa đo**. Recipe gốc của ViTDet
+là batch 64 trên 64 GPU, tức 1 ảnh/GPU; `--batch 16` gần như chắc chắn OOM.
+Chạy `--probe` trước. Và vì batch khác 16 nên lượt này **không vào bảng
+chính** — nó là thí nghiệm phụ, báo cáo riêng.
+
+Model của bản ViT dựng bằng `instantiate` từ chính LazyConfig của detectron2
+chứ không dựng tay: tên tham số trong checkpoint COCO do cách dựng quyết định,
+dựng lại bằng tay là đoán. Sau khi nạp, `summary.json` ghi mục
+`weights_loaded` nói rõ khoá nào không vào được model — đầu phân loại lệch
+hình là cố ý (80 lớp → 1), backbone lệch thì không, và lúc đó có một dòng cảnh
+báo in ra màn hình.
+
 ```bash
 python benchmark/maskrcnn/train.py \
   --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml \
@@ -191,11 +235,15 @@ python benchmark/maskrcnn/train.py \
   --keep_ckpts 1 --workers 8
 ```
 
-Bốn bản mạnh nhất của model zoo (`new_baselines` LSJ, mask AP 40,3–42,5)
-không có trong bảng: chúng là LazyConfig `.py`, phải chạy qua
-`lazyconfig_train_net` chứ không qua `DefaultTrainer`. Đáng nhớ một điều từ
-bảng đó — R50 + LSJ 100 epoch (40,3) hơn X101 3x (39,5): recipe, không phải
-backbone.
+`new_baselines` LSJ (mask AP 40,3–42,5) vẫn chưa có trong bảng. Chúng cũng là
+LazyConfig như ViTDet nên đường dựng model đã thông, nhưng phần còn lại của
+recipe (SyncBN trong backbone và FPN, box head 4conv1fc) nằm trong cùng file
+config đó — thêm chúng là thêm một hàng vào `BACKBONES`, chưa làm vì chưa có
+ai cần. Đáng nhớ một điều từ bảng đó — R50 + LSJ 100 epoch (40,3) hơn X101 3x
+(39,5): recipe, không phải backbone.
+
+Cascade + ViTDet thì chưa: config của nó nằm trong `projects/ViTDet/configs/`,
+không được đóng gói theo package detectron2 nên cần đường dẫn tới checkout.
 
 **Đọc cái này trước khi đổi.** Sáu lượt R50 trên `field/f1..f6` cho AP50
 trung bình **92,5** nhưng AP chỉ **64,6**, và epoch tốt nhất rơi vào **16–23**
