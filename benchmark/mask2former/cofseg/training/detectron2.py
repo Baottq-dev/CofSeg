@@ -303,6 +303,11 @@ class Detectron2Trainer(Trainer):
                 Gọi nhiều lần vẫn an toàn: lần sau không làm gì.
                 """
                 if self.bar is not None:
+                    # Kéo nốt cho đầy trước khi đóng. EvalHook chấm val NGAY
+                    # TRONG after_step của iteration cuối epoch, tức là trước
+                    # khi hook này kịp đếm bước đó — không kéo thì thanh đứng
+                    # ở 29/30 dù epoch đã xong.
+                    self.bar.advance(max(0, self.bar.total - self.bar.n))
                     self.bar.close()
                     self.bar = None
                 if self.trained is None and self.started is not None:
@@ -332,7 +337,12 @@ class Detectron2Trainer(Trainer):
 
             def after_step(self):
                 done = self.trainer.iter - self.trainer.start_iter + 1
-                self.bar.advance(1, note(smoothed(self.trainer.storage, "total_loss")))
+                # Thanh có thể ĐÃ bị đóng ngay trong chính after_step này:
+                # EvalHook đứng trước hook này trong danh sách, nó chấm val, và
+                # evaluator gọi close_train_bar() lúc reset(). Nên đây không
+                # phải phép kiểm phòng xa — nó xảy ra ở MỌI cuối epoch.
+                if self.bar is not None:
+                    self.bar.advance(1, note(smoothed(self.trainer.storage, "total_loss")))
                 if done % per_epoch:
                     return
                 self.close_train_bar()
