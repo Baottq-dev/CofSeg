@@ -71,6 +71,39 @@ def unhush(changed) -> None:
         h.setLevel(old)
 
 
+class _Drop(logging.Filter):
+    def __init__(self, name: str, startswith: str):
+        super().__init__()
+        self.name_ = name
+        self.head = startswith
+
+    def filter(self, record) -> bool:
+        return not (record.name == self.name_
+                    and record.getMessage().startswith(self.head))
+
+
+def drop_from_console(*loggers, name: str, startswith: str):
+    """Bỏ MỘT loại bản ghi khỏi màn hình; file vẫn giữ nguyên.
+
+    Chỉ dùng cho bản ghi TRÙNG LẶP, không dùng để giấu lỗi. Trường hợp cụ
+    thể: `detectron2.engine.train_loop` bắt ngoại lệ, gọi `logger.exception`
+    rồi `raise` lại. Nên cùng một traceback ra màn hình hai lần — bản của
+    detectron2 trước, rồi bản Python in ở tầng ngoài. Bản thứ hai chứa đủ
+    khung của bản thứ nhất CỘNG THÊM khung của train.py, nên bỏ bản đầu khỏi
+    màn hình không mất thông tin nào.
+
+    Lọc đặt trên HANDLER ra màn hình chứ không trên logger, nên d2/log.txt
+    vẫn nhận cả hai.
+    """
+    f = _Drop(name, startswith)
+    for item in loggers:
+        lg = item if isinstance(item, logging.Logger) else logging.getLogger(item)
+        for h in lg.handlers:
+            if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
+                h.addFilter(f)
+    return f
+
+
 class _Dedupe(logging.Filter):
     """Mỗi nội dung cảnh báo đúng một lần, đếm bằng set của chính ta."""
 

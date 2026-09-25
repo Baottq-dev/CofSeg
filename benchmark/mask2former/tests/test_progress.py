@@ -323,3 +323,43 @@ def test_hush_tron_lan_ten_va_doi_tuong():
     assert h1.level == logging.WARNING
     assert h2.level == logging.WARNING
     theo_ten.handlers.clear()
+
+
+def test_drop_from_console_bo_dung_loai_bi_trung():
+    """Traceback của train_loop ra màn hình hai lần; bỏ bản đầu, giữ phần còn lại."""
+    lg = logging.getLogger("thu_nghiem_drop")
+    lg.handlers.clear()
+    lg.setLevel(logging.DEBUG)
+    ghi = []
+    h = logging.StreamHandler()
+    h.emit = lambda rec: ghi.append(rec.getMessage())
+    lg.addHandler(h)
+
+    progress.drop_from_console(lg, name="thu_nghiem_drop.engine",
+                               startswith="Exception during training")
+    con = logging.getLogger("thu_nghiem_drop.engine")
+    con.error("Exception during training:\nTraceback ...")
+    con.error("Một lỗi khác hẳn")
+    lg.error("Exception during training: nhưng của logger khác tên")
+
+    assert ghi == ["Một lỗi khác hẳn",
+                   "Exception during training: nhưng của logger khác tên"]
+    lg.handlers.clear()
+
+
+def test_drop_from_console_khong_dung_den_file(tmp_path):
+    """Bản đầy đủ vẫn phải nằm trong d2/log.txt."""
+    lg = logging.getLogger("thu_nghiem_drop_file")
+    lg.handlers.clear()
+    lg.setLevel(logging.DEBUG)
+    f = tmp_path / "log.txt"
+    fh = logging.FileHandler(f, encoding="utf-8")
+    fh.setFormatter(logging.Formatter("%(message)s"))
+    lg.addHandler(fh)
+
+    progress.drop_from_console(lg, name="thu_nghiem_drop_file",
+                               startswith="Exception during training")
+    lg.error("Exception during training: giữ trong file")
+    fh.close()
+    lg.handlers.clear()
+    assert "giữ trong file" in f.read_text(encoding="utf-8")
