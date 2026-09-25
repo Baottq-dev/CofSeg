@@ -262,21 +262,35 @@ def test_bang_backbone_co_r50_va_mo_ta(model):
     for arch, o in bang.items():
         assert o, f"{model}/{arch}: không có backbone nào"
         for ten, spec in o.items():
-            assert spec.get("config"), f"{model}/{arch}/{ten}: thiếu config"
+            assert spec.get("config") or spec.get("lazy"), \
+                f"{model}/{arch}/{ten}: không có config yaml lẫn LazyConfig"
+            assert not (spec.get("config") and spec.get("lazy")), \
+                f"{model}/{arch}/{ten}: khai cả hai đường dựng model"
             assert spec.get("note"), f"{model}/{arch}/{ten}: thiếu note cho --list-backbones"
     goc = "r50" if model != "maskrcnn" else "r50"
     assert goc in bang[list(bang)[0]], f"{model}: bảng không còn {goc}"
 
 
-def test_backbone_detectron2_la_yaml_khong_phai_lazyconfig():
-    """`new_baselines` LSJ mạnh hơn nhưng là LazyConfig .py: get_cfg() +
-    merge_from_file không nạp được, phải chạy lazyconfig_train_net. Đưa nhầm
-    một file .py vào bảng thì lỗi chỉ hiện ra trên máy thuê."""
+def test_backbone_detectron2_dung_dung_duong_dung_model():
+    """Hai đường dựng model, và mỗi ô phải nói rõ nó đi đường nào.
+
+    `config` là yaml -> get_cfg() + merge_from_file, DefaultTrainer dựng model.
+    `lazy` là LazyConfig .py -> trainer instantiate model rồi giao lại.
+    Nhầm đường thì lỗi chỉ hiện ra trên máy thuê: merge_from_file gặp file .py
+    là gãy ngay, còn instantiate một yaml thì không có gì để instantiate.
+    """
     for model in ("maskrcnn", "mask2former"):
         for arch, o in _bang_backbone(model).items():
             for ten, spec in o.items():
-                assert spec["config"].endswith(".yaml"), \
-                    f"{model}/{arch}/{ten}: {spec['config']} không phải config yaml"
+                if spec.get("lazy"):
+                    assert spec["lazy"].endswith(".py"), f"{model}/{arch}/{ten}"
+                    # Recipe của bản lazy khác hẳn R-CNN; thiếu một mảnh là
+                    # lặng lẽ train ViT bằng SGD 0.02 hoặc bằng kênh BGR.
+                    assert {"vit", "optim", "input_format", "checkpoint"} <= set(spec), \
+                        f"{model}/{arch}/{ten}: ô LazyConfig thiếu phần recipe"
+                else:
+                    assert spec["config"].endswith(".yaml"), \
+                        f"{model}/{arch}/{ten}: {spec['config']} không phải config yaml"
 
 
 def test_backbone_mmdet_deu_co_trong_so_coco():

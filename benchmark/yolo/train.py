@@ -85,12 +85,10 @@ def main() -> int:
         action="store_true",
         help="run.log gộp mỗi dòng một lần và bỏ mã màu (mặc định: chép nguyên văn)",
     )
-    ap.add_argument("--backbone", default=None, metavar="TÊN",
-                    help="đổi backbone, vd r101 — xem --list-backbones")
     ap.add_argument("--model", default=None, metavar="TÊN",
-                    help="đổi phiên bản/cỡ model (họ YOLO), vd yolo11m-seg")
-    ap.add_argument("--list-backbones", dest="list_backbones", action="store_true",
-                    help="liệt kê backbone dùng được với config này rồi dừng")
+                    help="đổi phiên bản/cỡ model, vd yolo11m-seg — xem --list-models")
+    ap.add_argument("--list-models", dest="list_models", action="store_true",
+                    help="liệt kê phiên bản và cỡ có trọng số COCO rồi dừng")
     ap.add_argument("--data", default=None, metavar="THƯ_MỤC_FOLD",
                     help="thư mục fold, vd data/export/block/f1 — viết thẳng ra để "
                          "nhìn lệnh là biết đang train fold nào")
@@ -116,8 +114,8 @@ def main() -> int:
     trainer_cls = resolve("trainer", cfg["trainer"])
     locked = trainer_cls.locked_params()
 
-    if a.list_backbones:
-        print(trainer_cls.describe_backbones(cfg))
+    if a.list_models:
+        print(trainer_cls.describe_models(cfg))
         return 0
 
     # Đổi kiến trúc phải xong TRƯỚC khi đọc khối train: và trước khi đặt tên
@@ -126,11 +124,7 @@ def main() -> int:
     # parse_overrides.
     if a.limit is not None:
         cfg.setdefault("data", {})["limit"] = int(a.limit)
-    goi_y = None
-    if a.backbone:
-        goi_y = trainer_cls.apply_backbone(cfg, a.backbone)
-    if a.model:
-        goi_y = trainer_cls.apply_model(cfg, a.model)
+    goi_y = trainer_cls.apply_model(cfg, a.model) if a.model else None
 
     if a.list_params:
         d = trainer_cls.param_defaults()

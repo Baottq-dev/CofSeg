@@ -217,7 +217,8 @@ def test_checkpoint_mask2former_khop_model_zoo():
     noi_dung = zoo.read_text(encoding="utf-8")
     src = (BENCH / "mask2former" / "cofseg" / "training" / "detectron2.py").read_text(
         encoding="utf-8")
-    urls = re.findall(r'"(https://dl\.fbaipublicfiles\.com/\S+?)"\s*\n?\s*"?(\S*\.pkl)"',
+    # Chỉ URL của Mask2Former: bảng còn chứa ViTDet, thuộc model zoo khác.
+    urls = re.findall(r'"(https://dl\.fbaipublicfiles\.com/maskformer/\S+?)"\s*\n?\s*"?(\S*\.pkl)"',
                       src)
     urls = [a + b for a, b in urls]
     assert len(urls) >= 7, f"mask2former: bảng backbone chỉ có {len(urls)} trọng số"

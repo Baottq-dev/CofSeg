@@ -122,7 +122,8 @@ class Trainer(ABC):
         dong = [f"{len(bang)} backbone dùng được với arch {arch!r}:", ""]
         for k in sorted(bang):
             spec = bang[k]
-            dong.append(f"  {k:<{rong}}  {spec.get('note', spec['config'])}")
+            mo_ta = spec.get("note") or spec.get("config") or spec.get("lazy") or ""
+            dong.append(f"  {k:<{rong}}  {mo_ta}")
         return "\n".join(dong)
 
     # ------------------------------------------------------------------ tham số

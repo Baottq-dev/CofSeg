@@ -113,6 +113,9 @@ class YoloTrainer(Trainer):
 
     @classmethod
     def apply_backbone(cls, cfg: dict, name: str) -> str:
+        """Giữ lại để hợp đồng Trainer đủ, nhưng benchmark/yolo/train.py KHÔNG
+        khai cờ --backbone: một cờ hiện trong --help mà luôn báo lỗi là nhiễu,
+        không phải tính năng. Ai gọi thẳng vào đây thì vẫn được nói vì sao."""
         raise SystemExit(
             "YOLO không đổi backbone được: backbone của nó gắn liền với kiến "
             "trúc, không có chỗ cắm ResNet vào. Thứ đổi được là PHIÊN BẢN và "
@@ -120,12 +123,18 @@ class YoloTrainer(Trainer):
         )
 
     @classmethod
-    def describe_backbones(cls, cfg: dict) -> str:
-        dong = ["YOLO không đổi backbone được; đổi phiên bản/cỡ bằng --model:", ""]
+    def describe_models(cls, cfg: dict) -> str:
+        """Nội dung của --list-models, cờ riêng của thư mục này."""
+        dong = ["Phiên bản và cỡ có trọng số COCO, đổi bằng --model:", ""]
         for ho, cac_co in cls.SCALES.items():
             dong.append(f"  {ho:<8} {' '.join(f'{ho}{c}-seg' for c in cac_co)}")
-        dong += ["", "Thiếu file thì ultralytics tự tải bản phát hành COCO về weights/."]
+        dong += ["", "Thiếu file thì ultralytics tự tải bản phát hành COCO về weights/.",
+                 "Backbone thì không đổi được — xem apply_backbone."]
         return "\n".join(dong)
+
+    @classmethod
+    def describe_backbones(cls, cfg: dict) -> str:
+        return cls.describe_models(cfg)
 
     @classmethod
     def apply_model(cls, cfg: dict, name: str) -> str:
