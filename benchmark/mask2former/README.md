@@ -93,12 +93,34 @@ checkout <commit>` rồi commit ở repo ngoài — git ghi lại commit mới c
 
 ## Trạng thái
 
-- **Chưa chạy thật lần nào.** Cần máy Linux: detectron2 build từ source + repo
-  Mask2Former (submodule `benchmark/mask2former/upstream`) + op `MSDeformAttn` biên
-  dịch tại chỗ — `scripts/setup_env.py` làm hết. Việc đầu tiên, một lượt khói:
+- **24/09: chạy thật lần đầu trên máy lab, OOM ngay iteration 1 ở `--batch 16`.**
+  Không phải sự cố ngẫu nhiên, và biết trước được. Hai nguyên nhân cộng lại:
+
+  1. `--skip-cuda-build` nên op `MSDeformAttn` không có kernel CUDA. Mã gốc
+     bọc lời gọi trong `try/except` trần: mỗi forward ném `AttributeError:
+     'NoneType' object has no attribute 'ms_deform_attn_forward'` rồi rơi
+     xuống `ms_deform_attn_core_pytorch`. Đường dự phòng đó **hiện vật hoá**
+     một tensor mà kernel CUDA không bao giờ dựng:
+
+     ```
+     torch.stack(sampling_value_list, dim=-2)   # (N*M, D, Lq, L, P)
+     16*8 x 32 x 21504 x 3*4 x 4 byte = 3.94 GiB
+     ```
+
+     Đúng con số trong `Tried to allocate 3.94 GiB`. Encoder có **6 lớp** và
+     autograd giữ lại cho backward, nên riêng khoản này ~23.6 GiB. Chạy một
+     mình trên 4090 24 GB cũng không đủ. (`Lq = 128² + 64² + 32² = 21504` ở ô
+     LSJ 1024x1024; MSDeformAttn chạy fp32 vì `@autocast(enabled=False)`.)
+
+  2. Recipe gốc là **batch 16 trên 8 GPU**, tức 2 ảnh mỗi GPU. Dồn cả 16 vào
+     một card là gấp 8 lần bộ nhớ mỗi GPU so với recipe.
+
+  Nên **batch 2–4** cho model này trên một card, và xác nhận bằng `--probe`
+  trước khi đặt lịch chạy dài. Batch khác ba model kia thì phải ghi vào bảng
+  kết quả, vì nó ảnh hưởng tới cả tốc độ lẫn chất lượng.
 
   ```bash
-  python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/block/f1 --set data.limit=16 --epochs 1
+  python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/block/f1 --imgsz 1024 --batch 4 --probe
   ```
 - Tốn giờ nhất trong bốn model: recipe **100 epoch**, gấp đôi Mask R-CNN và
   SOLOv2, ước ~2–3 h một fold trên 4090 — riêng nó chiếm khoảng 59 % tổng giờ
