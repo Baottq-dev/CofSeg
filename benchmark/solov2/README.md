@@ -84,12 +84,12 @@ hoặc `f1` — có ba chỗ trong khối lệnh, sửa hết cả ba. Hai bộ 
 
 ```bash
 # 1. huấn luyện — chỉ train + val, không đụng tới split test
-#    (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
+#    (thêm --limit 16 --epochs 1 để khói, kiểm đường chạy trước)
 python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --data data/export/block/f1 --runs benchmark/solov2/runs --name solov2 --workers 8
 
 # 2. chấm test bằng trọng số tốt nhất
 RUN=$(ls -td benchmark/solov2/runs/train/*_solov2_block-f1_* | head -1)
-python benchmark/solov2/evaluate.py --config benchmark/solov2/configs/eval/solov2_r50_mm.yaml --set model.weights="$RUN/weights/best.pth" --data data/export/block/f1 --split test --runs benchmark/solov2/runs --name solov2
+python benchmark/solov2/evaluate.py --config benchmark/solov2/configs/eval/solov2_r50_mm.yaml --weights "$RUN/weights/best.pth" --data data/export/block/f1 --split test --runs benchmark/solov2/runs --name solov2
 
 # 3. dự đoán + kết quả nhỏ
 EV=$(ls -td benchmark/solov2/runs/eval/*_solov2_block-f1_* | head -1)
@@ -142,53 +142,68 @@ python benchmark/solov2/evaluate.py \
   --config benchmark/solov2/configs/eval/solov2_r50_mm.yaml \
   --data data/export/field/f1 --split test \
   --runs benchmark/solov2/runs --name solov2 \
-  --set model.weights=benchmark/solov2/runs/train/<...>/weights/best.pth \
-  --set model.conf=0.05 --set model.max_det=100 \
-  --set eval.iou_thr=0.5 --set eval.band_ratio=0.02 \
-  --set eval.dilation_ratio=0.02 --set eval.nsd_tau=2.0
+  --weights benchmark/solov2/runs/train/<...>/weights/best.pth \
+  --conf 0.05 --max_det 100 \
+  --iou-thr 0.5 --band-ratio 0.02 \
+  --dilation-ratio 0.02 --nsd-tau 2.0
 ```
 
-`--set model.*` đi vào khối `model:` của config chấm, `--set eval.*` vào khối
-`eval:`. Bốn khoá `eval:` là định nghĩa của phép đo, đổi chúng là số không so
-được với ba model kia nữa: `iou_thr` ngưỡng ghép cặp, `band_ratio` bề rộng
-vành biên theo cỡ tán, `dilation_ratio` bề rộng vành của Boundary AP (2%
-đường chéo ảnh, đúng bài báo), `nsd_tau` dung sai của NSD.
+Mọi tham số ở đây là **cờ thật**, không qua `--set`: `--weights` trọng số của
+lần train, `--conf`/`--max_det` (và các khoá khác của lớp model) đi vào khối
+`model:`, còn `--iou-thr`/`--band-ratio`/`--dilation-ratio`/`--nsd-tau` đi vào
+khối `eval:`. Bốn khoá `eval:` là định nghĩa của phép đo, đổi chúng là số
+không so được với ba model kia nữa: `iou_thr` ngưỡng ghép cặp, `band_ratio`
+bề rộng vành biên theo cỡ tán, `dilation_ratio` bề rộng vành của Boundary AP
+(2% đường chéo ảnh, đúng bài báo), `nsd_tau` dung sai của NSD.
 
 ### Đổi backbone
 
-R50 là mặc định vì ba model dùng chung nó, nhờ vậy chênh lệch giữa chúng quy
-về cơ chế. Đổi backbone ở **một** model là mất tính chất đó — đổi thì đổi cả
-ba, hoặc báo cáo riêng như thí nghiệm phụ.
+`--backbone <tên>` đổi backbone ngay trên dòng lệnh; `--list-backbones` in
+bảng lựa chọn kèm mask AP trên COCO rồi thoát:
 
-Model này vướng hơn hai model detectron2: config zoo ghim trong `ZOO` của
-`cofseg/training/mmdet.py`, còn `model.config` là file **ghi đè**. Nên cách
-gọn là thêm một arch vào `ZOO`:
-
-```python
-    "solov2_r101_dcn": dict(
-        config="solov2/solov2_r101-dcn_fpn_ms-3x_coco.py",
-        checkpoint="https://download.openmmlab.com/mmdetection/v2.0/solov2/"
-                   "solov2_r101_dcn_fpn_3x_coco/solov2_r101_dcn_fpn_3x_coco_20220513_214734-16c966cb.pth",
-        overrides="configs/mmdet/solov2_r50_coffee.py",   # dùng lại: chỉ đặt num_classes
-        lr=0.01,
-    ),
+```bash
+python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --list-backbones
 ```
 
-rồi `--set model.arch=solov2_r101_dcn`.
-
-Bốn backbone OpenMMLab có phát hành **trọng số COCO**, tra từ
-`configs/solov2/metafile.yml` của mmdet 3.3.0:
-
-| arch | config | ghi chú |
+| `--backbone` | mask AP COCO | ghi chú |
 |---|---|---|
-| R50 | `solov2_r50_fpn_ms-3x_coco.py` | đang dùng |
-| R101-DCN | `solov2_r101-dcn_fpn_ms-3x_coco.py` | deformable conv, nặng hơn |
-| X101-DCN | `solov2_x101-dcn_fpn_ms-3x_coco.py` | nặng nhất |
-| R18 / R50 light | `solov2-light_*_fpn_ms-3x_coco.py` | nhẹ, mask stride thô hơn |
+| `r50` | 37,5 | mặc định, cùng backbone với ba model kia |
+| `r101-dcn` | 41,2 | R101 **cộng** deformable conv — hai thay đổi cùng lúc |
+| `x101-dcn` | 42,4 | nặng nhất, `--probe` trước |
+| `light-r18` | 29,7 | bản nhẹ, mask stride thô hơn |
+| `light-r50` | 33,7 | bản nhẹ, mask stride thô hơn |
 
-Có `solov2_r101_fpn_ms-3x_coco.py` (R101 **không** DCN) nhưng metafile không
-kèm trọng số COCO nào cho nó — chọn bản đó là khởi đầu từ ImageNet, tức không
-so được với ba model kia vốn đều bắt đầu từ COCO.
+Số lấy từ `configs/solov2/metafile.yml` của mmdet 3.3.0. File ghi đè của nhóm
+(`configs/mmdet/solov2_r50_coffee.py`) chỉ đặt `num_classes` và ngưỡng test
+nên dùng chung được cho mọi backbone.
+
+```bash
+python benchmark/solov2/train.py \
+  --config benchmark/solov2/configs/train/solov2_r50_mm.yaml \
+  --data data/export/field/f1 --runs benchmark/solov2/runs \
+  --backbone r101-dcn --workers 8
+```
+
+Không cần `--name`: thiếu nó thì tên thư mục run lấy theo backbone
+(`solov2-r101-dcn`), nên hai backbone không rơi vào cùng một tên thư mục.
+
+**SOLOv2 không có R101 thường.** Có config `solov2_r101_fpn_ms-3x_coco.py`
+nhưng metafile không kèm trọng số COCO nào cho nó — chọn bản đó là khởi đầu từ
+ImageNet, tức không so được với ba model kia vốn đều bắt đầu từ COCO. Muốn đi
+lên R101 thì phải nhận thêm deformable conv làm biến thứ hai, và nói ra điều
+đó khi báo cáo.
+
+**Đọc cái này trước khi đổi.** Sáu lượt R50 trên `field/f1..f6` cho AP50
+trung bình **92,5** nhưng AP chỉ **64,6**, và epoch tốt nhất rơi vào **16–23**
+trên ngân sách 50. Việc *tìm* tán gần như xong; chỗ mất điểm nằm ở IoU cao,
+tức chất lượng đường biên, và model đã bão hoà trước khi hết lịch. Backbone
+sâu hơn mua chủ yếu AP50 — thứ đang còn ít dư địa nhất — và thêm tham số vào
+một bộ 453 ảnh train thì bão hoà còn sớm hơn.
+
+Đổi backbone ở **một** model cũng làm mất tính chất "bốn model cùng R50 nên
+chênh lệch quy về cơ chế". Mà đổi đồng bộ cả bốn thì không làm được: YOLO
+không có backbone để đổi, còn SOLOv2 không có trọng số COCO cho R101 thường.
+Nên để phần này **ngoài bảng chính**, báo cáo riêng như thí nghiệm phụ.
 
 ## Trong thư mục này
 
@@ -212,7 +227,7 @@ không còn so được với ba model kia. Sửa thì báo nhóm.
   kiểm được phần dựng config. Việc đầu tiên trên máy Linux, một lượt khói:
 
   ```bash
-  python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --data data/export/block/f1 --set data.limit=16 --epochs 1
+  python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --data data/export/block/f1 --limit 16 --epochs 1
   ```
 - Khác biệt có chủ đích so với hai model detectron2: **không có xoay 90°**
   (mmdet không có transform sẵn cho mask + box), chỉ lật ngang/dọc/chéo. Nhớ

@@ -14,7 +14,7 @@ import pytest
 
 from cofseg.training.mmdet import (
     ARCHS, CLASSES, MM_DEFAULTS, ZOO, MMDetTrainer, build_overrides, flip_transform,
-    iters_per_epoch, load_config,
+    iters_per_epoch, load_config, ZOO_BACKBONES,
 )
 
 SPLITS = {"train": "train", "val": "val", "test": "test"}
@@ -90,7 +90,21 @@ def test_bad_inputs_fail_early():
         _over(0)
     with pytest.raises(ValueError, match="arch"):
         MMDetTrainer({"model": {"arch": "condinst"}}, "x")
-    assert set(ZOO) == set(ARCHS) and all({"config", "checkpoint", "overrides", "lr"} <= set(v) for v in ZOO.values())
+    with pytest.raises(ValueError, match="backbone"):
+        MMDetTrainer({"model": {"arch": "solov2", "backbone": "r101"}}, "x")
+    assert set(ZOO) == set(ARCHS)
+    assert all({"backbone", "overrides", "lr"} <= set(v) for v in ZOO.values())
+    # Mỗi arch phải có bảng backbone, backbone mặc định phải nằm trong bảng,
+    # và mỗi ô phải đủ config + checkpoint để chạy được ngay.
+    assert set(ZOO_BACKBONES) == set(ARCHS)
+    for arch, bang in ZOO_BACKBONES.items():
+        assert ZOO[arch]["backbone"] in bang
+        for ten, spec in bang.items():
+            assert {"config", "checkpoint"} <= set(spec), f"{arch}/{ten}"
+            assert spec["checkpoint"].startswith("https://"), f"{arch}/{ten}"
+    # R101 KHÔNG DCN không có trọng số COCO trong metafile của mmdet; đưa nó
+    # vào bảng là lặng lẽ khởi đầu từ ImageNet.
+    assert "r101" not in ZOO_BACKBONES["solov2"]
 
 
 def test_trainer_contract_and_run_tag():

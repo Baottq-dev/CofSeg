@@ -4,15 +4,17 @@
 #     python benchmark/solov2/evaluate.py --config benchmark/solov2/configs/eval/solov2_r50_mm.yaml
 """Chấm một model trên một split, qua một đường chung cho mọi model.
 
-    python benchmark/solov2/evaluate.py --config benchmark/solov2/configs/eval/solov2_r50_mm.yaml --set model.weights=<best.pt>
-    python benchmark/solov2/evaluate.py --config benchmark/solov2/configs/eval/solov2_r50_mm.yaml --set model.weights=<best.pt>
+    python benchmark/solov2/evaluate.py --config benchmark/solov2/configs/eval/solov2_r50_mm.yaml --weights <best.pt>
+    python benchmark/solov2/evaluate.py --config benchmark/solov2/configs/eval/solov2_r50_mm.yaml --weights <best.pt> --data data/export/field/f1 --split test
     python benchmark/solov2/evaluate.py --config benchmark/solov2/configs/eval/solov2_r50_mm.yaml --size t --limit 5
     python benchmark/solov2/evaluate.py --config benchmark/solov2/configs/eval/_coco.yaml --file preds/cascade.json
 
 Config có ba khối: `model:` (name trong sổ đăng ký + tham số khởi tạo, lồng
 nhau được), `data:` (root, split, min_area), `eval:` (ngưỡng ghép, vành biên).
-Ghi đè: `--k v` đi vào khối model (kiểm tên theo chữ ký hàm khởi tạo, gõ sai
-thì báo lỗi), `--set a.b.c=v` cho khoá lồng nhau bất kỳ, `--split`, `--limit`.
+Ghi đè bằng cờ thật: `--weights` (trọng số của lần train), `--data` (thư mục
+fold), `--split`, `--limit`, và `--k v` cho tham số khởi tạo model (kiểm tên
+theo chữ ký hàm khởi tạo, gõ sai thì báo lỗi). `--set a.b.c=v` vẫn còn làm lối
+thoát cho khoá lồng nhau chưa có cờ riêng, nhưng lệnh thường ngày không cần.
 
 Điểm chấm: Mask AP và Boundary AP bằng pycocotools (bản tham chiếu mà
 detectron2, mmdet, torchvision và ultralytics đều gọi bên dưới), cộng chỉ số
@@ -69,8 +71,24 @@ def run_config(a, extra: list[str]) -> int:
     cfg = cfgmod.load(a.config, overrides)
     if "model" not in cfg or "name" not in cfg["model"]:
         raise SystemExit(f"config cần khối model: {{name: ...}}. Model có: {available('model')}")
+    # Trọng số là thứ đổi mỗi lần chấm, nên nó là cờ chứ không phải --set.
+    if a.weights:
+        cfg["model"]["weights"] = str(a.weights).replace("\\", "/")
     name = cfg["model"]["name"]
     hp = cli.parse_overrides(extra, model_param_names(name), what=f"model {name!r}")
+    # Bốn cờ dùng chung với đường --native: kiểm theo chữ ký của chính lớp
+    # model rồi mới nhận, chứ không im lặng bỏ qua. `--imgsz` với detectron2
+    # là ví dụ: nó không có tham số đó, độ phân giải nằm trong d2_config.yaml
+    # cạnh trọng số.
+    nhan = model_param_names(name)
+    for k, v in (("imgsz", a.imgsz), ("batch", a.batch),
+                 ("max_det", a.max_det), ("device", a.device)):
+        if v is None:
+            continue
+        if nhan is not None and k not in nhan:
+            raise SystemExit(f"--{k.replace('_', '-')} không phải đối số của model "
+                             f"{name!r}; nó chỉ dùng cho --native.")
+        hp[k] = v
     cfg["model"].update(hp)
 
     data = {"root": "data/export/block/f4", "split": "test", "min_area": 50.0,
@@ -78,6 +96,12 @@ def run_config(a, extra: list[str]) -> int:
     if a.split:
         data["split"] = a.split
     ev = {**EVAL_DEFAULTS, **(cfg.get("eval") or {})}
+    # Bốn ngưỡng chấm là cờ thật: đổi chúng là đổi ý nghĩa con số, nên chúng
+    # phải hiện ra trong --help chứ không nấp trong --set.
+    for k in ("iou_thr", "band_ratio", "nsd_tau", "dilation_ratio"):
+        v = getattr(a, k, None)
+        if v is not None:
+            ev[k] = float(v)
     limit = a.limit if a.limit is not None else ev.get("limit")
 
     run_name = a.name or cfg.get("name") or Path(a.config).stem
@@ -165,9 +189,12 @@ def run_native(a, extra: list[str]) -> int:
         raise SystemExit(f"Không thấy {data}. Cắt fold trước: scripts/make_fold.py --export <bản xuất> --all")
     kw = cli.parse_overrides(extra, set(vars(get_cfg())), NATIVE_LOCKED, what="val()")
     split = a.split or "test"
+    # Mặc định của riêng đường native; cờ để None để đường config phân biệt
+    # được "không gõ" với "gõ đúng bằng mặc định".
+    imgsz, batch, max_det = a.imgsz or 1024, a.batch or 4, a.max_det or 100
 
     src = weights.parent.parent.parent.name
-    run_dir = artifacts.create_run_dir(a.runs, "eval", a.name or src, f"native_{split}_i{a.imgsz}")
+    run_dir = artifacts.create_run_dir(a.runs, "eval", a.name or src, f"native_{split}_i{imgsz}")
     artifacts.write_env(run_dir)
     (run_dir / "config.json").write_text(
         json.dumps({**vars(a), **kw}, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
@@ -179,8 +206,8 @@ def run_native(a, extra: list[str]) -> int:
             if kw:
                 print("Ghi đè từ dòng lệnh:", json.dumps(kw, ensure_ascii=False))
             out = validate(
-                weights, data, split=split, imgsz=a.imgsz, batch=a.batch,
-                max_det=a.max_det, device=a.device, run_dir=run_dir, **kw,
+                weights, data, split=split, imgsz=imgsz, batch=batch,
+                max_det=max_det, device=a.device, run_dir=run_dir, **kw,
             )
             (run_dir / "metrics.json").write_text(
                 json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -198,27 +225,46 @@ def run_native(a, extra: list[str]) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+        # Không cho viết tắt. Mặc định của argparse nhận mọi tiền tố không
+        # nhập nhằng, nên `--conf 0.05` bị nuốt thành `--config 0.05` và lỗi
+        # hiện ra ở tận chỗ mở file. Siêu tham số của model phải rơi xuống
+        # parse_known_args để đi đúng đường kiểm tên.
+        allow_abbrev=False,
     )
     ap.add_argument("--config", help="config đánh giá (đường chung)")
     ap.add_argument("--set", dest="overrides", action="append", default=[],
-                    help="ghi đè khoá lồng nhau, vd --set model.weights=... ")
+                    help="lối thoát cho khoá lồng nhau chưa có cờ riêng, "
+                         "vd --set eval.limit=5")
     ap.add_argument("--split", default=None, help="train | val | test (mặc định theo config)")
     ap.add_argument("--limit", type=int, default=None, help="chỉ chấm N ảnh đầu")
     ap.add_argument("--native", action="store_true",
                     help="chấm bằng model.val() của ultralytics (chỉ YOLO)")
-    ap.add_argument("--weights", default=None, help="[native] best.pt / last.pt")
+    ap.add_argument("--weights", default=None, metavar="ĐƯỜNG_DẪN",
+                    help="trọng số của lần train, vd <run>/weights/best.pth")
     ap.add_argument("--data", default=None, metavar="THƯ_MỤC_FOLD",
-                    help="thư mục fold, vd data/export/block/f1 — thay cho --set data.root=")
+                    help="thư mục fold, vd data/export/block/f1 — viết thẳng ra, "
+                         "nhìn lệnh là biết đang chấm fold nào")
     ap.add_argument("--native-data", dest="native_data",
                     default="data/export/block/f4/data.yaml", help="[native] data.yaml")
-    ap.add_argument("--imgsz", type=int, default=1024, help="[native]")
-    ap.add_argument("--batch", type=int, default=4, help="[native]")
-    # [native] max_det=300 mặc định của ultralytics làm tràn VRAM ở khâu val: nó
-    # phóng TẤT CẢ mặt nạ về 2560x1440 trước khi chấm (~4.4 GB một phép nội suy).
+    # Bốn cờ dùng chung hai đường chấm. Mặc định để None: trên đường config
+    # chúng đi vào khối `model:` và chỉ khi người chạy THỰC SỰ gõ ra, nếu
+    # không thì giá trị trong config mới là thứ quyết định.
+    ap.add_argument("--imgsz", type=int, default=None)
+    ap.add_argument("--batch", type=int, default=None)
+    # max_det=300 mặc định của ultralytics làm tràn VRAM ở khâu val: nó phóng
+    # TẤT CẢ mặt nạ về 2560x1440 trước khi chấm (~4.4 GB một phép nội suy).
     # Ảnh dày nhất của bộ này có 48 vùng, nên 100 đã dư gấp đôi.
-    ap.add_argument("--max-det", type=int, default=100, help="[native]")
-    ap.add_argument("--device", default=None, help="[native]")
+    ap.add_argument("--max-det", dest="max_det", type=int, default=None)
+    ap.add_argument("--device", default=None)
+    ap.add_argument("--iou-thr", dest="iou_thr", type=float, default=None,
+                    help="ngưỡng IoU mặt nạ để ghép dự đoán với vùng thật (bảng từng vùng)")
+    ap.add_argument("--band-ratio", dest="band_ratio", type=float, default=None,
+                    help="vành Boundary IoU từng vùng, theo cạnh hình vuông cùng diện tích")
+    ap.add_argument("--nsd-tau", dest="nsd_tau", type=float, default=None,
+                    help="dung sai NSD, px")
+    ap.add_argument("--dilation-ratio", dest="dilation_ratio", type=float, default=None,
+                    help="vành Boundary AP, theo đường chéo ảnh")
     ap.add_argument("--runs", default="runs")
     ap.add_argument("--name", default=None)
     a, extra = ap.parse_known_args()

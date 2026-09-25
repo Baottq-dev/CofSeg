@@ -1,11 +1,12 @@
 """Trainer mmdetection: SOLOv2 R50-FPN — cùng benchmark/solov2/train.py, cùng khối
 `train:` với các trainer kia.
 
-    python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --set data.root=data/export/block/f4
+    python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --data data/export/block/f4
     python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --probe
 
 Cách nối vào mmdet: nạp config zoo đóng gói trong gói mmdet (không clone repo),
 gộp phần ghi đè model trong thư mục người phụ trách (ZOO[arch]["overrides"]),
+đổi backbone bằng cách trỏ sang config zoo khác (ZOO_BACKBONES),
 rồi tự sinh khối dữ
 liệu / lịch học / hook từ `train:` (build_overrides — thuần Python, có test).
 Vòng lặp là mmengine Runner. CHỈ train và val: không đụng tới split test —
@@ -85,14 +86,55 @@ MM_DEFAULTS: dict = {
     # chính khung; lúc train bình thường thì phần lớn số dòng là hai dump đó.
     "verbose": False,
 }
-#: arch -> config zoo trong gói mmdet, checkpoint COCO (cùng URL trong
-#: configs/weights.yaml), file ghi đè model trong thư mục người phụ trách,
-#: lr gốc @ batch 16.
+#: Gốc URL model zoo của OpenMMLab; mọi checkpoint SOLOv2 nằm dưới đây.
+U = "https://download.openmmlab.com/mmdetection/v2.0/solov2/"
+
+#: arch -> backbone -> config zoo trong gói mmdet + checkpoint COCO.
+#:
+#: Chỉ những bản mà metafile của mmdet CÓ phát hành trọng số COCO. Có một
+#: config `solov2_r101_fpn_ms-3x_coco.py` (R101 không DCN) nhưng metafile
+#: không kèm checkpoint nào cho nó — chọn bản đó là khởi đầu từ ImageNet, tức
+#: không so được với ba model kia vốn đều bắt đầu từ COCO. Vì vậy SOLOv2
+#: KHÔNG có R101 thường: muốn đi lên R101 thì phải nhận thêm deformable conv
+#: làm biến thứ hai.
+#:
+#: mask AP lấy từ configs/solov2/metafile.yml của mmdet 3.3.0.
+ZOO_BACKBONES = {
+    "solov2": {
+        "r50": dict(
+            config="solov2/solov2_r50_fpn_ms-3x_coco.py",
+            checkpoint=U + "solov2_r50_fpn_3x_coco/"
+                           "solov2_r50_fpn_3x_coco_20220512_125856-fed092d4.pth",
+            note="mask AP 37.5 — mặc định, cùng backbone với ba model kia"),
+        "r101-dcn": dict(
+            config="solov2/solov2_r101-dcn_fpn_ms-3x_coco.py",
+            checkpoint=U + "solov2_r101_dcn_fpn_3x_coco/"
+                           "solov2_r101_dcn_fpn_3x_coco_20220513_214734-16c966cb.pth",
+            note="mask AP 41.2 — R101 CỘNG deformable conv, hai thay đổi cùng lúc"),
+        "x101-dcn": dict(
+            config="solov2/solov2_x101-dcn_fpn_ms-3x_coco.py",
+            checkpoint=U + "solov2_x101_dcn_fpn_3x_coco/"
+                           "solov2_x101_dcn_fpn_3x_coco_20220513_214337-aef41095.pth",
+            note="mask AP 42.4 — nặng nhất, dò --probe trước"),
+        "light-r18": dict(
+            config="solov2/solov2-light_r18_fpn_ms-3x_coco.py",
+            checkpoint=U + "solov2_light_r18_fpn_3x_coco/"
+                           "solov2_light_r18_fpn_3x_coco_20220511_083717-75fa355b.pth",
+            note="mask AP 29.7 — bản nhẹ, mask stride thô hơn"),
+        "light-r50": dict(
+            config="solov2/solov2-light_r50_fpn_ms-3x_coco.py",
+            checkpoint=U + "solov2_light_r50_fpn_3x_coco/"
+                           "solov2_light_r50_fpn_3x_coco_20220512_165256-c93a6074.pth",
+            note="mask AP 33.7 — bản nhẹ, mask stride thô hơn"),
+    },
+}
+
+#: arch -> file ghi đè model trong thư mục người phụ trách (chỉ đặt num_classes
+#: và ngưỡng test nên dùng được cho mọi backbone), backbone mặc định, lr gốc
+#: @ batch 16.
 ZOO = {
     "solov2": dict(
-        config="solov2/solov2_r50_fpn_ms-3x_coco.py",
-        checkpoint="https://download.openmmlab.com/mmdetection/v2.0/solov2/solov2_r50_fpn_3x_coco/"
-                   "solov2_r50_fpn_3x_coco_20220512_125856-fed092d4.pth",
+        backbone="r50",
         overrides="configs/mmdet/solov2_r50_coffee.py",
         lr=0.01,
     ),
@@ -281,14 +323,24 @@ def iters_per_epoch(n_train: int, batch: int) -> int:
     return math.ceil(n_train / max(1, int(batch)))
 
 
-def load_config(arch: str, overrides: dict, config_file: str | None = None):
+def zoo_spec(arch: str, backbone: str | None = None) -> dict:
+    """Ô (arch, backbone) trong ZOO_BACKBONES, kèm báo lỗi liệt kê lựa chọn."""
+    bang = ZOO_BACKBONES[arch]
+    ten = backbone or ZOO[arch]["backbone"]
+    if ten not in bang:
+        raise ValueError(f"backbone {ten!r} không có với {arch}; có: {', '.join(sorted(bang))}")
+    return bang[ten]
+
+
+def load_config(arch: str, overrides: dict, config_file: str | None = None,
+                backbone: str | None = None):
     """Config zoo + file ghi đè của model + overrides -> mmengine Config.
 
     Cần mmengine (thuần Python, có ở nhà); không cần mmcv.
     """
     from mmengine.config import Config
 
-    cfg = Config.fromfile(str(zoo_config(ZOO[arch]["config"])))
+    cfg = Config.fromfile(str(zoo_config(zoo_spec(arch, backbone)["config"])))
     over = Path(config_file) if config_file else MEMBER_ROOT / ZOO[arch]["overrides"]
     if not over.exists():
         raise FileNotFoundError(f"Không thấy file ghi đè model {over}")
@@ -299,6 +351,29 @@ def load_config(arch: str, overrides: dict, config_file: str | None = None):
 
 @register("trainer", "mmdet")
 class MMDetTrainer(Trainer):
+    #: Bảng ở đầu file; khai lại ở đây để --backbone và --list-backbones của
+    #: train.py tra được qua hợp đồng Trainer chung.
+    BACKBONES = ZOO_BACKBONES
+
+    @classmethod
+    def arch_of(cls, cfg: dict) -> str:
+        m = cfg.get("model") or {}
+        return str(m.get("arch") or "solov2")
+
+    @classmethod
+    def apply_backbone(cls, cfg: dict, name: str) -> str:
+        """mmdet chọn backbone bằng config zoo khác, không bằng model.config_file
+        (khoá đó là file GHI ĐÈ của nhóm, dùng chung cho mọi backbone)."""
+        bang = cls.backbones(cfg)
+        if name not in bang:
+            raise SystemExit(f"--backbone {name!r} không có với {cls.arch_of(cfg)}. "
+                             f"Có: {', '.join(sorted(bang))}")
+        m = cfg.setdefault("model", {})
+        m["backbone"] = name
+        # Checkpoint đi theo bảng; model.weights còn sót lại sẽ đè lên nó.
+        m.pop("weights", None)
+        return f"{cls.arch_of(cfg)}-{name}"
+
     def __init__(self, cfg: dict, run_dir):
         super().__init__(cfg, run_dir)
         m = cfg.get("model") or {}
@@ -306,6 +381,10 @@ class MMDetTrainer(Trainer):
         if self.arch not in ARCHS:
             raise ValueError(f"model.arch {self.arch!r} không có; có: {ARCHS}")
         self.config_file = m.get("config")
+        self.backbone: str = m.get("backbone") or ZOO[self.arch]["backbone"]
+        if self.backbone not in ZOO_BACKBONES[self.arch]:
+            raise ValueError(f"model.backbone {self.backbone!r} không có với {self.arch}; "
+                             f"có: {', '.join(sorted(ZOO_BACKBONES[self.arch]))}")
         self.weights = m.get("weights")
         self.train_args: dict = {**MM_DEFAULTS, **(cfg.get("train") or {})}
         d = cfg.get("data") or {}
@@ -368,7 +447,7 @@ class MMDetTrainer(Trainer):
         """model.weights nếu đặt; không thì bản trong weights/ theo bản kê, hoặc URL."""
         if self.weights:
             return str(self.weights)
-        url = ZOO[self.arch]["checkpoint"]
+        url = zoo_spec(self.arch, self.backbone)["checkpoint"]
         local = local_for_url(url)
         return str(local) if local else url
 
@@ -378,7 +457,7 @@ class MMDetTrainer(Trainer):
         over = build_overrides(self.arch, self.root, self.splits, self.n_train, self.train_args,
                                aspect=self.aspect, out_dir=str(self.out_dir),
                                load_from=self.checkpoint(), limit=self.limit)
-        return load_config(self.arch, over, self.config_file)
+        return load_config(self.arch, over, self.config_file, self.backbone)
 
     # ---------------------------------------------------------------------- dò
     def probe(self) -> dict:
