@@ -70,7 +70,16 @@ Ba quy ước phải giữ, vì bước gộp bảng cuối dựa vào chúng:
 |---|---|
 | `--runs benchmark/<model>/runs` | kết quả rơi vào thư mục của mình, không lẫn của người khác |
 | `--name <model>_<fold>` lúc **chấm** | `summarize_folds.py` đọc tên này để biết model nào trên ruộng nào |
-| `preds/<model>_<fold>.json` | file dự đoán test, đặt ở `preds/` gốc để cả nhóm đối chiếu |
+| `preds/<model>_<bộ>_<fold>.json` | file dự đoán test, đặt ở `preds/` gốc để cả nhóm đối chiếu |
+
+Tên file dự đoán và file trong `results/` phải có **bộ fold** (`block` /
+`flight`): hai bộ cùng đặt tên f1..f6, nên `preds/maskrcnn_f4.json` của bộ này
+sẽ đè của bộ kia. Thư mục lần chạy thì tự có rồi — `artifacts.dataset_tag`
+chèn vào tên, ra
+`runs/train/2026-09-25_091500_maskrcnn-f4_block-f4_i1024b4e50/`.
+
+Riêng `--name` thì KHÔNG cần bộ fold: bảng tổng hợp suy ra bộ từ đường dẫn dữ
+liệu đã chấm, nên `maskrcnn_f4` của hai bộ vẫn ra hai hàng riêng.
 
 Gộp kết quả bốn người thành bảng model × ruộng:
 
