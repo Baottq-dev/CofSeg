@@ -42,6 +42,10 @@ D2_DEFAULTS: dict = {
     "batch": 4,
     "epochs": 50,
     "lr": None,
+    "weight_decay": None,
+    "momentum": 0.9,
+    "lr_steps": [0.7, 0.9],
+    "lr_gamma": 0.1,
     "warmup_iters": 200,
     "amp": True,
     "fliplr": 0.5,
@@ -56,6 +60,8 @@ D2_DEFAULTS: dict = {
     "log_every": 20,
 }
 BASE_LR = {"maskrcnn": 0.02, "cascade": 0.02, "pointrend": 0.02, "mask2former": 1e-4}
+#: weight decay của recipe gốc: SGD của R-CNN dùng 1e-4, AdamW của Mask2Former 0.05.
+BASE_WD = {"maskrcnn": 1e-4, "cascade": 1e-4, "pointrend": 1e-4, "mask2former": 0.05}
 
 
 def build_opts(arch: str, n_train: int, args: dict, aspect: float = 9 / 16,
@@ -74,6 +80,14 @@ def build_opts(arch: str, n_train: int, args: dict, aspect: float = 9 / 16,
     lr = args.get("lr")
     if lr is None:
         lr = BASE_LR[arch] * batch / 16
+    wd = args.get("weight_decay")
+    if wd is None:
+        wd = BASE_WD[arch]
+    # lr_steps nhận PHẦN của lịch (0.7 = 70% số vòng) hoặc số vòng tuyệt đối,
+    # phân biệt bằng < 1. Ghi theo phần thì đổi epochs không phải tính lại mốc.
+    steps = tuple(sorted({int(s * max_iter) if 0 < float(s) < 1 else int(s)
+                          for s in (args.get("lr_steps") or ())
+                          if 0 < (float(s) * max_iter if float(s) < 1 else float(s)) < max_iter}))
     names = names or {}
     opts = [
         "DATASETS.TRAIN", (names.get("train", "coffee_train"),),
@@ -84,7 +98,10 @@ def build_opts(arch: str, n_train: int, args: dict, aspect: float = 9 / 16,
         "SOLVER.IMS_PER_BATCH", batch,
         "SOLVER.BASE_LR", float(lr),
         "SOLVER.MAX_ITER", max_iter,
-        "SOLVER.STEPS", (int(0.7 * max_iter), int(0.9 * max_iter)),
+        "SOLVER.STEPS", steps,
+        "SOLVER.GAMMA", float(args["lr_gamma"]),
+        "SOLVER.MOMENTUM", float(args["momentum"]),
+        "SOLVER.WEIGHT_DECAY", float(wd),
         "SOLVER.WARMUP_ITERS", min(int(args["warmup_iters"]), max_iter),
         "SOLVER.CHECKPOINT_PERIOD", per_epoch,
         "SOLVER.AMP.ENABLED", bool(args["amp"]),

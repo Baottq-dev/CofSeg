@@ -32,22 +32,24 @@ kia chỉ cần `--set data.root=data/export/flight/$FOLD`. Cả hai bộ fold c
 bằng `scripts/make_fold.py`, xem `benchmark/README.md`.
 
 ```bash
+SET=block        # bộ fold: block hoặc flight
 FOLD=f4
 
 # 1. huấn luyện (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
-python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --set data.root=data/export/block/$FOLD --runs benchmark/maskrcnn/runs --name maskrcnn-$FOLD
+python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --set data.root=data/export/$SET/$FOLD --runs benchmark/maskrcnn/runs --name maskrcnn-$FOLD
 
 # 2. dự đoán test do trainer ghi ra -> preds/ để cả nhóm dùng chung
-RUN=$(ls -td benchmark/maskrcnn/runs/train/*_maskrcnn-${FOLD}_* | head -1)
-mkdir -p preds && cp "$RUN/predictions.json" preds/maskrcnn_$FOLD.json
+#    Tên file có cả $SET: hai bộ fold cùng đặt tên f1..f6, thiếu nó là đè nhau.
+RUN=$(ls -td benchmark/maskrcnn/runs/train/*_maskrcnn-${FOLD}_${SET}-${FOLD}_* | head -1)
+mkdir -p preds && cp "$RUN/predictions.json" preds/maskrcnn_${SET}_$FOLD.json
 
 # 3. chấm: Boundary AP, Boundary IoU, sai số diện tích, bảng từng vùng
-python benchmark/maskrcnn/evaluate.py --config benchmark/maskrcnn/configs/eval/_coco.yaml --file preds/maskrcnn_$FOLD.json --set data.root=data/export/block/$FOLD --split test --runs benchmark/maskrcnn/runs --name maskrcnn_$FOLD
+python benchmark/maskrcnn/evaluate.py --config benchmark/maskrcnn/configs/eval/_coco.yaml --file preds/maskrcnn_${SET}_$FOLD.json --set data.root=data/export/$SET/$FOLD --split test --runs benchmark/maskrcnn/runs --name maskrcnn_$FOLD
 
 # 4. chép file kết quả nhỏ vào results/ (runs/ không vào git)
-EV=$(ls -td benchmark/maskrcnn/runs/eval/*_maskrcnn_${FOLD}_* | head -1)
-cp "$EV/metrics.json"   benchmark/maskrcnn/results/maskrcnn_${FOLD}_metrics.json
-cp "$EV/per_region.csv" benchmark/maskrcnn/results/maskrcnn_${FOLD}_per_region.csv
+EV=$(ls -td benchmark/maskrcnn/runs/eval/*_maskrcnn_${FOLD}_${SET}-${FOLD}_* | head -1)
+cp "$EV/metrics.json"   benchmark/maskrcnn/results/maskrcnn_${SET}_${FOLD}_metrics.json
+cp "$EV/per_region.csv" benchmark/maskrcnn/results/maskrcnn_${SET}_${FOLD}_per_region.csv
 
 # test của thư mục này, chạy trước khi commit
 cd benchmark/maskrcnn && python -m pytest tests
