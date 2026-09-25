@@ -23,11 +23,15 @@ khói trên Linux trước khi tin.
 from __future__ import annotations
 
 import collections
+import contextlib
 import csv
 import importlib.util
+import io
 import json
+import logging
 import math
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -571,8 +575,45 @@ class MMDetTrainer(Trainer):
         rows.append(("trọng số", str(shown)))
         print(progress.summary(f"{self.arch} · {self.run_dir.name}", rows), flush=True)
 
+    @staticmethod
+    def _build_runner(Runner, cfg, quiet: bool):
+        """Dựng Runner mà không để nó đổ 480 dòng ra màn hình.
+
+        Hai chuyện phải xử lý, và cả hai đều nằm BÊN TRONG `from_cfg`:
+
+        1. Chính `from_cfg` in bảng môi trường, toàn bộ config và bảng thứ tự
+           hook — khoảng 480 dòng. Bịt log SAU đó là muộn. Nên hứng stdout
+           trong lúc nó chạy. `MMLogger` tạo `StreamHandler(stream=sys.stdout)`
+           và GIỮ tham chiếu tới luồng ngay lúc tạo, nên sau đó phải trỏ
+           handler về stdout thật, nếu không mọi dòng về sau rơi vào hư không.
+
+        2. `MMLogger.__init__` gọi `Logger.__init__(self, "mmengine")` nhưng
+           KHÔNG đăng ký vào `logging.Logger.manager`. Nên
+           `logging.getLogger("mmengine")` là một logger khác hẳn, rỗng
+           handler — bịt nó không có tác dụng gì. Phải đưa thẳng đối tượng.
+
+        Không mất gì: mmengine tự ghi bản đầy đủ ra
+        `<work_dir>/<timestamp>/<timestamp>.log`, kể cả phần bị hứng ở đây.
+        """
+        if not quiet:
+            return Runner.from_cfg(cfg)
+        real = sys.stdout
+        with contextlib.redirect_stdout(io.StringIO()):
+            runner = Runner.from_cfg(cfg)
+        for h in runner.logger.handlers:
+            if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
+                h.setStream(real)
+        progress.hush(runner.logger, "mmengine", "mmdet")
+        return runner
+
     # ----------------------------------------------------------------- huấn luyện
     def fit(self) -> dict:
+        quiet = not self.train_args.get("verbose")
+        # TRƯỚC cả import: mmengine cảnh báo ngay lúc nạp module
+        # (zero_optimizer.py than phiền về TorchScript), nên gọi muộn hơn là
+        # dòng đó đã kịp ra màn hình.
+        if quiet:
+            self.warned = progress.warnings_to_file(self.run_dir / "warnings.log")
         require_mmdet()
         from mmengine.runner import Runner
 
@@ -582,15 +623,8 @@ class MMDetTrainer(Trainer):
               f"batch {cfg.train_dataloader.batch_size}, imgsz {self.train_args['imgsz']}, "
               f"lr {cfg.optim_wrapper.optimizer.lr:g}, load_from {cfg.load_from}")
         t0 = time.time()
-        runner = Runner.from_cfg(cfg)
-        if not self.train_args.get("verbose"):
-            # Sau from_cfg, vì chính nó dựng logger và gắn hai handler: một ra
-            # màn hình, một ra <work_dir>/<timestamp>/<timestamp>.log. Bịt cái
-            # thứ nhất ở mức INFO; file vẫn nhận đủ config, env và từng dòng
-            # iteration. Tên logger do Runner đặt theo experiment nên phải hỏi
-            # chính nó, đoán "mmengine" là trật.
-            progress.hush(runner.logger.name, "mmengine", "mmdet")
-            self.warned = progress.warnings_to_file(self.run_dir / "warnings.log")
+        runner = self._build_runner(Runner, cfg, quiet)
+        if quiet:
             runner.register_hook(self._epoch_reporter(), priority="LOWEST")
         runner.train()
         train_seconds = round(time.time() - t0, 1)
