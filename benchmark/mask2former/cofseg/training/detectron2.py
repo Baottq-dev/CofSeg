@@ -293,13 +293,19 @@ class Detectron2Trainer(Trainer):
                 self.trained = None
                 self.bar = progress.Bar(per_epoch, f"epoch {self.epoch}/{epochs}")
 
-            def close_train_bar(self):
+            def close_train_bar(self, fill: bool = True):
                 """Đóng thanh train và chốt thời gian train của epoch này.
 
                 Gọi từ EVALUATOR chứ không phải từ hook. Lý do: EvalHook chấm
                 val ngay trong after_step của chính nó, mà hook báo cáo lại
                 nằm cuối danh sách — tới lượt nó thì val đã xong. Chỗ duy
                 nhất biết "val vừa bắt đầu" là evaluator, lúc reset().
+
+                `fill=False` khi lượt chạy CHẾT GIỮA CHỪNG. `train()` của
+                detectron2 gọi `after_train` trong `finally`, nên hook này
+                vẫn chạy sau khi ném ngoại lệ — kéo đầy ở đó thì một lượt
+                OOM ngay iteration 1 để lại dòng `30/30 [00:00, 36it/s]`,
+                trông như một epoch đã xong trong 0 giây.
 
                 Gọi nhiều lần vẫn an toàn: lần sau không làm gì.
                 """
@@ -308,7 +314,8 @@ class Detectron2Trainer(Trainer):
                     # TRONG after_step của iteration cuối epoch, tức là trước
                     # khi hook này kịp đếm bước đó — không kéo thì thanh đứng
                     # ở 29/30 dù epoch đã xong.
-                    self.bar.advance(max(0, self.bar.total - self.bar.n))
+                    if fill:
+                        self.bar.advance(max(0, self.bar.total - self.bar.n))
                     self.bar.close()
                     self.bar = None
                 if self.trained is None and self.started is not None:
@@ -354,7 +361,11 @@ class Detectron2Trainer(Trainer):
                     self._open()
 
             def after_train(self):
-                self.close_train_bar()
+                # `pending` chỉ bật khi after_step đã chạy đủ tới iteration
+                # cuối, nên nó cũng là câu trả lời cho "lượt chạy có tới
+                # đích không". Chết giữa chừng thì để thanh đứng đúng chỗ nó
+                # dừng, đừng kéo cho đầy.
+                self.close_train_bar(fill=self.pending)
                 if self.pending:
                     self._report()
 
@@ -540,6 +551,12 @@ class Detectron2Trainer(Trainer):
         hoàn toàn, kể cả cảnh báo "Skip loading parameter ...", và người chạy
         không có dấu hiệu gì.
 
+        Trỏ lại thì nhận diện handler bằng CHÍNH BỘ ĐỆM, không bằng lớp.
+        detectron2 dựng đường ghi ra đĩa cũng bằng `StreamHandler` (xem
+        `progress.is_console`), nên lọc theo lớp sẽ trỏ luôn d2/log.txt ra
+        màn hình: mỗi dòng in hai lần, còn file thì rỗng. So sánh `is` với bộ
+        đệm chỉ trúng đúng handler đã chộp stdout lúc bị hứng.
+
         Không mất gì: default_setup vẫn gắn handler ghi ra d2/log.txt, và bản
         đó nhận đủ những dòng bị hứng ở đây.
         """
@@ -547,12 +564,12 @@ class Detectron2Trainer(Trainer):
         if not quiet:
             default_setup(cfg, args)
             return
-        real = sys.stdout
-        with contextlib.redirect_stdout(io.StringIO()):
+        real, buf = sys.stdout, io.StringIO()
+        with contextlib.redirect_stdout(buf):
             default_setup(cfg, args)
         for name in ("detectron2", "fvcore"):
             for h in logging.getLogger(name).handlers:
-                if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
+                if getattr(h, "stream", None) is buf:
                     h.setStream(real)
         progress.hush("detectron2", "fvcore")
         # train_loop bắt ngoại lệ, logger.exception rồi raise lại, nên cùng

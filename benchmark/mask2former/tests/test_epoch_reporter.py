@@ -242,3 +242,39 @@ def test_thanh_duoc_keo_day_truoc_khi_dong(tmp_path, fake_d2):
     assert bar.n == 29
     r.close_train_bar()
     assert bar.n == 30, "phải kéo đủ 30/30"
+
+
+def test_luot_chet_giua_chung_khong_de_lai_thanh_day(tmp_path, fake_d2):
+    """OOM ở iteration 1 để lại `30/30 [00:00, 36it/s]` — trông như đã xong.
+
+    `train()` của detectron2 gọi `after_train` trong `finally`, nên hook vẫn
+    chạy sau khi ngoại lệ được ném. Kéo đầy ở đó là nói dối về lượt chạy.
+    """
+    t = _trainer(tmp_path, epochs=3)
+    r = t._epoch_reporter()
+    r.trainer = _FakeTrainer(90)
+    r.before_train()
+    bar = r.bar
+    r.after_train()                          # chưa chạy bước nào thì đã chết
+    assert bar.n == 0, "thanh phải đứng ở chỗ nó thật sự dừng"
+
+
+def test_chet_giua_epoch_giu_nguyen_so_buoc_da_chay(tmp_path, fake_d2):
+    t = _trainer(tmp_path, epochs=3)
+    r = t._epoch_reporter()
+    r.trainer = _FakeTrainer(90)
+    r.before_train()
+    bar = r.bar
+    for i in range(7):
+        r.trainer.iter = i
+        r.after_step()
+    r.after_train()
+    assert bar.n == 7
+
+
+def test_chay_het_thi_van_keo_day(tmp_path, fake_d2, capsys):
+    """Chặn trên không được làm hỏng lượt chạy bình thường."""
+    t = _trainer(tmp_path, epochs=1)
+    r = t._epoch_reporter()
+    _run(r, epochs=1, per_epoch=30, ap_at={1: 27.6})
+    assert "epoch 1/1" in capsys.readouterr().out
