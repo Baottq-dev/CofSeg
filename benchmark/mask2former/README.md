@@ -37,18 +37,17 @@ SET=block        # bộ fold: block hoặc flight
 FOLD=f4
 
 # 1. huấn luyện (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
-python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --set data.root=data/export/$SET/$FOLD --runs benchmark/mask2former/runs --name mask2former-$FOLD
+python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --set data.root=data/export/$SET/$FOLD --runs benchmark/mask2former/runs --name mask2former
 
 # 2. dự đoán test do trainer ghi ra -> preds/ để cả nhóm dùng chung
-#    Tên file có cả $SET: hai bộ fold cùng đặt tên f1..f6, thiếu nó là đè nhau.
-RUN=$(ls -td benchmark/mask2former/runs/train/*_mask2former-${FOLD}_${SET}-${FOLD}_* | head -1)
+RUN=$(ls -td benchmark/mask2former/runs/train/*_mask2former_${SET}-${FOLD}_* | head -1)
 mkdir -p preds && cp "$RUN/predictions.json" preds/mask2former_${SET}_$FOLD.json
 
 # 3. chấm: Boundary AP, Boundary IoU, sai số diện tích, bảng từng vùng
-python benchmark/mask2former/evaluate.py --config benchmark/mask2former/configs/eval/_coco.yaml --file preds/mask2former_${SET}_$FOLD.json --set data.root=data/export/$SET/$FOLD --split test --runs benchmark/mask2former/runs --name mask2former_$FOLD
+python benchmark/mask2former/evaluate.py --config benchmark/mask2former/configs/eval/_coco.yaml --file preds/mask2former_${SET}_$FOLD.json --set data.root=data/export/$SET/$FOLD --split test --runs benchmark/mask2former/runs --name mask2former
 
 # 4. chép file kết quả nhỏ vào results/ (runs/ không vào git)
-EV=$(ls -td benchmark/mask2former/runs/eval/*_mask2former_${FOLD}_${SET}-${FOLD}_* | head -1)
+EV=$(ls -td benchmark/mask2former/runs/eval/*_mask2former_${SET}-${FOLD}_* | head -1)
 cp "$EV/metrics.json"   benchmark/mask2former/results/mask2former_${SET}_${FOLD}_metrics.json
 cp "$EV/per_region.csv" benchmark/mask2former/results/mask2former_${SET}_${FOLD}_per_region.csv
 
