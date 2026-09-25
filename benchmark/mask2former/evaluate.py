@@ -81,8 +81,10 @@ def run_config(a, extra: list[str]) -> int:
     # vì summarize_folds.py đọc tên "<model>_<fold>" từ đó.
     cfg["name"] = run_name
     tag = data["split"] + (f"_i{cfg['model']['imgsz']}" if "imgsz" in cfg["model"] else "")
-    run_dir = artifacts.create_run_dir(a.runs, "eval", run_name, tag)
-    artifacts.write_env(run_dir)
+    ds = artifacts.dataset_tag(cfg)
+    run_dir = artifacts.create_run_dir(a.runs, "eval", run_name,
+                                       "_".join(p for p in (ds, tag) if p))
+    artifacts.write_env(run_dir, cfg)
     artifacts.snapshot_config(run_dir, cfg)
     print(f"Lần chấm: {run_dir}")
 
