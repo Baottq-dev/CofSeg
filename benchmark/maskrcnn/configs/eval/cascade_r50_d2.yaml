@@ -1,4 +1,4 @@
-# Cascade Mask R-CNN R50-FPN (detectron2). Trọng số: --set model.weights=<best.pth>
+# Cascade Mask R-CNN R50-FPN (detectron2). Trọng số: --weights <best.pth>
 base: maskrcnn_r50_d2.yaml
 name: cascade-r50-d2
 model:

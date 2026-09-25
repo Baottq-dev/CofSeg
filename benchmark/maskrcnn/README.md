@@ -69,12 +69,12 @@ hoặc `f1` — có ba chỗ trong khối lệnh, sửa hết cả ba. Hai bộ 
 
 ```bash
 # 1. huấn luyện — chỉ train + val, không đụng tới split test
-#    (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
+#    (thêm --limit 16 --epochs 1 để khói, kiểm đường chạy trước)
 python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --data data/export/block/f1 --runs benchmark/maskrcnn/runs --name maskrcnn --workers 8
 
 # 2. chấm test bằng trọng số tốt nhất
 RUN=$(ls -td benchmark/maskrcnn/runs/train/*_maskrcnn_block-f1_* | head -1)
-python benchmark/maskrcnn/evaluate.py --config benchmark/maskrcnn/configs/eval/maskrcnn_r50_d2.yaml --set model.weights="$RUN/weights/best.pth" --data data/export/block/f1 --split test --runs benchmark/maskrcnn/runs --name maskrcnn
+python benchmark/maskrcnn/evaluate.py --config benchmark/maskrcnn/configs/eval/maskrcnn_r50_d2.yaml --weights "$RUN/weights/best.pth" --data data/export/block/f1 --split test --runs benchmark/maskrcnn/runs --name maskrcnn
 
 # 3. dự đoán + kết quả nhỏ
 EV=$(ls -td benchmark/maskrcnn/runs/eval/*_maskrcnn_block-f1_* | head -1)
@@ -133,39 +133,81 @@ python benchmark/maskrcnn/evaluate.py \
   --config benchmark/maskrcnn/configs/eval/maskrcnn_r50_d2.yaml \
   --data data/export/field/f1 --split test \
   --runs benchmark/maskrcnn/runs --name maskrcnn \
-  --set model.weights=benchmark/maskrcnn/runs/train/<...>/weights/best.pth \
-  --set model.arch=maskrcnn --set model.conf=0.05 --set model.max_det=100 \
-  --set eval.iou_thr=0.5 --set eval.band_ratio=0.02 \
-  --set eval.dilation_ratio=0.02 --set eval.nsd_tau=2.0
+  --weights benchmark/maskrcnn/runs/train/<...>/weights/best.pth \
+  --arch maskrcnn --conf 0.05 --max_det 100 \
+  --iou-thr 0.5 --band-ratio 0.02 \
+  --dilation-ratio 0.02 --nsd-tau 2.0
 ```
 
-`--set model.*` đi vào khối `model:` của config chấm, `--set eval.*` vào khối
-`eval:`. Bốn khoá `eval:` là định nghĩa của phép đo, đổi chúng là số không so
-được với ba model kia nữa: `iou_thr` ngưỡng ghép cặp, `band_ratio` bề rộng
-vành biên theo cỡ tán, `dilation_ratio` bề rộng vành của Boundary AP (2%
-đường chéo ảnh, đúng bài báo), `nsd_tau` dung sai của NSD.
+Mọi tham số ở đây là **cờ thật**, không qua `--set`: `--weights` trọng số của
+lần train, `--conf`/`--max_det` (và các khoá khác của lớp model) đi vào khối
+`model:`, còn `--iou-thr`/`--band-ratio`/`--dilation-ratio`/`--nsd-tau` đi vào
+khối `eval:`. Bốn khoá `eval:` là định nghĩa của phép đo, đổi chúng là số
+không so được với ba model kia nữa: `iou_thr` ngưỡng ghép cặp, `band_ratio`
+bề rộng vành biên theo cỡ tán, `dilation_ratio` bề rộng vành của Boundary AP
+(2% đường chéo ảnh, đúng bài báo), `nsd_tau` dung sai của NSD.
 
 ### Đổi backbone
 
-R50 là mặc định vì ba model dùng chung nó, nhờ vậy chênh lệch giữa chúng quy
-về cơ chế. Đổi backbone ở **một** model là mất tính chất đó — đổi thì đổi cả
-ba, hoặc báo cáo riêng như thí nghiệm phụ.
+`--backbone <tên>` đổi backbone ngay trên dòng lệnh; `--list-backbones` in
+bảng lựa chọn kèm mask AP trên COCO rồi thoát:
 
 ```bash
-# R101
-python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml \
-  --data data/export/field/f1 --runs benchmark/maskrcnn/runs --name maskrcnn-r101 \
-  --set model.config_file=COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml
-
-# X101-32x8d
-python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml \
-  --data data/export/field/f1 --runs benchmark/maskrcnn/runs --name maskrcnn-x101 \
-  --set model.config_file=COCO-InstanceSegmentation/mask_rcnn_X_101_32x8d_FPN_3x.yaml
+python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --list-backbones
 ```
 
-Trọng số COCO đi theo config: `base_cfg` gọi `model_zoo.get_checkpoint_url`
-cho đúng file đó, nên không phải khai `model.weights`. Đặt `--name` khác đi,
-không thì hai backbone rơi vào tên thư mục giống nhau.
+| `--backbone` | mask AP COCO | Train Mem | s/iter | ước lượng ở đây |
+|---|---|---|---|---|
+| `r50` | 37,2 | 3,4 GB | 0,261 | **12,7 GB · 26 phút/fold (đo thật)** |
+| `r50-dconv` | 38,5 | 3,5 GB | 0,349 | ~13 GB · ~35 phút |
+| `r50-gn` | 38,6 | 5,6 GB | 0,309 | ~21 GB · ~31 phút |
+| `r101` | 38,6 | 4,6 GB | 0,340 | ~17 GB · ~34 phút |
+| `x101` | 39,5 | 7,2 GB | 0,690 | ~27 GB · ~70 phút |
+
+Ba cột giữa là của `MODEL_ZOO.md` (detectron2, COCO val2017). Cột cuối suy từ
+tỉ lệ với R50 nhân số đo thật của lượt R50 — **ước lượng**, phải `--probe`
+trước khi đặt lịch.
+
+```bash
+python benchmark/maskrcnn/train.py \
+  --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml \
+  --data data/export/field/f1 --runs benchmark/maskrcnn/runs \
+  --backbone r101 --keep_ckpts 1 --workers 8
+```
+
+Không cần `--name`: thiếu nó thì tên thư mục run lấy theo backbone
+(`maskrcnn-r101`), nên hai backbone không rơi vào cùng một tên thư mục.
+
+Trọng số COCO đi theo config đã chọn: `base_cfg` lấy
+`get_checkpoint_url` của **chính** file đó.
+
+Cascade Mask R-CNN là *kiến trúc* khác chứ không phải backbone khác — nó có
+config riêng và bảng backbone riêng (`r50`, `x152`):
+
+```bash
+python benchmark/maskrcnn/train.py \
+  --config benchmark/maskrcnn/configs/train/cascade_r50_d2.yaml \
+  --data data/export/field/f1 --runs benchmark/maskrcnn/runs \
+  --keep_ckpts 1 --workers 8
+```
+
+Bốn bản mạnh nhất của model zoo (`new_baselines` LSJ, mask AP 40,3–42,5)
+không có trong bảng: chúng là LazyConfig `.py`, phải chạy qua
+`lazyconfig_train_net` chứ không qua `DefaultTrainer`. Đáng nhớ một điều từ
+bảng đó — R50 + LSJ 100 epoch (40,3) hơn X101 3x (39,5): recipe, không phải
+backbone.
+
+**Đọc cái này trước khi đổi.** Sáu lượt R50 trên `field/f1..f6` cho AP50
+trung bình **92,5** nhưng AP chỉ **64,6**, và epoch tốt nhất rơi vào **16–23**
+trên ngân sách 50. Việc *tìm* tán gần như xong; chỗ mất điểm nằm ở IoU cao,
+tức chất lượng đường biên, và model đã bão hoà trước khi hết lịch. Backbone
+sâu hơn mua chủ yếu AP50 — thứ đang còn ít dư địa nhất — và thêm tham số vào
+một bộ 453 ảnh train thì bão hoà còn sớm hơn.
+
+Đổi backbone ở **một** model cũng làm mất tính chất "bốn model cùng R50 nên
+chênh lệch quy về cơ chế". Mà đổi đồng bộ cả bốn thì không làm được: YOLO
+không có backbone để đổi, còn SOLOv2 không có trọng số COCO cho R101 thường.
+Nên để phần này **ngoài bảng chính**, báo cáo riêng như thí nghiệm phụ.
 
 ## Trong thư mục này
 

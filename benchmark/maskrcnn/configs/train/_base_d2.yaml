@@ -16,7 +16,7 @@
 trainer: detectron2
 
 data:
-  # Một fold do scripts/make_fold.py cắt ra; đổi fold: --set data.root=data/export/block/f2
+  # Một fold do scripts/make_fold.py cắt ra; đổi fold: --data data/export/block/f2
   root: data/export/block/f4
   train: train
   val: val

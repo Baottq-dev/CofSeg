@@ -9,14 +9,15 @@
 # lr. Bản torchvision vẫn dùng để chạy sớm ở nhà (Windows); vào bảng thì dùng
 # bản này.
 #
-#     python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --set data.root=data/export/block/f4 --workers 8
+#     python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --data data/export/block/f4 --workers 8
 #     python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --probe
-#     python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --set data.limit=16 --epochs 1   # khói
+#     python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --limit 16 --epochs 1   # khói
 
 base: _base_d2.yaml
 name: maskrcnn-r50-d2
 
 model:
   # maskrcnn | cascade | mask2former | pointrend. Config và trọng số COCO lấy
-  # từ model zoo theo arch; ghi đè bằng model.config_file / model.weights.
+  # từ model zoo theo arch. Đổi backbone: --backbone r101 (xem
+  # --list-backbones); trường hợp ngoài bảng thì model.config_file.
   arch: maskrcnn

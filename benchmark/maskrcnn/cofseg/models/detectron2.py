@@ -109,8 +109,14 @@ def base_cfg(arch: str, repo: str | None = None, config_file: str | None = None,
         cfg.merge_from_file(config_file)
         cfg.MODEL.WEIGHTS = weights
     else:
-        cfg.merge_from_file(model_zoo.get_config_file(config_file or zoo_file))
-        cfg.MODEL.WEIGHTS = weights or _checkpoint(model_zoo.get_checkpoint_url(zoo_file))
+        # `ref` chứ không phải `zoo_file`: đổi backbone là đổi config_file, và
+        # model_zoo có checkpoint COCO riêng cho TỪNG config. Lấy checkpoint
+        # theo zoo_file trong khi kiến trúc dựng theo config_file thì R101 sẽ
+        # nạp trọng số của R50 — detectron2 chỉ log shape mismatch rồi chạy
+        # tiếp với phần lệch khởi tạo ngẫu nhiên, không có gì dừng lại.
+        ref = config_file or zoo_file
+        cfg.merge_from_file(model_zoo.get_config_file(ref))
+        cfg.MODEL.WEIGHTS = weights or _checkpoint(model_zoo.get_checkpoint_url(ref))
     return cfg, m2f
 
 
