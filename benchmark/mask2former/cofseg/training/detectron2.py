@@ -110,13 +110,21 @@ BASE_WD = {"maskrcnn": 1e-4, "cascade": 1e-4, "pointrend": 1e-4, "mask2former": 
 
 
 def build_opts(arch: str, n_train: int, args: dict, aspect: float = 9 / 16,
-               names: dict | None = None, out_dir: str = "") -> list:
+               names: dict | None = None, out_dir: str = "",
+               backbone: dict | None = None) -> list:
     """Khối train: -> danh sách [khoá, giá trị, ...] cho cfg.merge_from_list.
 
     Thuần Python, không cần detectron2: đây là phần kiểm được ở nhà.
+
+    `backbone` là ô trong BACKBONES nếu lần chạy có đổi backbone. Nó chỉ được
+    phép đổi những gì recipe của backbone đó BẮT BUỘC đổi — lr/weight_decay
+    gốc (ViTDet dùng AdamW 1e-4/0.1 thay SGD 0.02/1e-4) và định dạng kênh ảnh.
+    Để None thì hàm này cho ra đúng danh sách như trước khi có backbone, đó là
+    điều kiện để lượt r50 không đổi kết quả.
     """
     if arch not in ARCHS:
         raise ValueError(f"arch {arch!r} không có; có: {ARCHS}")
+    bb = backbone or {}
     batch, epochs = int(args["batch"]), int(args["epochs"])
     if batch < 1 or epochs < 1 or n_train < 1:
         raise ValueError("batch, epochs và số ảnh train đều phải >= 1")
@@ -124,10 +132,10 @@ def build_opts(arch: str, n_train: int, args: dict, aspect: float = 9 / 16,
     max_iter = epochs * per_epoch
     lr = args.get("lr")
     if lr is None:
-        lr = BASE_LR[arch] * batch / 16
+        lr = float((bb.get("optim") or {}).get("lr", BASE_LR[arch])) * batch / 16
     wd = args.get("weight_decay")
     if wd is None:
-        wd = BASE_WD[arch]
+        wd = (bb.get("optim") or {}).get("weight_decay", BASE_WD[arch])
     # lr_steps nhận PHẦN của lịch (0.7 = 70% số vòng) hoặc số vòng tuyệt đối,
     # phân biệt bằng < 1. Ghi theo phần thì đổi epochs không phải tính lại mốc.
     w = float(args["warmup_iters"])
@@ -160,6 +168,12 @@ def build_opts(arch: str, n_train: int, args: dict, aspect: float = 9 / 16,
     ]
     opts += class_opts(arch, int(args["num_queries"]))
     opts += size_opts(int(args["imgsz"]), aspect)
+    if bb.get("input_format"):
+        # DatasetMapper đọc ảnh theo cfg.INPUT.FORMAT. R50 của detectron2 là
+        # BGR, còn ViTDet tiền huấn luyện MAE là RGB với mean/std ImageNet.
+        # Lệch chỗ này thì ảnh vào model với hai kênh đảo nhau và KHÔNG có gì
+        # báo — loss vẫn giảm, chỉ là giảm từ một điểm xuất phát tệ hơn nhiều.
+        opts += ["INPUT.FORMAT", str(bb["input_format"])]
     if arch == "mask2former":
         # LSJ của recipe gốc cắt ô vuông IMAGE_SIZE sau khi co giãn 0.1-2.0.
         opts += ["INPUT.IMAGE_SIZE", int(args["imgsz"])]
@@ -167,6 +181,95 @@ def build_opts(arch: str, n_train: int, args: dict, aspect: float = 9 / 16,
         opts += ["MODEL.ROI_HEADS.SCORE_THRESH_TEST", float(args["val_conf"]),
                  "MODEL.ROI_MASK_HEAD.POOLER_RESOLUTION", int(args["mask_resolution"])]
     return opts
+
+
+
+def lazy_model(spec: dict, num_classes: int, imgsz: int, conf: float, max_det: int):
+    """`instantiate` model ViTDet từ LazyConfig của chính detectron2.
+
+    Vì sao không tự dựng backbone bằng BACKBONE_REGISTRY: tên tham số trong
+    checkpoint COCO do CÁCH DỰNG quyết định. Dựng lại bằng tay là đoán, và
+    đoán sai thì DetectionCheckpointer chỉ log "Skipped loading parameter" rồi
+    train tiếp với phần lệch khởi tạo ngẫu nhiên — đúng loại lỗi im lặng đã
+    xảy ra một lần với R101 nạp trọng số R50. Dựng từ chính config của tác giả
+    thì khớp theo cấu trúc, không theo trí nhớ.
+
+    Trả về model đã instantiate; phần dữ liệu / solver / evaluator vẫn đi
+    đường CfgNode như mọi backbone khác.
+    """
+    from detectron2 import model_zoo
+    from detectron2.config import instantiate
+
+    m = model_zoo.get_config(spec["lazy"]).model
+    v = spec["vit"]
+    net = m.backbone.net
+    net.embed_dim = int(v["embed_dim"])
+    net.depth = int(v["depth"])
+    net.num_heads = int(v["num_heads"])
+    net.drop_path_rate = float(v["drop_path_rate"])
+    # window_block_indexes = mọi block TRỪ các block attention toàn cục.
+    net.window_block_indexes = [i for i in range(int(v["depth"]))
+                                if i not in set(v["global_at"])]
+    # ViT nội suy pos_embed theo cỡ ảnh thật nên imgsz khác 1024 vẫn chạy;
+    # square_pad phải đi cùng, không thì ảnh 1024x576 bị đệm về 1024x1024 và
+    # gần một nửa phép tính đổ vào phần đệm.
+    net.img_size = int(imgsz)
+    m.backbone.square_pad = int(imgsz)
+    # Một lớp: num_classes của roi_heads nội suy sang box_predictor và mask_head.
+    m.roi_heads.num_classes = int(num_classes)
+    m.roi_heads.box_predictor.test_score_thresh = float(conf)
+    m.roi_heads.box_predictor.test_topk_per_image = int(max_det)
+    return instantiate(m)
+
+
+def lazy_optimizer(spec: dict, model, lr: float, weight_decay: float):
+    """AdamW + layer-wise lr decay, đúng recipe ViTDet.
+
+    Không dùng được SGD 0.02 của R-CNN ở đây: ViT tiền huấn luyện MAE cần lr
+    nhỏ và bước giảm theo độ sâu (`get_vit_lr_decay_rate`), thiếu nó thì lượt
+    finetune phá hỏng đặc trưng đã học ngay trong vài trăm vòng đầu.
+    """
+    from functools import partial
+
+    import torch
+    from detectron2.modeling.backbone.vit import get_vit_lr_decay_rate
+    from detectron2.solver.build import get_default_optimizer_params
+
+    o = spec["optim"]
+    params = get_default_optimizer_params(
+        model,
+        base_lr=float(lr),
+        weight_decay_norm=0.0,
+        lr_factor_func=partial(get_vit_lr_decay_rate,
+                               num_layers=int(o["num_layers"]),
+                               lr_decay_rate=float(o["lr_decay_rate"])),
+        overrides=None if o.get("no_pos_embed_override")
+        else {"pos_embed": {"weight_decay": 0.0}},
+    )
+    return torch.optim.AdamW(params, lr=float(lr), betas=(0.9, 0.999),
+                             weight_decay=float(weight_decay))
+
+
+def weights_report(inc, model) -> dict:
+    """Trọng số nào KHÔNG vào được model, tách phần chờ đợi khỏi phần đáng lo.
+
+    Đổi 80 lớp COCO sang 1 lớp thì đầu phân loại lệch hình — điều đó là cố ý.
+    Backbone lệch thì không: nó nghĩa là checkpoint không khớp kiến trúc, và
+    hậu quả là một lượt train trông vẫn bình thường trên một backbone thật ra
+    khởi tạo ngẫu nhiên.
+    """
+    thieu = list(getattr(inc, "missing_keys", None) or [])
+    lech = [k for k, *_ in (getattr(inc, "incorrect_shapes", None) or [])]
+    def _bb(ks):
+        return sorted(k for k in ks if k.startswith("backbone."))
+    ra = {
+        "missing": len(thieu),
+        "incorrect_shapes": len(lech),
+        "backbone_missing": _bb(thieu)[:10],
+        "backbone_incorrect": _bb(lech)[:10],
+    }
+    ra["backbone_ok"] = not ra["backbone_missing"] and not ra["backbone_incorrect"]
+    return ra
 
 
 def iters_per_epoch(n_train: int, batch: int) -> int:
@@ -202,6 +305,45 @@ class Detectron2Trainer(Trainer):
             "r50-gn": dict(
                 config="Misc/mask_rcnn_R_50_FPN_3x_gn.yaml",
                 note="mask AP 38.6, 5.6 GB, 0.309 s/iter — GroupNorm thay BatchNorm"),
+        # --- ViTDet: model dựng từ LazyConfig, không phải từ yaml ---
+        #
+        # `lazy` là config LazyConfig trong gói detectron2 (configs/ được đóng
+        # gói theo package nên không cần checkout). Trainer `instantiate` model
+        # từ đó rồi giao cho DefaultTrainer; nhờ vậy tên tham số trong
+        # checkpoint khớp theo cách dựng chứ không theo cách đoán.
+        #
+        # Ba thứ ViTDet bắt buộc đổi so với recipe R-CNN, khai ngay ở đây để
+        # không chỗ nào phải nhớ hộ:
+        #   input_format RGB (R50 dùng BGR — đọc sai kênh thì không ai báo),
+        #   AdamW thay SGD, và layer-wise lr decay theo độ sâu.
+            "vit-b": dict(
+                lazy="common/models/mask_rcnn_vitdet.py",
+                vit=dict(embed_dim=768, depth=12, num_heads=12,
+                         drop_path_rate=0.1, global_at=(2, 5, 8, 11)),
+                optim=dict(num_layers=12, lr_decay_rate=0.7, lr=1e-4, weight_decay=0.1),
+                input_format="RGB",
+                checkpoint="https://dl.fbaipublicfiles.com/detectron2/ViTDet/COCO/"
+                           "mask_rcnn_vitdet_b/f325346929/model_final_61ccd1.pkl",
+                note="mask AP 45.9 — 86M tham số, bản DUY NHẤT trong nhóm này còn hy vọng vừa card"),
+            "vit-l": dict(
+                lazy="common/models/mask_rcnn_vitdet.py",
+                vit=dict(embed_dim=1024, depth=24, num_heads=16,
+                         drop_path_rate=0.4, global_at=(5, 11, 17, 23)),
+                optim=dict(num_layers=24, lr_decay_rate=0.8, lr=1e-4, weight_decay=0.1),
+                input_format="RGB",
+                checkpoint="https://dl.fbaipublicfiles.com/detectron2/ViTDet/COCO/"
+                           "mask_rcnn_vitdet_l/f325599698/model_final_6146ed.pkl",
+                note="mask AP 49.2 — 304M tham số, cần batch rất nhỏ"),
+            "vit-h": dict(
+                lazy="common/models/mask_rcnn_vitdet.py",
+                vit=dict(embed_dim=1280, depth=32, num_heads=16,
+                         drop_path_rate=0.5, global_at=(7, 15, 23, 31)),
+                optim=dict(num_layers=32, lr_decay_rate=0.9, lr=1e-4, weight_decay=0.1,
+                           no_pos_embed_override=True),
+                input_format="RGB",
+                checkpoint="https://dl.fbaipublicfiles.com/detectron2/ViTDet/COCO/"
+                           "mask_rcnn_vitdet_h/f329145471/model_final_7224f1.pkl",
+                note="mask AP 50.2 — 632M tham số, ghi lại cho đủ bảng chứ khó chạy"),
         },
         "cascade": {
             "r50": dict(
@@ -261,6 +403,13 @@ class Detectron2Trainer(Trainer):
         self.repo = m.get("repo")
         self.config_file = m.get("config_file")
         self.weights = m.get("weights")
+        self.backbone: str | None = m.get("backbone")
+        bang = self.BACKBONES.get(self.arch, {})
+        if self.backbone and self.backbone not in bang:
+            raise ValueError(f"model.backbone {self.backbone!r} không có với {self.arch}; "
+                             f"có: {', '.join(sorted(bang))}")
+        #: Ô trong BACKBONES của lần chạy này, None khi dùng mặc định của arch.
+        self.bb: dict = bang.get(self.backbone) or {}
         self.train_args: dict = {**D2_DEFAULTS, **(cfg.get("train") or {})}
         d = cfg.get("data") or {}
         self.root = Path(d.get("root", "data/export/block/f4"))
@@ -273,6 +422,26 @@ class Detectron2Trainer(Trainer):
     def arch_of(cls, cfg: dict) -> str:
         m = cfg.get("model") or {}
         return str(m.get("arch") or "mask2former")
+
+    @classmethod
+    def apply_backbone(cls, cfg: dict, name: str) -> str:
+        """Ghi TÊN backbone vào config chứ không ghi đường dẫn.
+
+        Đường dẫn là chi tiết của bảng: bản yaml cần `config_file`, bản ViTDet
+        không có yaml nào và cần `lazy` + kích thước ViT. Để trainer tra bảng
+        thì thêm một backbone chỉ là thêm một dòng ở BACKBONES.
+        """
+        bang = cls.backbones(cfg)
+        arch = cls.arch_of(cfg)
+        if name not in bang:
+            raise SystemExit(f"--backbone {name!r} không có với {arch}. "
+                             f"Có: {', '.join(sorted(bang))}")
+        m = cfg.setdefault("model", {})
+        m["backbone"] = name
+        # Đường dẫn/trọng số còn sót trong config sẽ đè lên bảng; bỏ đi.
+        m.pop("config_file", None)
+        m.pop("weights", None)
+        return f"{arch}-{name}"
 
     # -------------------------------------------------------------------- tham số
     @classmethod
@@ -344,11 +513,15 @@ class Detectron2Trainer(Trainer):
         if not hasattr(self, "n_train"):
             self.prepare()
         names = self._register()
-        cfg, m2f = base_cfg(self.arch, repo=self.repo, config_file=self.config_file,
-                            weights=self.weights)
+        # Bản ViTDet không có yaml: lấy CfgNode của arch làm bộ khung (dữ liệu,
+        # solver, evaluator vẫn đi đường cũ) rồi thay riêng phần model ở
+        # build_model. Bản yaml thì config_file quyết định cả kiến trúc.
+        cfg, m2f = base_cfg(self.arch, repo=self.repo,
+                            config_file=self.config_file or self.bb.get("config"),
+                            weights=self.weights or self.bb.get("checkpoint"))
         cfg.merge_from_list(build_opts(self.arch, self.n_train, self.train_args,
                                        aspect=self.aspect, names=names,
-                                       out_dir=str(self.out_dir)))
+                                       out_dir=str(self.out_dir), backbone=self.bb))
         cfg.freeze()
         return cfg, m2f, names
 
@@ -511,6 +684,7 @@ class Detectron2Trainer(Trainer):
         base = m2f.Trainer if m2f is not None else DefaultTrainer
         val_batch = max(1, int(a.get("val_batch") or a["batch"]))
         keep_ckpts = max(1, int(a["keep_ckpts"]))
+        bb = self.bb
         quiet = not a.get("verbose")
         reporter = None if not quiet else self._epoch_reporter()
         self._reporter = reporter
@@ -560,6 +734,52 @@ class Detectron2Trainer(Trainer):
                 return res
 
         class CoffeeTrainer(base):
+            @classmethod
+            def build_model(cls, cfg):
+                """Bản yaml đi đường cũ; bản LazyConfig dựng riêng rồi trả về.
+
+                `bb` rỗng hoặc không có khoá `lazy` nghĩa là backbone yaml —
+                lúc đó hàm này KHÔNG đụng gì, nên lượt r50 chạy y như trước.
+                """
+                if not bb.get("lazy"):
+                    return base.build_model(cfg)
+                model = lazy_model(
+                    bb, num_classes=1, imgsz=int(a["imgsz"]),
+                    conf=float(a["val_conf"]), max_det=int(a["max_det"]),
+                ).to(cfg.MODEL.DEVICE)
+                logging.getLogger("detectron2").info(
+                    "backbone LazyConfig %s: %.1fM tham số",
+                    bb["lazy"], sum(p.numel() for p in model.parameters()) / 1e6)
+                return model
+
+            @classmethod
+            def build_optimizer(cls, cfg, model):
+                if not bb.get("lazy"):
+                    return base.build_optimizer(cfg, model)
+                return lazy_optimizer(bb, model, cfg.SOLVER.BASE_LR,
+                                      cfg.SOLVER.WEIGHT_DECAY)
+
+            def resume_or_load(self, resume=False):
+                """Như bản gốc, nhưng GIỮ LẠI báo cáo khoá không khớp.
+
+                DefaultTrainer gọi checkpointer rồi vứt kết quả đi, nên việc
+                backbone không nạp được chỉ còn là một dòng WARNING lẫn trong
+                log. Ở đây nó thành một mục trong summary.json và một dòng in
+                ra khi có vấn đề.
+                """
+                inc = self.checkpointer.resume_or_load(self.cfg.MODEL.WEIGHTS,
+                                                       resume=resume)
+                if resume and self.checkpointer.has_checkpoint():
+                    self.start_iter = self.iter + 1
+                bao = weights_report(inc, self.model)
+                CoffeeTrainer.weights_loaded = bao
+                if not bao["backbone_ok"]:
+                    print(f"CẢNH BÁO: trọng số backbone không khớp checkpoint "
+                          f"(thiếu {len(bao['backbone_missing'])}, "
+                          f"lệch hình {len(bao['backbone_incorrect'])}). "
+                          f"Lượt này khởi đầu từ phần lớn là ngẫu nhiên.", flush=True)
+                return inc
+
             @classmethod
             def build_evaluator(cls, cfg, dataset_name, output_folder=None):
                 if m2f is not None:
@@ -799,6 +1019,11 @@ class Detectron2Trainer(Trainer):
             "epochs_run": int(self.train_args["epochs"]),
             "train_seconds": train_seconds,
             "results_csv": str(self.run_dir / "results.csv"),
+            # Backbone dùng thật + báo cáo nạp trọng số: ba tháng sau mở một
+            # thư mục kết quả phải biết nó train trên backbone nào và
+            # checkpoint COCO có vào được không.
+            "backbone": self.backbone or "mặc định của arch",
+            "weights_loaded": getattr(cls, "weights_loaded", None),
             "args": dict(self.train_args),
         }
 
