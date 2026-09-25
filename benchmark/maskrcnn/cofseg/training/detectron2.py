@@ -27,6 +27,7 @@ import json
 import logging
 import math
 import shutil
+import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -524,18 +525,51 @@ class Detectron2Trainer(Trainer):
             "note": "đỉnh đo trên 2 iteration; batch dày vùng hơn sẽ cao hơn một chút",
         }
 
+    @staticmethod
+    def _default_setup(default_setup, cfg, quiet: bool):
+        """Gọi default_setup mà không để nó đổ nguyên config ra màn hình.
+
+        Đo trên một lượt Mask2Former: 452 / 655 dòng (69%) là bảng môi trường
+        và bản dump config, và CẢ HAI in bên trong `default_setup`. Bịt log
+        sau khi nó trả về là muộn — đó chính là lỗi đã mắc ở đây trước đó.
+
+        `setup_logger` của detectron2 tạo `StreamHandler(stream=sys.stdout)`
+        và GIỮ tham chiếu tới luồng ngay lúc tạo, mà nó chạy bên trong
+        `default_setup`, tức là lúc stdout đang bị hứng. Không trỏ handler về
+        stdout thật thì mọi dòng về sau rơi vào bộ đệm đã bỏ đi — im lặng
+        hoàn toàn, kể cả cảnh báo "Skip loading parameter ...", và người chạy
+        không có dấu hiệu gì.
+
+        Không mất gì: default_setup vẫn gắn handler ghi ra d2/log.txt, và bản
+        đó nhận đủ những dòng bị hứng ở đây.
+        """
+        args = SimpleNamespace(config_file="", eval_only=False, opts=[], num_gpus=1)
+        if not quiet:
+            default_setup(cfg, args)
+            return
+        real = sys.stdout
+        with contextlib.redirect_stdout(io.StringIO()):
+            default_setup(cfg, args)
+        for name in ("detectron2", "fvcore"):
+            for h in logging.getLogger(name).handlers:
+                if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
+                    h.setStream(real)
+        progress.hush("detectron2", "fvcore")
+        # train_loop bắt ngoại lệ, logger.exception rồi raise lại, nên cùng
+        # một traceback ra màn hình hai lần: 90 dòng của detectron2 rồi 96
+        # dòng của Python. Bản sau chứa đủ bản trước cộng khung của train.py.
+        progress.drop_from_console("detectron2", name="detectron2.engine.train_loop",
+                                   startswith="Exception during training")
+
     # ----------------------------------------------------------------- huấn luyện
     def fit(self) -> dict:
         from detectron2.checkpoint import DetectionCheckpointer
         from detectron2.engine import default_setup
 
         cfg, m2f, names = self._cfg()
-        default_setup(cfg, SimpleNamespace(config_file="", eval_only=False,
-                                           opts=[], num_gpus=1))
-        # Sau default_setup, vì chính nó gắn hai handler: một ra màn hình, một
-        # ra d2/log.txt. Bịt cái thứ nhất ở mức INFO; file vẫn nhận đủ.
-        if not self.train_args.get("verbose"):
-            progress.hush("detectron2", "fvcore")
+        quiet = not self.train_args.get("verbose")
+        self._default_setup(default_setup, cfg, quiet)
+        if quiet:
             self.warned = progress.warnings_to_file(self.run_dir / "warnings.log")
         cls = self._trainer_cls(m2f)
         per_epoch = iters_per_epoch(self.n_train, self.train_args["batch"])
