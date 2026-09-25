@@ -882,7 +882,11 @@ def _copy_file(src, dst):
 def _write_yaml(root_out, no_split, summary=None):
     # Bố cục chuẩn ultralytics: nó tìm nhãn bằng cách thay '/images/' cuối cùng
     # trong đường dẫn ảnh thành '/labels/'.
-    lines = ["path: " + os.path.abspath(root_out).replace("\\", "/")]
+    # KHONG ghi 'path:'. Duong dan tuyet doi cua may dang xuat se sai ngay khi
+    # ban xuat doi sang may khac: 'F:/CoffeeSeg/...' khong phai duong dan tuyet
+    # doi tren Linux, nen ultralytics noi no vao thu muc dataset cua chinh no.
+    # Thieu khoa thi no lay thu muc chua chinh data.yaml — dung tren moi may.
+    lines = []
     if no_split:
         # CHƯA chia thì KHÔNG ghi 'val:'. Trỏ val vào chính train sẽ cho ra mAP
         # đẹp mà vô nghĩa; thiếu khoá val thì ultralytics dừng ngay với

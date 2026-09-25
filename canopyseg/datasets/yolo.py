@@ -77,9 +77,26 @@ def write_data_yaml(
     out_file: str | Path | None = None,
 ) -> Path:
     """Ghi data.yaml. `splits` ánh xạ vai trò -> thư mục ảnh, vd
-    {"train": "images/train", "val": "images/val"}."""
+    {"train": "images/train", "val": "images/val"}.
+
+    KHÔNG ghi khoá `path:`. Trước đây có, và nó là đường dẫn tuyệt đối của
+    máy đang cắt fold — cắt ở Windows rồi train ở máy lab Linux thì
+    `F:/CoffeeSeg/...` không còn là đường dẫn tuyệt đối nữa, nên ultralytics
+    nối nó vào thư mục dataset của chính nó:
+
+        check_det_dataset (8.4.143)
+        path = Path(extract_dir or data.get("path")
+                    or Path(data.get("yaml_file", "")).parent)
+        if not path.exists() and not path.is_absolute():
+            path = (DATASETS_DIR / path).resolve()
+
+    và báo thiếu `<DATASETS_DIR>/F:/CoffeeSeg/.../images/val`. Thiếu khoá thì
+    nhánh đầu rơi về thư mục chứa chính data.yaml — tức gốc fold, đúng thứ ta
+    muốn, và đúng trên mọi máy. Bố cục này cố định: data.yaml luôn nằm cạnh
+    images/ và labels/.
+    """
     root = Path(root).resolve()
-    doc: dict = {"path": str(root).replace("\\", "/")}
+    doc: dict = {}
     doc.update(splits)
     doc["names"] = {int(k): v for k, v in names.items()}
     out = Path(out_file) if out_file else root / "data.yaml"

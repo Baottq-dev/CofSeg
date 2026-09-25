@@ -99,6 +99,10 @@ def test_fold_keeps_ids_and_routes_background_images(export, folds_yaml, tmp_pat
     data = yaml.safe_load((out / "data.yaml").read_text(encoding="utf-8"))
     assert data["train"] == "images/train" and data["test"] == "images/test"
     assert data["names"] == {0: "canopy"}
+    # KHÔNG có 'path:'. Đường dẫn tuyệt đối của máy cắt fold sẽ sai ngay khi
+    # thư mục fold đổi sang máy khác — cắt ở Windows, train ở máy lab Linux.
+    # Thiếu khoá thì ultralytics lấy thư mục chứa chính data.yaml.
+    assert "path" not in data
 
     fold = json.loads((out / "fold.json").read_text(encoding="utf-8"))
     assert fold["source_sha1"] and fold["images_linked"] + fold["images_copied"] == 6
