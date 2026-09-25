@@ -113,10 +113,14 @@ def main() -> int:
     name = a.name or cfg.get("name") or Path(a.config).stem
     # Nhãn sinh từ tham số ĐÃ GỘP (config + dòng lệnh), nên tên thư mục luôn
     # mô tả đúng thứ vừa chạy kể cả khi bạn ghi đè imgsz hay batch.
+    # Bộ fold đứng trước nhãn tham số: hai bộ fold cùng đặt tên f1..f6, nên
+    # thiếu nó thì hai lần chạy khác hẳn nhau ra tên thư mục giống hệt.
+    ds = artifacts.dataset_tag(cfg)
     run_dir = artifacts.create_run_dir(
-        a.runs, "probe" if a.probe else "train", name, trainer_cls.run_tag(cfg)
+        a.runs, "probe" if a.probe else "train", name,
+        "_".join(p for p in (ds, trainer_cls.run_tag(cfg)) if p)
     )
-    artifacts.write_env(run_dir)
+    artifacts.write_env(run_dir, cfg)
     artifacts.snapshot_config(run_dir, cfg)
     print(f"Lần chạy: {run_dir}")
 

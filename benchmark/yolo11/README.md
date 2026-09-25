@@ -30,20 +30,22 @@ kia chỉ cần `--set data.root=data/export/flight/$FOLD`. Cả hai bộ fold c
 bằng `scripts/make_fold.py`, xem `benchmark/README.md`.
 
 ```bash
+SET=block        # bộ fold: block hoặc flight
 FOLD=f4
 
 # 1. huấn luyện (thêm --epochs 1 --fraction 0.05 để khói)
-python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --set data.yaml=data/export/block/$FOLD/data.yaml --runs benchmark/yolo11/runs --name yolo11s-$FOLD
+python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --set data.yaml=data/export/$SET/$FOLD/data.yaml --runs benchmark/yolo11/runs --name yolo11s-$FOLD
 
 # 2. chấm bằng trọng số tốt nhất
-RUN=$(ls -td benchmark/yolo11/runs/train/*_yolo11s-${FOLD}_* | head -1)
-python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo11s.yaml --set model.weights="$RUN/ultralytics/weights/best.pt" --set data.root=data/export/block/$FOLD --split test --runs benchmark/yolo11/runs --name yolo11s_$FOLD
+RUN=$(ls -td benchmark/yolo11/runs/train/*_yolo11s-${FOLD}_${SET}-${FOLD}_* | head -1)
+python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo11s.yaml --set model.weights="$RUN/ultralytics/weights/best.pt" --set data.root=data/export/$SET/$FOLD --split test --runs benchmark/yolo11/runs --name yolo11s_$FOLD
 
 # 3. dự đoán + kết quả nhỏ
-EV=$(ls -td benchmark/yolo11/runs/eval/*_yolo11s_${FOLD}_* | head -1)
-mkdir -p preds && cp "$EV/predictions.json" preds/yolo11s_$FOLD.json
-cp "$EV/metrics.json"   benchmark/yolo11/results/yolo11s_${FOLD}_metrics.json
-cp "$EV/per_region.csv" benchmark/yolo11/results/yolo11s_${FOLD}_per_region.csv
+#    Tên file có cả $SET: hai bộ fold cùng đặt tên f1..f6, thiếu nó là đè nhau.
+EV=$(ls -td benchmark/yolo11/runs/eval/*_yolo11s_${FOLD}_${SET}-${FOLD}_* | head -1)
+mkdir -p preds && cp "$EV/predictions.json" preds/yolo11s_${SET}_$FOLD.json
+cp "$EV/metrics.json"   benchmark/yolo11/results/yolo11s_${SET}_${FOLD}_metrics.json
+cp "$EV/per_region.csv" benchmark/yolo11/results/yolo11s_${SET}_${FOLD}_per_region.csv
 
 # test của thư mục này, chạy trước khi commit
 cd benchmark/yolo11 && python -m pytest tests

@@ -2,12 +2,13 @@
 
 Bố cục:
 
-    runs/<viec>/<thoi-diem>_<ten>_<nhan-tham-so>/
+    runs/<viec>/<thoi-diem>_<ten>_<bo-fold>_<nhan-tham-so>/
 
-    runs/train/2026-09-09_155401_yolo26s-seg_i640b4e100/
-    runs/probe/2026-09-09_130145_yolo26s-seg_i1536b2e100/
+    runs/train/2026-09-25_155401_maskrcnn-r50-d2_block-f4_i1024b4e50/
+    runs/train/2026-09-25_181233_maskrcnn-r50-d2_flight-f4_i1024b4e50/
+    runs/probe/2026-09-25_130145_maskrcnn-r50-d2_block-f4_i1024b4e50/
 
-Ba quyết định, mỗi cái sửa một khuyết điểm đã gặp thật:
+Bốn quyết định, mỗi cái sửa một khuyết điểm đã gặp thật:
 
 1. THỜI ĐIỂM ĐỨNG TRƯỚC. Sắp xếp theo tên cũng là sắp theo thời gian, trong
    mọi trình duyệt file và mọi lệnh ls. Đặt tên trước thì các cấu hình khác
@@ -19,6 +20,11 @@ Ba quyết định, mỗi cái sửa một khuyết điểm đã gặp thật:
 
 3. TÁCH THEO LOẠI VIỆC. Một lần dò VRAM 30 giây không nên nằm lẫn với một lần
    train 4 tiếng.
+
+4. BỘ FOLD NẰM TRONG TÊN. Hai cách chia val cho hai bộ fold cùng đặt tên
+   f1..f6, nên hai lần chạy khác hẳn nhau lại ra tên thư mục giống hệt. Nhìn
+   `..._maskrcnn-r50-d2_i1024b4e50` thì không biết nó train trên bộ nào; nhìn
+   `..._maskrcnn-r50-d2_block-f4_i1024b4e50` thì biết.
 
 Trong mỗi thư mục luôn có config đã dùng và env.json (phiên bản thư viện, GPU,
 commit git, repo sạch hay bẩn). Thiếu những thứ đó thì ba tháng sau không ai
@@ -78,8 +84,13 @@ def create_run_dir(
     return d
 
 
-def write_env(run_dir: str | Path) -> dict:
-    """Ghi lại môi trường. Gọi TRƯỚC khi chạy để có dấu vết cả khi chạy hỏng."""
+def write_env(run_dir: str | Path, cfg: dict | None = None) -> dict:
+    """Ghi lại môi trường. Gọi TRƯỚC khi chạy để có dấu vết cả khi chạy hỏng.
+
+    Có `cfg` thì ghi kèm bộ fold đã dùng (đọc từ fold.json của thư mục dữ
+    liệu): ba tháng sau mở một thư mục kết quả là biết ngay nó train trên bộ
+    nào, cắt val kiểu gì, bỏ bao nhiêu ảnh làm đệm.
+    """
     env: dict = {
         "time": datetime.now().isoformat(timespec="seconds"),
         "python": sys.version.split()[0],
@@ -89,7 +100,11 @@ def write_env(run_dir: str | Path) -> dict:
         "git_dirty": bool(_git("status", "--porcelain")),
         "packages": {},
     }
-    for mod in ("torch", "torchvision", "ultralytics", "numpy", "cv2", "pycocotools"):
+    # detectron2/mmdet/mmcv/mmengine là framework của chính ba model đang so;
+    # thiếu chúng ở đây thì env.json không mô tả được thứ đã chạy, mà trên máy
+    # thuê đó là bản ghi duy nhất còn lại về môi trường.
+    for mod in ("torch", "torchvision", "ultralytics", "detectron2",
+                "mmdet", "mmcv", "mmengine", "numpy", "cv2", "pycocotools"):
         try:
             m = __import__(mod)
             env["packages"][mod] = getattr(m, "__version__", "?")
@@ -109,6 +124,9 @@ def write_env(run_dir: str | Path) -> dict:
     except Exception:  # noqa: BLE001 - môi trường hỏng không được chặn việc chạy
         pass
 
+    if cfg is not None:
+        env["dataset"] = fold_facts(cfg)
+
     Path(run_dir, "env.json").write_text(
         json.dumps(env, indent=2, ensure_ascii=False), encoding="utf-8"
     )
@@ -117,3 +135,60 @@ def write_env(run_dir: str | Path) -> dict:
 
 def snapshot_config(run_dir: str | Path, cfg: dict) -> None:
     cfgmod.dump(cfg, Path(run_dir) / "config.yaml")
+
+
+# --------------------------------------------------------- bộ fold của lần chạy
+def data_root(cfg: dict) -> Path | None:
+    """Thư mục fold mà config trỏ vào, bất kể trainer nào.
+
+    detectron2/mmdet đọc `data.root`; ultralytics đọc `data.yaml` nằm trong
+    chính thư mục fold đó.
+    """
+    d = cfg.get("data") if isinstance(cfg, dict) else None
+    if not isinstance(d, dict):
+        return None
+    if d.get("root"):
+        return Path(str(d["root"]))
+    if d.get("yaml"):
+        return Path(str(d["yaml"])).parent
+    return None
+
+
+def dataset_tag(cfg: dict) -> str:
+    """Nhãn ngắn nhận ra BỘ FOLD: 'block-f4', 'flight-f4'.
+
+    Đi vào tên thư mục lần chạy, vào tên file dự đoán, và vào khoá của bảng
+    tổng hợp. Thiếu nó thì `maskrcnn_f4` của hai bộ trông y hệt nhau và cái
+    chạy sau đè cái trước.
+    """
+    p = data_root(cfg)
+    if p is None:
+        return ""
+    parts = [x for x in p.parts if x not in ("", ".", "..")]
+    if not parts:
+        return ""
+    fold = parts[-1]
+    parent = parts[-2] if len(parts) >= 2 else ""
+    return f"{parent}-{fold}" if parent and parent != "export" else fold
+
+
+def fold_facts(cfg: dict) -> dict | None:
+    """Những gì fold.json của bộ dữ liệu nói về lần chạy này."""
+    p = data_root(cfg)
+    if p is None or not (p / "fold.json").is_file():
+        return None
+    try:
+        doc = json.loads((p / "fold.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    vs = doc.get("val_split") or {}
+    return {
+        "root": p.as_posix(),
+        "tag": dataset_tag(cfg),
+        "fold": doc.get("fold"),
+        "source_sha1": doc.get("source_sha1"),
+        "val_method": vs.get("method"),
+        "dropped": (doc.get("dropped") or {}).get("count"),
+        "splits": {k: v.get("images") for k, v in (doc.get("splits") or {}).items()},
+        "leak": (vs.get("audit") or {}).get("leak"),
+    }
