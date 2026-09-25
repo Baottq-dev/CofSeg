@@ -117,3 +117,67 @@ def write_env(run_dir: str | Path) -> dict:
 
 def snapshot_config(run_dir: str | Path, cfg: dict) -> None:
     cfgmod.dump(cfg, Path(run_dir) / "config.yaml")
+
+
+# --------------------------------------------------------- bộ fold của lần chạy
+def data_root(cfg: dict) -> Path | None:
+    """Thư mục fold mà config trỏ vào, bất kể trainer nào.
+
+    detectron2/mmdet đọc `data.root`; ultralytics đọc `data.yaml` nằm trong
+    chính thư mục fold đó.
+    """
+    d = cfg.get("data") if isinstance(cfg, dict) else None
+    if not isinstance(d, dict):
+        return None
+    if d.get("root"):
+        return Path(str(d["root"]))
+    if d.get("yaml"):
+        return Path(str(d["yaml"])).parent
+    return None
+
+
+def dataset_tag(cfg: dict) -> str:
+    """Nhãn ngắn nhận ra BỘ FOLD: 'block-f4', 'flight-f4'.
+
+    Hai cách chia val cho hai bộ fold, và cả hai đều có fold tên f1..f6. Không
+    ghi cách chia vào tên thì `maskrcnn_f4` của bộ này và của bộ kia trông y
+    hệt nhau — thư mục kết quả lẫn bảng tổng hợp đều không phân biệt được, và
+    cái chạy sau lặng lẽ thắng.
+    """
+    p = data_root(cfg)
+    if p is None:
+        return ""
+    parts = [x for x in p.parts if x not in ("", ".", "..")]
+    if not parts:
+        return ""
+    fold = parts[-1]
+    parent = parts[-2] if len(parts) >= 2 else ""
+    return f"{parent}-{fold}" if parent and parent != "export" else fold
+
+
+def fold_facts(cfg: dict) -> dict | None:
+    """Những gì fold.json của bộ dữ liệu nói về lần chạy này.
+
+    Chép vào env.json để ba tháng sau đọc một thư mục kết quả là biết nó train
+    trên bộ fold nào, cắt val kiểu gì, bỏ bao nhiêu ảnh làm đệm — không phải
+    đi tìm lại thư mục data/ có thể đã bị cắt lại.
+    """
+    p = data_root(cfg)
+    if p is None or not (p / "fold.json").is_file():
+        return None
+    try:
+        doc = json.loads((p / "fold.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    vs = doc.get("val_split") or {}
+    audit = vs.get("audit") or {}
+    return {
+        "root": p.as_posix(),
+        "tag": dataset_tag(cfg),
+        "fold": doc.get("fold"),
+        "source_sha1": doc.get("source_sha1"),
+        "val_method": vs.get("method"),
+        "dropped": (doc.get("dropped") or {}).get("count"),
+        "splits": {k: v.get("images") for k, v in (doc.get("splits") or {}).items()},
+        "leak": audit.get("leak"),
+    }

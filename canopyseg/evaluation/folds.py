@@ -19,6 +19,8 @@ from pathlib import Path
 
 import yaml
 
+from .. import artifacts
+
 METRICS = [
     # (khoá cột, đường trong metrics.json, số chữ số, nhân)
     ("mAP", ("coco", "mask", "AP"), 3, 1),
@@ -51,18 +53,26 @@ def _dig(d: dict, path: tuple) -> float | None:
     return None if cur is None else float(cur)
 
 
-def collect(eval_root: str | Path | list, folds_yaml: str | Path) -> list[dict]:
-    """Một hàng cho mỗi lần chấm nhận diện được: model, fold, ruộng, các số đo.
+def collect(eval_root: str | Path | list, folds_yaml: str | Path,
+            dataset: str | None = None, warn=print) -> list[dict]:
+    """Một hàng cho mỗi lần chấm nhận diện được: model, bộ fold, fold, ruộng, số đo.
 
     `eval_root` là một thư mục hoặc nhiều — mỗi thành viên ghi kết quả vào
-    runs/eval của thư mục mình (benchmark/<model>_<người>/runs/eval), nên bảng
-    chung phải quét được cả bốn. Cùng (model, fold) chấm nhiều lần thì lấy lần
-    mới nhất (tên thư mục bắt đầu bằng thời điểm nên sắp xếp chuỗi là đủ).
+    runs/eval của thư mục mình, nên bảng chung phải quét được cả bốn.
+
+    Khoá của một hàng là (model, BỘ FOLD, fold). Bộ fold phải nằm trong khoá:
+    hai cách chia val cho hai bộ fold cùng đặt tên f1..f6, nên chấm
+    `maskrcnn_f4` trên cả hai bộ sẽ ra hai lần chấm trông y hệt nhau. Trước
+    đây khoá chỉ có (model, fold) và lần sau lặng lẽ đè lần trước — chạy xong
+    48 lượt mới phát hiện mất một nửa bảng.
+
+    Cùng một khoá mà chấm nhiều lần thì vẫn lấy lần mới nhất, nhưng BÁO RA
+    (`warn`) chứ không im lặng. `dataset` lọc theo một bộ fold.
     """
     doc = yaml.safe_load(Path(folds_yaml).read_text(encoding="utf-8"))
     test_field = {name: spec["test"][0] for name, spec in doc["folds"].items()}
     roots = [eval_root] if isinstance(eval_root, (str, Path)) else list(eval_root)
-    rows: dict[tuple[str, str], dict] = {}
+    rows: dict[tuple[str, str, str], dict] = {}
     for run in sorted((r for root in roots for r in Path(root).glob("*/")), key=lambda p: p.name):
         cfg_p, met_p = run / "config.yaml", run / "metrics.json"
         if not (cfg_p.exists() and met_p.exists()):
@@ -76,24 +86,35 @@ def collect(eval_root: str | Path | list, folds_yaml: str | Path) -> list[dict]:
         if not parsed or parsed[1] not in test_field:
             continue
         model, fold = parsed
+        # Bộ fold suy từ chính đường dẫn dữ liệu đã chấm, không từ tên người
+        # đặt — tên có thể đặt nhầm, đường dẫn thì không.
+        ds = artifacts.dataset_tag(cfg)
+        ds = ds[: -len(fold) - 1] if ds.endswith("-" + fold) else (ds if ds != fold else "")
+        if dataset is not None and ds != dataset:
+            continue
         met = json.loads(met_p.read_text(encoding="utf-8"))
         if (met.get("data") or {}).get("split", "test") != "test":
             continue
         n_img = _dig(met, ("data", "images_scored"))
-        row = {"model": model, "fold": fold, "field": test_field[fold], "run": run.name,
-               "images": None if n_img is None else int(n_img)}
+        row = {"model": model, "dataset": ds, "fold": fold, "field": test_field[fold],
+               "run": run.name, "images": None if n_img is None else int(n_img)}
         for col, path, nd, mul in METRICS:
             v = _dig(met, path)
             row[col] = None if v is None else round(v * mul, nd)
-        rows[(model, fold)] = row            # lần sau đè lần trước
-    return sorted(rows.values(), key=lambda r: (r["field"], r["model"]))
+        key = (model, ds, fold)
+        if key in rows and warn:
+            warn(f"  hai lần chấm cùng ({model}, {ds or 'không rõ bộ'}, {fold}): "
+                 f"giữ {run.name}, bỏ {rows[key]['run']}")
+        rows[key] = row            # lần sau đè lần trước
+    return sorted(rows.values(), key=lambda r: (r["dataset"], r["field"], r["model"]))
 
 
 def add_reference_delta(rows: list[dict], reference: str = REFERENCE) -> list[dict]:
     """Δ% mAP so với model mốc trên cùng ruộng; None khi mốc thiếu ở ruộng đó."""
-    ref = {r["field"]: r["mAP"] for r in rows if r["model"] == reference and r["mAP"] is not None}
+    ref = {(r.get("dataset", ""), r["field"]): r["mAP"]
+           for r in rows if r["model"] == reference and r["mAP"] is not None}
     for r in rows:
-        base = ref.get(r["field"])
+        base = ref.get((r.get("dataset", ""), r["field"]))
         r["dmAP_pct"] = (None if base in (None, 0) or r["mAP"] is None
                          else round(100.0 * (r["mAP"] - base) / base, 1))
     return rows
@@ -106,13 +127,19 @@ def _mean(vals: list) -> float | None:
 
 def group_means(rows: list[dict], fields: list[str], label: str) -> list[dict]:
     """Trung bình theo model trên một nhóm ruộng (nội suy / ngoại suy), chỉ khi
-    model có đủ mọi ruộng của nhóm — thiếu một ruộng là số không so được."""
+    model có đủ mọi ruộng của nhóm — thiếu một ruộng là số không so được.
+
+    Gom trong phạm vi MỘT bộ fold: trung bình trộn số của hai cách chia val là
+    trộn hai thí nghiệm khác nhau."""
     out = []
-    for model in sorted({r["model"] for r in rows}):
-        mine = [r for r in rows if r["model"] == model and r["field"] in fields]
+    for model, ds in sorted({(r["model"], r.get("dataset", "")) for r in rows}):
+        mine = [r for r in rows
+                if r["model"] == model and r.get("dataset", "") == ds
+                and r["field"] in fields]
         if {r["field"] for r in mine} != set(fields):
             continue
-        row = {"model": model, "fold": "", "field": label, "run": f"{len(fields)} ruộng",
+        row = {"model": model, "dataset": ds, "fold": "", "field": label,
+               "run": f"{len(fields)} ruộng",
                "images": sum(r["images"] or 0 for r in mine)}
         for col, *_ in METRICS:
             row[col] = _mean([r[col] for r in mine])
@@ -130,9 +157,9 @@ def fmt(v, nd=3) -> str:
 
 
 def to_markdown(rows: list[dict], title: str = "") -> str:
-    cols = ["field", "model", "images", "mAP", "dmAP_pct", "AP50", "AP75", "BAP", "BIoU",
-            "area_err_pct", "recall", "precision", "ms_img", "run"]
-    head = ["ruộng", "model", "ảnh", "mAP", "Δ% vs " + REFERENCE, "AP50", "AP75",
+    cols = ["dataset", "field", "model", "images", "mAP", "dmAP_pct", "AP50", "AP75", "BAP",
+            "BIoU", "area_err_pct", "recall", "precision", "ms_img", "run"]
+    head = ["bộ fold", "ruộng", "model", "ảnh", "mAP", "Δ% vs " + REFERENCE, "AP50", "AP75",
             "Boundary AP", "Boundary IoU", "sai số DT %", "recall", "precision", "ms/ảnh", "lần chấm"]
     nd = {c: n for c, _, n, _ in METRICS}
     nd.update({"dmAP_pct": 1})
@@ -145,8 +172,8 @@ def to_markdown(rows: list[dict], title: str = "") -> str:
 
 def write_csv(rows: list[dict], path: str | Path) -> Path:
     path = Path(path)
-    cols = ["field", "fold", "model", "images", "mAP", "dmAP_pct", "AP50", "AP75", "BAP",
-            "BIoU", "area_err_pct", "recall", "precision", "ms_img", "run"]
+    cols = ["dataset", "field", "fold", "model", "images", "mAP", "dmAP_pct", "AP50", "AP75",
+            "BAP", "BIoU", "area_err_pct", "recall", "precision", "ms_img", "run"]
     with path.open("w", encoding="utf-8", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
@@ -154,10 +181,11 @@ def write_csv(rows: list[dict], path: str | Path) -> Path:
     return path
 
 
-def build_report(eval_root: str | Path | list, folds_yaml: str | Path, reference: str = REFERENCE):
+def build_report(eval_root: str | Path | list, folds_yaml: str | Path,
+                 reference: str = REFERENCE, dataset: str | None = None, warn=print):
     """(hàng theo ruộng, hàng trung bình nhóm, markdown)."""
     doc = yaml.safe_load(Path(folds_yaml).read_text(encoding="utf-8"))
-    rows = add_reference_delta(collect(eval_root, folds_yaml), reference)
+    rows = add_reference_delta(collect(eval_root, folds_yaml, dataset, warn), reference)
     groups = []
     for key, label in (("interpolation", "TB nội suy"), ("extrapolation", "TB ngoại suy")):
         if doc.get(key):

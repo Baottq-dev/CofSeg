@@ -2,7 +2,10 @@
 
 Điều phải giữ: Δ% mAP so với mốc tính trên CÙNG ruộng; ruộng thiếu mốc thì
 ô trống chứ không gãy; trung bình nhóm chỉ tính khi model có đủ mọi ruộng
-của nhóm; cùng (model, fold) chấm hai lần thì lấy lần mới.
+của nhóm; cùng khoá chấm hai lần thì lấy lần mới VÀ báo ra.
+
+Khoá gồm cả BỘ FOLD: hai cách chia val cho hai bộ fold cùng tên f1..f6, nên
+thiếu chiều đó thì hai thí nghiệm khác nhau đè lên nhau mà không ai biết.
 """
 
 from __future__ import annotations
@@ -15,10 +18,14 @@ import yaml
 from canopyseg.evaluation import folds as rep
 
 
-def _run(root, ts, name, mAP, bap=0.5, biou=0.7, area=3.0, split="test", images=10):
+def _run(root, ts, name, mAP, bap=0.5, biou=0.7, area=3.0, split="test", images=10,
+         data_root=None):
     d = root / f"{ts}_{name}_{split}"
     d.mkdir(parents=True)
-    (d / "config.yaml").write_text(yaml.safe_dump({"name": name}), encoding="utf-8")
+    cfg = {"name": name}
+    if data_root:
+        cfg["data"] = {"root": data_root}
+    (d / "config.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
     (d / "metrics.json").write_text(json.dumps({
         "data": {"split": split, "images_scored": images},
         "coco": {"mask": {"AP": mAP, "AP50": mAP + 0.2, "AP75": mAP},
@@ -34,9 +41,9 @@ def folds_yaml(tmp_path):
     p = tmp_path / "folds.yaml"
     p.write_text(yaml.safe_dump({
         "fields": ["field_1", "field_2", "field_3"],
-        "folds": {"f1": {"test": ["field_1"], "val": ["field_2"]},
-                  "f2": {"test": ["field_2"], "val": ["field_1"]},
-                  "f3": {"test": ["field_3"], "val": ["field_2"]}},
+        "folds": {"f1": {"test": ["field_1"]},
+                  "f2": {"test": ["field_2"]},
+                  "f3": {"test": ["field_3"]}},
         "interpolation": ["field_1", "field_2"],
         "extrapolation": ["field_3"],
     }))
@@ -73,7 +80,8 @@ def test_delta_is_per_field_and_missing_reference_leaves_a_blank(tmp_path, folds
 
     assert "| field_3 | cascade |" in md and "—" in md          # ô trống là gạch
     out = rep.write_csv(rows + groups, tmp_path / "t.csv")
-    assert out.read_text(encoding="utf-8").splitlines()[0].startswith("field,fold,model")
+    assert out.read_text(encoding="utf-8").splitlines()[0].startswith(
+        "dataset,field,fold,model")
 
 
 def test_collect_merges_several_eval_dirs(tmp_path, folds_yaml):
@@ -108,3 +116,76 @@ def test_older_runs_are_recognised_from_the_directory_name(tmp_path, folds_yaml)
     folds_yaml.write_text(yaml.safe_dump(doc))
     rows = rep.collect(ev, folds_yaml)
     assert [(r["model"], r["fold"], r["field"]) for r in rows] == [("maskrcnn", "f4", "field_3")]
+
+
+# ------------------------------------------------------------- bộ fold
+def test_two_fold_sets_do_not_overwrite_each_other(tmp_path, folds_yaml):
+    """Chấm cùng một model trên hai bộ fold: hai hàng, không phải một.
+
+    Trước đây khoá chỉ là (model, fold) nên `maskrcnn_f1` của bộ block và của
+    bộ flight trùng khoá, cái chạy sau lặng lẽ thắng — chạy xong 48 lượt mới
+    phát hiện mất một nửa bảng.
+    """
+    ev = tmp_path / "eval"
+    _run(ev, "2026-09-30_100000", "maskrcnn_f1", 0.50, data_root="data/export/block/f1")
+    _run(ev, "2026-09-30_110000", "maskrcnn_f1", 0.42, data_root="data/export/flight/f1")
+
+    rows = rep.collect(ev, folds_yaml, warn=None)
+    assert len(rows) == 2
+    got = {r["dataset"]: r["mAP"] for r in rows}
+    assert got == {"block": 0.50, "flight": 0.42}
+
+
+def test_a_real_clash_is_reported_not_swallowed(tmp_path, folds_yaml):
+    ev = tmp_path / "eval"
+    _run(ev, "2026-09-30_100000", "maskrcnn_f1", 0.50, data_root="data/export/block/f1")
+    _run(ev, "2026-09-30_110000", "maskrcnn_f1", 0.42, data_root="data/export/block/f1")
+
+    said: list[str] = []
+    rows = rep.collect(ev, folds_yaml, warn=said.append)
+    assert len(rows) == 1 and rows[0]["mAP"] == 0.42        # vẫn lấy lần mới
+    assert len(said) == 1 and "block" in said[0] and "f1" in said[0]
+
+
+def test_dataset_filter_keeps_one_set(tmp_path, folds_yaml):
+    ev = tmp_path / "eval"
+    _run(ev, "2026-09-30_100000", "maskrcnn_f1", 0.50, data_root="data/export/block/f1")
+    _run(ev, "2026-09-30_110000", "maskrcnn_f1", 0.42, data_root="data/export/flight/f1")
+
+    rows = rep.collect(ev, folds_yaml, dataset="flight", warn=None)
+    assert [r["mAP"] for r in rows] == [0.42]
+
+
+def test_the_baseline_delta_stays_inside_its_own_fold_set(tmp_path, folds_yaml):
+    """Δ% so với mốc phải so trong cùng bộ fold. So chéo là so hai thí nghiệm."""
+    ev = tmp_path / "eval"
+    _run(ev, "2026-09-30_100000", "maskrcnn_f1", 0.50, data_root="data/export/block/f1")
+    _run(ev, "2026-09-30_100100", "solov2_f1", 0.55, data_root="data/export/block/f1")
+    _run(ev, "2026-09-30_110000", "maskrcnn_f1", 0.40, data_root="data/export/flight/f1")
+    _run(ev, "2026-09-30_110100", "solov2_f1", 0.44, data_root="data/export/flight/f1")
+
+    rows = rep.add_reference_delta(rep.collect(ev, folds_yaml, warn=None), "maskrcnn")
+    d = {(r["dataset"], r["model"]): r["dmAP_pct"] for r in rows}
+    assert d[("block", "solov2")] == pytest.approx(10.0)    # 0.55 vs 0.50
+    assert d[("flight", "solov2")] == pytest.approx(10.0)   # 0.44 vs 0.40, KHÔNG phải vs 0.50
+    assert d[("block", "maskrcnn")] == 0.0 and d[("flight", "maskrcnn")] == 0.0
+
+
+def test_group_means_never_mix_two_fold_sets(tmp_path, folds_yaml):
+    ev = tmp_path / "eval"
+    for ds, base in (("block", 0.50), ("flight", 0.30)):
+        for fold, field in (("f1", "field_1"), ("f2", "field_2")):
+            _run(ev, f"2026-09-30_1{'01' if ds == 'block' else '11'}0{fold[-1]}00",
+                 f"maskrcnn_{fold}", base, data_root=f"data/export/{ds}/{fold}")
+    rows = rep.add_reference_delta(rep.collect(ev, folds_yaml, warn=None))
+    groups = rep.group_means(rows, ["field_1", "field_2"], "TB nội suy")
+    means = {g["dataset"]: g["mAP"] for g in groups}
+    assert means == {"block": 0.5, "flight": 0.3}           # không phải 0.4 gộp chung
+
+
+def test_a_run_without_a_data_root_still_lands_in_the_table(tmp_path, folds_yaml):
+    """Lần chấm cũ không ghi data.root: vẫn phải vào bảng, bộ fold để trống."""
+    ev = tmp_path / "eval"
+    _run(ev, "2026-09-30_100000", "maskrcnn_f1", 0.50)
+    rows = rep.collect(ev, folds_yaml, warn=None)
+    assert len(rows) == 1 and rows[0]["dataset"] == ""
