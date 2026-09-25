@@ -597,11 +597,15 @@ class MMDetTrainer(Trainer):
         """
         if not quiet:
             return Runner.from_cfg(cfg)
-        real = sys.stdout
-        with contextlib.redirect_stdout(io.StringIO()):
+        real, buf = sys.stdout, io.StringIO()
+        with contextlib.redirect_stdout(buf):
             runner = Runner.from_cfg(cfg)
+        # Nhận diện bằng CHÍNH bộ đệm, không bằng lớp: lọc theo lớp là thứ đã
+        # trỏ nhầm đường ghi ra đĩa của detectron2 ra màn hình (xem
+        # `progress.is_console`). mmengine dùng FileHandler thật nên ở đây
+        # không dính, nhưng hai chỗ làm cùng một việc thì làm cùng một kiểu.
         for h in runner.logger.handlers:
-            if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
+            if getattr(h, "stream", None) is buf:
                 h.setStream(real)
         progress.hush(runner.logger, "mmengine", "mmdet")
         return runner
