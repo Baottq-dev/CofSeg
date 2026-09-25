@@ -99,11 +99,16 @@ def _run(reporter, epochs, per_epoch, ap_at):
         trainer.storage.put(total_loss=2.5 - i * 0.01, lr=1e-4)
         done = i + 1
         ep = done // per_epoch
-        # EvalHook: chấm val ở cuối epoch, TRỪ iteration cuối cùng.
+        # EvalHook đứng TRƯỚC hook báo cáo trong danh sách hook, và nó chấm
+        # val ngay trong after_step của CHÍNH NÓ. Nên toàn bộ vòng chấm —
+        # kể cả evaluator.reset() gọi close_train_bar() — chạy xong xuôi
+        # trước khi hook báo cáo được gọi ở cùng iteration đó.
         if done % per_epoch == 0 and done != trainer.max_iter and ep in ap_at:
+            reporter.close_train_bar()                    # evaluator.reset()
             trainer.storage.put(**{"segm/AP": ap_at[ep], "segm/AP50": ap_at[ep] * 2})
         reporter.after_step()
     if epochs in ap_at:                      # EvalHook.after_train
+        reporter.close_train_bar()
         trainer.storage.put(**{"segm/AP": ap_at[epochs], "segm/AP50": ap_at[epochs] * 2})
     reporter.after_train()
     return trainer
@@ -207,3 +212,33 @@ def test_close_train_bar_goi_hai_lan_khong_doi_so(tmp_path, fake_d2):
     time.sleep(0.05)
     r.close_train_bar()
     assert r.trained == lan_dau
+
+
+def test_thanh_bi_dong_giua_after_step_khong_lam_gay_train(tmp_path, fake_d2):
+    """Hồi quy: evaluator đóng thanh train ngay trong after_step của iteration
+    cuối epoch, rồi hook báo cáo mới tới lượt — và nó đếm tiếp vào một thanh
+    đã None.
+
+        AttributeError: 'NoneType' object has no attribute 'advance'
+
+    Xảy ra ở MỌI cuối epoch, không phải trường hợp hiếm. Bộ giả lập cũ không
+    gọi close_train_bar() nên không bắt được; giờ _run() gọi đúng chỗ.
+    """
+    t = _trainer(tmp_path, epochs=3)
+    _run(t._epoch_reporter(), 3, 30, {1: 3.76, 2: 12.81, 3: 27.61})
+
+
+def test_thanh_duoc_keo_day_truoc_khi_dong(tmp_path, fake_d2):
+    """Bước cuối epoch bị chấm val cướp mất, nên phải kéo nốt — nếu không
+    thanh đứng ở 29/30 dù epoch đã xong."""
+    t = _trainer(tmp_path, epochs=1)
+    r = t._epoch_reporter()
+    r.trainer = _FakeTrainer(30)
+    r.before_train()
+    bar = r.bar
+    for i in range(29):                      # 29 bước, chưa đủ 30
+        r.trainer.iter = i
+        r.after_step()
+    assert bar.n == 29
+    r.close_train_bar()
+    assert bar.n == 30, "phải kéo đủ 30/30"
