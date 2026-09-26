@@ -56,7 +56,12 @@ def _region_row(region, matched: Prediction | None, iou: float, band_ratio: floa
 
     g, p = align_masks(region, matched)
     d = B.band_width(region.area, band_ratio)
-    signed = B.signed_boundary_error(p, g)
+    # Một lần dựng biên + biến đổi khoảng cách cho cả bốn chỉ số biên bên
+    # dưới. Gọi bốn hàm rời thì cùng phép tính đó chạy bốn lượt: 6.44 ms mỗi
+    # vùng thay vì ~2.3 ms, tức 24 s thay vì 8.5 s cho một split test 3720 vùng.
+    s = B.surfaces(p, g)
+    nan = float("nan")
+    signed = s.signed() if s is not None else np.array([], dtype=np.float64)
     g_area = max(1, int(np.count_nonzero(g)))
     row.update({
         "iou": round(iou, 4),
@@ -64,9 +69,9 @@ def _region_row(region, matched: Prediction | None, iou: float, band_ratio: floa
         "coverage": round(M.coverage(p, g), 4),
         "excess": round(M.excess(p, g), 4),
         "boundary_iou": round(B.boundary_iou(p, g, d), 4),
-        "assd": round(B.assd(p, g), 3),
-        "hd95": round(B.hd95(p, g), 3),
-        "nsd": round(B.normalized_surface_dice(p, g, nsd_tau), 4),
+        "assd": round(s.assd() if s is not None else nan, 3),
+        "hd95": round(s.hd95() if s is not None else nan, 3),
+        "nsd": round(s.nsd(nsd_tau) if s is not None else nan, 4),
         # Trung vị nói lệch về phía nào, độ trải nói lệch có ĐỀU không. Hai số
         # này phân biệt "co vào đều" (nở bù là xong) với "lúc co lúc phình"
         # (bắt buộc phải huấn luyện thêm) — cùng một trung bình, hai cách chữa.

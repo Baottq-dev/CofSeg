@@ -5,12 +5,14 @@ chứng minh đúng độc lập với model — xem tests/test_metrics.py.
 """
 
 from .boundary import (
+    Surfaces,
     assd,
     boundary_band,
     boundary_iou,
     hd95,
     normalized_surface_dice,
     signed_boundary_error,
+    surfaces,
 )
 from .mask import coverage, dice, excess, iou
 
@@ -25,4 +27,8 @@ __all__ = [
     "assd",
     "hd95",
     "normalized_surface_dice",
+    # Chấm cả một split thì dùng hai cái này: bốn chỉ số biên ở trên đọc
+    # chung một trường khoảng cách, tính lại bốn lần là lãng phí thuần tuý.
+    "Surfaces",
+    "surfaces",
 ]
