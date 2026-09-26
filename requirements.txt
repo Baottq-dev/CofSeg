@@ -1,110 +1,71 @@
-# Một file cho cả máy nhà (Windows) và máy lab/máy thuê (Linux). Dòng có
-# "; sys_platform == ..." pip tự chọn theo hệ điều hành, không cần sửa tay.
-#
-# MỌI GÓI TRONG FILE NÀY ĐỀU LÀ WHEEL DỰNG SẴN — không gói nào biên dịch, nên
-# lệnh dưới chạy được trên MỌI máy: không cần nvcc, không cần CUDA toolkit,
-# không cần trình biên dịch C++, không cần --no-build-isolation.
+# Môi trường cho app/ (annotator) và canopyseg/ — KHÔNG có model benchmark.
 #
 #     pip install -r requirements.txt
 #     pip install -e .
 #
-# Đủ để chạy: YOLOv11-Seg và SOLOv2, cộng annotator (trừ SAM 2).
+# Bốn model benchmark có file riêng, mỗi thư mục một file, vì yêu cầu phiên bản
+# của chúng loại trừ nhau (mmcv của SOLOv2 khoá ở torch 2.4/cu121, còn GPU đời
+# Blackwell lại đòi torch >= 2.7):
 #
-# HAI GÓI BUILD TỪ SOURCE nằm ngoài file này, vì chúng phụ thuộc vào môi
-# trường lúc cài chứ không chỉ vào phiên bản:
+#     benchmark/yolo11/requirements.txt
+#     benchmark/solov2/requirements.txt
+#     benchmark/maskrcnn/requirements.txt
+#     benchmark/mask2former/requirements.txt
 #
-#     detectron2   -> Mask R-CNN và Mask2Former     (xem cuối file)
-#     SAM 2.1      -> annotator                      (xem dòng hydra-core)
+# Mỗi thư mục benchmark tự chứa bản `cofseg/` riêng và `train.py` tự thêm thư
+# mục của nó vào sys.path, nên chạy benchmark KHÔNG cần `pip install -e .`.
 #
-# Muốn đủ bốn model thì dùng scripts/setup_env.py — nó cài cả hai gói đó theo
-# đúng thứ tự:
-#
-#     python scripts/setup_env.py
-#     python scripts/setup_env.py --skip-cuda-build   # nvcc lệch phiên bản / không có nvcc
-#                                                     (train vẫn dùng GPU)
-#
-# MỘT env cho cả app/ lẫn benchmark/.
+# MỌI GÓI Ở ĐÂY LÀ WHEEL DỰNG SẴN — không gói nào biên dịch, nên cài được trên
+# mọi máy: không cần nvcc, không cần CUDA toolkit, không cần trình biên dịch.
 --extra-index-url https://download.pytorch.org/whl/cu121
---find-links https://download.openmmlab.com/mmcv/dist/cu121/torch2.4/index.html
 
-# ---- torch: ghim cả hậu tố +cu121 để thiếu index là pip báo ngay, không âm
-# thầm kéo bản CPU. Máy lab dừng ở 2.4.1 vì mmcv (SOLOv2) chỉ có wheel dựng
-# sẵn tới torch 2.4; nhà giữ 2.5.1 vì không chạy mmcv.
+# ---- torch: ghim cả hậu tố +cu121 để thiếu index là pip báo ngay, chứ không
+# âm thầm kéo bản CPU. app/ chỉ dùng torch để chạy SAM, không huấn luyện gì,
+# nên bản nào cũng được — giữ cu121 cho khớp với benchmark, đỡ phải nhớ.
 torch==2.5.1+cu121; sys_platform == "win32"
 torchvision==0.20.1+cu121; sys_platform == "win32"
 torch==2.4.1+cu121; sys_platform == "linux"
 torchvision==0.19.1+cu121; sys_platform == "linux"
 
-# ---- dùng chung
+# ---- annotator (app/server.py, app/annotator.py, app/flower.py)
+fastapi==0.139.0       # server annotator tự xây
+uvicorn==0.49.0        # chạy server đó
+pydantic==2.12.4       # app/server.py khai schema request
 numpy==2.4.4
-scipy==1.18.0
-scikit-image==0.26.0
-# albumentations và ultralytics kéo theo opencv-python-headless cùng phiên bản;
-# cả hai gói ghi đè lên cùng thư mục cv2/ nên đừng để lệch phiên bản giữa chúng.
 opencv-python==5.0.0.93
-rasterio==1.5.0
-pycocotools==2.0.11
-pyyaml==6.0.3
-tqdm==4.68.3
-albumentations==2.0.8
-gradio==6.19.0         # giao diện Phase 1 (app/)
 pillow==12.2.0
-fastapi==0.139.0       # annotator tự xây (app/server.py)
-uvicorn==0.49.0        # chạy server annotator
-ultralytics==8.4.143   # YOLO11-seg: huấn luyện + đọc bộ YOLO-seg do annotator xuất
-# SAM 2.1 (annotator) cài bằng LỆNH RIÊNG, không nằm trong file này:
+pyyaml==6.0.3
+pycocotools==2.0.11    # app/ xuất mặt nạ dạng RLE của COCO
+
+# ---- SAM 2.1 / SAM 3 (app/annotator.py) cài bằng LỆNH RIÊNG, không nằm ở đây:
 #
 #     pip install --no-deps --no-build-isolation \
 #       "SAM-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4"
 #
-# --no-deps vì setup.py của SAM 2 khai `torch>=2.5.1`, còn máy lab phải ở
-# torch 2.4.1 (mmcv chỉ có wheel dựng sẵn cho torch 2.4, index torch2.5 không
-# tồn tại). Để nguyên dòng đó trong file này thì pip chết:
+# --no-deps vì setup.py của SAM 2 khai `torch>=2.5.1`, còn máy Linux ở đây là
+# torch 2.4.1. Để nguyên mốc đó thì pip chết:
 #
 #     ERROR: Cannot install -r requirements.txt and torch==2.4.1+cu121
 #     The conflict is caused by: sam-2 1.0 depends on torch>=2.5.1
 #
-# Bỏ qua mốc đó AN TOÀN cho ta: nó xuất hiện ở commit 11/12/2024 của SAM 2 để
-# `torch.compile` TOÀN MODEL cho nhánh video (VOS). app/annotator.py chỉ dùng
-# build_sam2 + SAM2ImagePredictor, tức nhánh ảnh, và không gọi torch.compile ở
-# đâu. Hai gói SAM 2 thật sự cần mà không có sẵn thì ghim ngay dưới đây.
-hydra-core==1.3.3      # SAM 2 đọc config model bằng hydra
-# iopath: detectron2 ghim `<0.1.10`, SAM 2 đòi `>=0.1.10`. Hai mốc đó không
-# gặp nhau. Lấy theo detectron2 vì nó ÉP thật lúc cài (pip hạ xuống 0.1.9 dù
-# ta ghim 0.1.10), còn SAM 2 cài với --no-deps nên mốc của nó không áp. Khác
-# biệt giữa hai bản là vài hàm tiện ích, annotator không đụng tới.
-iopath==0.1.9          # SAM 2 nạp checkpoint qua iopath; detectron2 cũng cần
-# mmengine/mmdet thuần Python: cài được mọi nơi, để ở nhà kiểm config SOLOv2
-# (canopyseg/training/mmdet.py). Chạy thật cần mmcv bên dưới.
-mmengine==0.10.7
-mmdet==3.3.0
-shapely==2.1.2         # mmdet và Mask2Former cùng cần
-# setuptools: detectron2 0.6 mở model zoo bằng `import pkg_resources`, mà
-# setuptools 82 đã BỎ HẲN module đó (đã mở wheel ra đếm: 81.0.0 còn
-# pkg_resources/, 82.0.1 không còn dòng nào). Không ghim thì Mask R-CNN và
-# Mask2Former chết ở lần train đầu, sau khi đã nạp xong dữ liệu:
-#
-#     File ".../detectron2/model_zoo/model_zoo.py", line 4, in <module>
-#         import pkg_resources
-#     ModuleNotFoundError: No module named 'pkg_resources'
-#
-# Ghim rẻ hơn vá: một dòng này che cho MỌI gói cũ còn gọi pkg_resources, chứ
-# không phải sửa một file bên trong detectron2 rồi lần cài sau lại mất. Gỡ
-# được khi detectron2 chuyển sang importlib.resources — repo đó gần như đứng
-# yên, đừng trông chờ.
-setuptools<82
+# Bỏ qua mốc đó AN TOÀN: nó xuất hiện ở commit 11/12/2024 để `torch.compile`
+# toàn model cho nhánh video (VOS). app/annotator.py chỉ dùng build_sam2 +
+# SAM2ImagePredictor — nhánh ảnh — và không gọi torch.compile ở đâu.
+# Hai gói SAM thật sự cần mà không tự đến thì ghim ngay dưới:
+hydra-core==1.3.3      # SAM đọc config model bằng hydra
+iopath==0.1.9          # SAM nạp checkpoint qua iopath
 
-# ---- chỉ Linux: benchmark trên máy lab. Windows bỏ qua tự động.
-# detectron2 (Mask R-CNN, Mask2Former) KHÔNG nằm ở đây. Nó là gói duy nhất
-# phải build từ source, và setup.py của nó quyết định biên dịch op CUDA hay
-# không TUỲ THEO lúc cài có thấy GPU và nvcc hay không — thứ mà một dòng trong
-# requirements.txt không điều khiển được. Để trong đây thì `pip install -r
-# requirements.txt` trên máy có nvcc lệch phiên bản với torch sẽ chết giữa
-# chừng. Bước `detectron2` của scripts/setup_env.py cài nó và xử lý được.
-# mmcv có op CUDA biên dịch sẵn cho torch 2.4/cu121 (dòng --find-links trên).
-# mmdet 3.3.0 khai mmcv < 2.2 nhưng chạy được với 2.2.0; bước `mmdet` của
-# scripts/setup_env.py nới dòng kiểm phiên bản đó sau khi cài.
-mmcv==2.2.0 ; sys_platform == "linux"
-# Mask2Former (submodule benchmark/mask2former/upstream) cần thêm:
-timm==1.0.29 ; sys_platform == "linux"
-h5py==3.16.0 ; sys_platform == "linux"
+# ---- scripts/
+scikit-image==0.26.0   # scripts/06_superpixel_flower.py (SLIC)
+# scipy: scikit-image tự kéo theo, nhưng ghim tường minh để hai máy cài cách
+# nhau vài tháng vẫn ra cùng một bản. pyproject.toml khai requires-python
+# >= 3.12 chính vì ba gói này chỉ có wheel từ đó trở lên.
+scipy==1.18.0
+
+# ---- TUỲ CHỌN, cài riêng khi cần
+#
+# pycolmap: chỉ canopyseg/datasets/sfm.py dùng, để đo chồng lấp giữa các ảnh
+# bay. Gói này nặng và không cần cho việc gán nhãn lẫn huấn luyện, nên
+# `require_pycolmap()` báo lỗi rõ ràng khi thiếu thay vì bắt mọi người cài:
+#
+#     pip install pycolmap
