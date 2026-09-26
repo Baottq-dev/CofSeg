@@ -27,24 +27,25 @@ Từ **gốc repo** (để `data/` và `weights/` dùng chung). Đặt `--runs` 
 này và `--name` theo đúng dạng `<model>_<fold>` — bảng tổng hợp đọc tên đó để
 biết model nào chấm trên ruộng nào.
 
-Lệnh dưới đây chạy trên bộ fold cắt theo cách val **block**
-(`data/export/block/`). Nhóm đang cân nhắc hai cách chia val; đổi sang cách
-kia chỉ cần `--set data.root=data/export/flight/$FOLD`. Cả hai bộ fold cắt ra
-bằng `scripts/make_fold.py`, xem `benchmark/README.md`.
+`--data` nhận **thư mục fold**, viết thẳng ra cũng được —
+`--data data/export/flight/f1` — nhìn lệnh là biết đang chạy bộ nào, fold nào.
+Cùng một cú pháp cho cả bốn model, dù bên trong ba model đọc `data.root` còn
+ultralytics đọc `data.yaml`. Hai bộ fold cắt ra bằng `scripts/make_fold.py`,
+xem `benchmark/README.md`.
 
 ```bash
 SET=block        # bộ fold: block hoặc flight
 FOLD=f4
 
 # 1. huấn luyện (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
-python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --set data.root=data/export/$SET/$FOLD --runs benchmark/mask2former/runs --name mask2former
+python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/$SET/$FOLD --runs benchmark/mask2former/runs --name mask2former
 
 # 2. dự đoán test do trainer ghi ra -> preds/ để cả nhóm dùng chung
 RUN=$(ls -td benchmark/mask2former/runs/train/*_mask2former_${SET}-${FOLD}_* | head -1)
 mkdir -p preds && cp "$RUN/predictions.json" preds/mask2former_${SET}_$FOLD.json
 
 # 3. chấm: Boundary AP, Boundary IoU, sai số diện tích, bảng từng vùng
-python benchmark/mask2former/evaluate.py --config benchmark/mask2former/configs/eval/_coco.yaml --file preds/mask2former_${SET}_$FOLD.json --set data.root=data/export/$SET/$FOLD --split test --runs benchmark/mask2former/runs --name mask2former
+python benchmark/mask2former/evaluate.py --config benchmark/mask2former/configs/eval/_coco.yaml --file preds/mask2former_${SET}_$FOLD.json --data data/export/$SET/$FOLD --split test --runs benchmark/mask2former/runs --name mask2former
 
 # 4. chép file kết quả nhỏ vào results/ (runs/ không vào git)
 EV=$(ls -td benchmark/mask2former/runs/eval/*_mask2former_${SET}-${FOLD}_* | head -1)
