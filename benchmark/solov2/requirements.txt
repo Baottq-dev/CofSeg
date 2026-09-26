@@ -1,0 +1,65 @@
+# SOLOv2 (mmdet + mmcv). Người phụ trách: PhuongQuynh. CHỈ LINUX.
+#
+#     pip install -r benchmark/solov2/requirements.txt
+#
+# Sau khi cài, nới một dòng kiểm phiên bản trong mmdet (xem cuối file):
+#
+#     python scripts/setup_env.py --only mmdet
+#
+# ============================================================================
+# VÌ SAO TORCH BỊ KHOÁ Ở 2.4.1 / cu121 — ĐỌC TRƯỚC KHI ĐỊNH NÂNG
+# ============================================================================
+#
+# mmcv là gói DUY NHẤT trong cả dự án có op biên dịch sẵn mà ta không tự dựng
+# được dễ dàng, và OpenMMLab chỉ phát hành đúng hai nhánh CUDA:
+#
+#     cu118/torch2.3.0  cu118/torch2.4.0     <- có
+#     cu121/torch2.3.0  cu121/torch2.4.0     <- có
+#     cu124/*  cu128/*  cu130/*  torch2.5+   <- KHÔNG TỒN TẠI (dò trực tiếp, 404)
+#
+# Và họ đã dừng phát triển:
+#
+#     mmcv  2.2.0  phát hành 24/04/2024
+#     mmdet 3.3.0  phát hành 05/01/2024
+#
+# HỆ QUẢ QUAN TRỌNG: torch 2.4/cu121 ra đời TRƯỚC kiến trúc Blackwell, nên nó
+# không có kernel cho `sm_120`. SOLOv2 KHÔNG chạy được trên RTX 50xx, RTX PRO
+# 6000 hay B200 — lời gọi kernel đầu tiên sẽ ném:
+#
+#     RuntimeError: CUDA error: no kernel image is available for execution
+#
+# Mọi GPU đời trước Blackwell đều chạy tốt: T4, V100, RTX 20/30/40, L4, L40S,
+# A40, A6000, A100, H100. Chọn một trong số đó là xong, không phải build gì.
+#
+# Muốn dùng CUDA mới hơn thì phải build mmcv từ nguồn với torch mới — làm được
+# nhưng upstream đã đứng yên hai năm rưỡi, và bản tự build không ai tái lập
+# được. Chỉ nên làm khi KHÔNG CÒN GPU nào đời trước Blackwell.
+# ============================================================================
+--extra-index-url https://download.pytorch.org/whl/cu121
+--find-links https://download.openmmlab.com/mmcv/dist/cu121/torch2.4/index.html
+
+torch==2.4.1+cu121
+torchvision==0.19.1+cu121
+
+mmengine==0.10.7
+mmcv==2.2.0            # wheel dựng sẵn từ --find-links ở trên, không biên dịch
+mmdet==3.3.0
+
+# ---- cofseg/ dùng chung
+numpy==2.4.4
+opencv-python==5.0.0.93
+pycocotools==2.0.11
+pyyaml==6.0.3
+tqdm==4.68.3
+
+# ---- việc phải làm sau khi cài
+#
+# mmdet 3.3.0 khai `mmcv < 2.2.0` trong __init__.py, nhưng chạy tốt với 2.2.0
+# — mà 2.2.0 lại đúng là bản duy nhất có wheel cho torch 2.4. Không nới thì:
+#
+#     AssertionError: MMCV==2.2.0 is used but incompatible.
+#     Please install mmcv>=2.0.0rc4, <2.2.0.
+#
+# Bước `mmdet` của scripts/setup_env.py sửa đúng dòng đó. Nó dùng
+# importlib.util.find_spec để TÌM file chứ không `import mmdet` — vì chính
+# dòng assert cần sửa nằm trong __init__.py, import vào là chết trước khi kịp.
