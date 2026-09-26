@@ -57,7 +57,7 @@ def parse_overrides(
                 f"{what} không có tham số {key!r}.{hint}\n"
                 f"Xem toàn bộ tham số: --list-params"
             )
-        out[key] = yaml.safe_load(raw)
+        out[key] = _typed(raw)
         i += 1
     return out
 
@@ -70,3 +70,20 @@ def describe_params(defaults: dict, locked: Iterable[str] = ()) -> str:
         mark = "  [khoá]" if k in locked_set else ""
         lines.append(f"  --{k:<24} mặc định {defaults[k]!r}{mark}")
     return "\n".join(lines)
+
+
+def _typed(raw: str):
+    """Ép kiểu giá trị dòng lệnh.
+
+    yaml.safe_load lo phần lớn ("0.5", "true", "[1,2]"), nhưng PyYAML theo
+    YAML 1.1 KHÔNG nhận ký hiệu khoa học thiếu dấu chấm: "5e-5" và "1e-4" ra
+    chuỗi chứ không ra số. Mà "1e-4" đúng là cách viết tự nhiên nhất cho lr
+    của Mask2Former, và chuỗi đó đi thẳng vào ultralytics thì hỏng.
+    """
+    v = yaml.safe_load(raw)
+    if isinstance(v, str):
+        try:
+            return float(v)
+        except ValueError:
+            pass
+    return v

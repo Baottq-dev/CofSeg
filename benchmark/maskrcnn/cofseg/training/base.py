@@ -29,6 +29,19 @@ class Trainer(ABC):
         """
         return ""
 
+    #: Khoá trong `data:` nhận thư mục fold. detectron2/mmdet đọc thẳng thư
+    #: mục (`data.root`); ultralytics đọc file mô tả bên trong nó
+    #: (`data.yaml`). Nhờ khai ở đây mà `--data <thư-mục-fold>` viết giống
+    #: nhau cho mọi model, thay vì người chạy phải nhớ model nào cần cái gì.
+    DATA_KEY = "root"
+
+    @classmethod
+    def data_arg(cls, path: str) -> tuple[str, str]:
+        """Thư mục fold -> (khoá config, giá trị) cho --data."""
+        p = str(path).replace("\\", "/").rstrip("/")
+        return (f"data.{cls.DATA_KEY}",
+                f"{p}/data.yaml" if cls.DATA_KEY == "yaml" else p)
+
     # ------------------------------------------------------------------ tham số
     @classmethod
     def param_defaults(cls) -> dict | None:

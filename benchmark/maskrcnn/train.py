@@ -79,11 +79,24 @@ def main() -> int:
         action="store_true",
         help="run.log gộp mỗi dòng một lần và bỏ mã màu (mặc định: chép nguyên văn)",
     )
+    ap.add_argument("--data", default=None, metavar="THƯ_MỤC_FOLD",
+                    help="thư mục fold, vd data/export/block/f1 — viết thẳng ra để "
+                         "nhìn lệnh là biết đang train fold nào")
     ap.add_argument("--runs", default="runs", help="thư mục gốc chứa kết quả")
     ap.add_argument("--name", default=None, help="tên lần chạy (mặc định lấy từ config)")
     a, extra = ap.parse_known_args()
 
-    cfg = cfgmod.load(a.config, a.overrides)
+    # --data đứng TRƯỚC --set trong danh sách ghi đè, nên --set thắng nếu ai
+    # đó dùng cả hai — cụ thể hơn thì thắng, như mọi chỗ khác.
+    overrides = list(a.overrides)
+    if a.data:
+        cfg0 = cfgmod.load(a.config)
+        cls0 = resolve("trainer", cfg0["trainer"]) if "trainer" in cfg0 else None
+        if cls0 is None:
+            raise SystemExit(f"config thiếu khoá 'trainer'. Hiện có: {available('trainer')}")
+        key, val = cls0.data_arg(a.data)
+        overrides.insert(0, f"{key}={val}")
+    cfg = cfgmod.load(a.config, overrides)
     if "trainer" not in cfg:
         raise SystemExit(f"config thiếu khoá 'trainer'. Hiện có: {available('trainer')}")
     trainer_cls = resolve("trainer", cfg["trainer"])
