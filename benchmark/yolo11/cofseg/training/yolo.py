@@ -68,6 +68,7 @@ class YoloTrainer(Trainer):
     #: chất lượng lẫn chi phí của lần chạy, và cũng chính là ba cái hay bị ghi
     #: đè từ dòng lệnh — tức ba cái dễ khiến nhãn tĩnh trong config thành sai.
     TAG_KEYS = (("imgsz", "i"), ("batch", "b"), ("epochs", "e"))
+    DATA_KEY = "yaml"      # ultralytics đọc data/export/<bộ>/<fold>/data.yaml
 
     @classmethod
     def run_tag(cls, cfg: dict) -> str:

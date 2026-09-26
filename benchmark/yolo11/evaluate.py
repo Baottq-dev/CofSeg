@@ -62,7 +62,11 @@ EVAL_DEFAULTS = {"iou_thr": 0.5, "band_ratio": 0.02, "nsd_tau": 2.0, "dilation_r
 
 # ------------------------------------------------------------------ đường chung
 def run_config(a, extra: list[str]) -> int:
-    cfg = cfgmod.load(a.config, a.overrides)
+    # --data đứng trước --set: --set cụ thể hơn nên thắng nếu dùng cả hai.
+    overrides = list(a.overrides)
+    if a.data:
+        overrides.insert(0, "data.root=" + str(a.data).replace("\\", "/").rstrip("/"))
+    cfg = cfgmod.load(a.config, overrides)
     if "model" not in cfg or "name" not in cfg["model"]:
         raise SystemExit(f"config cần khối model: {{name: ...}}. Model có: {available('model')}")
     name = cfg["model"]["name"]
@@ -156,7 +160,7 @@ def run_native(a, extra: list[str]) -> int:
     weights = Path(a.weights)
     if not weights.exists():
         raise SystemExit(f"Không thấy trọng số: {weights}")
-    data = Path(a.data)
+    data = Path(a.native_data)
     if not data.exists():
         raise SystemExit(f"Không thấy {data}. Cắt fold trước: scripts/make_fold.py --export <bản xuất> --all")
     kw = cli.parse_overrides(extra, set(vars(get_cfg())), NATIVE_LOCKED, what="val()")
@@ -204,7 +208,10 @@ def main() -> int:
     ap.add_argument("--native", action="store_true",
                     help="chấm bằng model.val() của ultralytics (chỉ YOLO)")
     ap.add_argument("--weights", default=None, help="[native] best.pt / last.pt")
-    ap.add_argument("--data", default="data/export/block/f4/data.yaml", help="[native] data.yaml")
+    ap.add_argument("--data", default=None, metavar="THƯ_MỤC_FOLD",
+                    help="thư mục fold, vd data/export/block/f1 — thay cho --set data.root=")
+    ap.add_argument("--native-data", dest="native_data",
+                    default="data/export/block/f4/data.yaml", help="[native] data.yaml")
     ap.add_argument("--imgsz", type=int, default=1024, help="[native]")
     ap.add_argument("--batch", type=int, default=4, help="[native]")
     # [native] max_det=300 mặc định của ultralytics làm tràn VRAM ở khâu val: nó
