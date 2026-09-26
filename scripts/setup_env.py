@@ -11,9 +11,14 @@ dựng trên máy mới còn biết hỏng ở đâu. Chạy TRONG env đã kíc
 không tự tạo conda env (kích hoạt env từ bên trong một tiến trình Python
 không có tác dụng ra ngoài), nó kiểm tra và bảo bạn cần gõ gì.
 
-Một env cho tất cả: torch 2.4.1+cu121 (mmcv chỉ có wheel dựng sẵn tới torch
-2.4), ultralytics, detectron2 build từ source, mmcv/mmdet, submodule
-Mask2Former với op MSDeformAttn biên dịch tại chỗ, rồi trọng số COCO.
+MỘT env cho tất cả — cả annotator (app/) lẫn benchmark: torch 2.4.1+cu121
+(mmcv chỉ có wheel dựng sẵn tới torch 2.4), ultralytics, detectron2 build từ
+source, mmcv/mmdet, submodule Mask2Former với op MSDeformAttn biên dịch tại
+chỗ, SAM 2.1, rồi trọng số COCO.
+
+SAM 2 khai `torch>=2.5.1` nên không để chung requirements.txt được; bước
+`sam2` cài nó với --no-deps. Máy chỉ chạy benchmark thì bỏ bước đó:
+`--only check,torch,requirements,mmdet,mask2former,weights`.
 
 CHƯA CHẠY THẬT trên máy Linux: lần đầu nên đi từng bước với --only.
 """
@@ -28,6 +33,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 M2F_DIR = "benchmark/mask2former/upstream"
+#: SAM 2.1 ghim theo commit; cài riêng với --no-deps, xem step_sam2.
+SAM2 = ("SAM-2 @ git+https://github.com/facebookresearch/sam2.git"
+        "@2b90b9f5ceec907a1c18123530e92e794ad901a4")
 TORCH = ["torch==2.4.1", "torchvision==0.19.1",
          "--index-url", "https://download.pytorch.org/whl/cu121"]
 
@@ -112,6 +120,24 @@ def step_mask2former() -> None:
              "print('Mask2Former import OK')")
 
 
+def step_sam2() -> None:
+    """SAM 2.1 cho annotator — cài bỏ qua mốc torch của nó.
+
+    setup.py của SAM 2 khai `torch>=2.5.1`, nhưng env này ở 2.4.1 vì mmcv chỉ
+    có wheel dựng sẵn cho torch 2.4. Mốc đó vào từ commit 11/12/2024 để
+    `torch.compile` TOÀN MODEL cho nhánh video; app/annotator.py chỉ dùng
+    build_sam2 + SAM2ImagePredictor (nhánh ảnh) và không gọi torch.compile,
+    nên --no-deps là an toàn. Hai gói SAM 2 thật sự cần (hydra-core, iopath)
+    đã ghim trong requirements.txt.
+
+    Bước này chỉ cần nếu máy có chạy annotator; benchmark không import sam2.
+    """
+    pip("install", "--no-deps", "--no-build-isolation", SAM2)
+    py("-c", "from sam2.build_sam import build_sam2;"
+             "from sam2.sam2_image_predictor import SAM2ImagePredictor;"
+             "print('SAM 2 import OK')")
+
+
 def step_weights() -> None:
     """Trọng số COCO theo configs/weights.yaml, kiểm sha256."""
     py("scripts/download_weights.py", "--group", "benchmark")
@@ -123,6 +149,7 @@ STEPS = [
     Step("requirements", "requirements.txt + gói repo + detectron2", step_requirements),
     Step("mmdet", "nới kiểm phiên bản mmcv, thử import", step_mmdet),
     Step("mask2former", "submodule + op MSDeformAttn", step_mask2former),
+    Step("sam2", "SAM 2.1 cho annotator (bỏ qua mốc torch của nó)", step_sam2),
     Step("weights", "tải trọng số COCO", step_weights),
 ]
 
