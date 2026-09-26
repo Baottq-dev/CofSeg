@@ -76,20 +76,28 @@ python scripts/setup_env.py
 thì có hai đường, chọn một:
 
 ```
-# A. không cài thêm gì, không biên dịch op CUDA nào
-python scripts/setup_env.py --no-cuda-ext
+# A. không cài thêm gì. Lúc CÀI không biên dịch nhân CUDA nào;
+#    lúc TRAIN vẫn dùng GPU đầy đủ.
+python scripts/setup_env.py --skip-cuda-build
 
 # B. cài nvcc khớp vào CHÍNH env này (không đụng CUDA của máy, không cần sudo)
 conda install -y -c nvidia/label/cuda-12.1.1 cuda-toolkit
 python scripts/setup_env.py
 ```
 
-| | A — `--no-cuda-ext` | B — cài toolkit vào env |
+| | A — `--skip-cuda-build` | B — cài toolkit vào env |
 |---|---|---|
 | Cài thêm | không | ~2–3 GB trong env của bạn |
+| **Train trên GPU** | **có** | **có** |
 | Mask R-CNN, SOLOv2, YOLO | như thường | như thường |
 | Mask2Former | chậm hơn ~1,3–1,8 lần | đủ tốc độ |
 | Kết quả | **giống nhau** | |
+
+`--skip-cuda-build` chỉ tác động lúc **cài**: nó bảo pip đừng biên dịch nhân
+CUDA tự viết của detectron2 và Mask2Former. Lúc **train**, torch vẫn là bản
+cu121 và GPU vẫn chạy đầy tải. Mask2Former chậm hơn không phải vì rơi xuống
+CPU — tensor vẫn trên GPU — mà vì phép attention đa tỉ lệ được ghép từ nhiều
+`grid_sample` rời thay cho một nhân gộp sẵn.
 
 Đường A dựa vào hai đường lùi có sẵn trong chính mã nguồn: `setup.py` của
 detectron2 tự dựng `CppExtension` khi không thấy GPU lúc cài (Mask R-CNN
