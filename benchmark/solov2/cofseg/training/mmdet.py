@@ -733,6 +733,29 @@ class MMDetTrainer(Trainer):
         from mmengine.runner import Runner
 
         cfg = self._cfg()
+        if self.resume:
+            # Hai cái bẫy của mmengine, cả hai đều im lặng:
+            # 1. `resume=True` mà không có file `last_checkpoint` trong
+            #    work_dir thì find_latest_checkpoint trả None và Runner train
+            #    LẠI TỪ ĐẦU (runner.py:1686), ghi đè lên phần đã chạy.
+            # 2. `resume=True` mà `load_from` vẫn còn thì mmengine "chạy tiếp"
+            #    từ chính checkpoint COCO đó (runner.py:1691), tức đi đòi
+            #    trạng thái optimizer ở một file không có trạng thái nào.
+            moc = self.out_dir / "last_checkpoint"
+            if not moc.is_file():
+                raise SystemExit(
+                    f"Không thấy {moc}: không có gì để chạy tiếp.\n"
+                    "  Lượt đã chạy xong không còn epoch_*.pth (đã chuyển sang "
+                    "weights/last.pth), nên --resume chỉ dùng cho lượt bị ngắt "
+                    "giữa chừng.")
+            ckpt = self.out_dir / moc.read_text(encoding="utf-8").strip()
+            if not ckpt.is_file():
+                raise SystemExit(
+                    f"{moc} trỏ vào {ckpt.name} nhưng file đó không còn.\n"
+                    "  Lượt này đã chạy xong hoặc thư mục mmdet/ đã bị dọn.")
+            cfg.resume = True
+            cfg.load_from = None
+            print(f"Chạy tiếp từ {ckpt.name}")
         per_epoch = iters_per_epoch(self.n_train, self.train_args["batch"])
         print(f"{self.arch}: {self.train_args['epochs']} epoch x {per_epoch} iteration, "
               f"batch {cfg.train_dataloader.batch_size}, imgsz {self.train_args['imgsz']}, "
