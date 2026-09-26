@@ -987,7 +987,25 @@ class Detectron2Trainer(Trainer):
               f"lr {cfg.SOLVER.BASE_LR:g}, max_iter {cfg.SOLVER.MAX_ITER}")
         t0 = time.time()
         trainer = cls(cfg)
-        trainer.resume_or_load(resume=False)
+        if self.resume:
+            # `last_checkpoint` là file một dòng trỏ vào checkpoint định kỳ gần
+            # nhất; thiếu nó thì resume_or_load lặng lẽ nạp trọng số COCO và
+            # chạy lại từ iteration 0 — một lượt tưởng là chạy tiếp mà thật ra
+            # chạy lại, và nó sẽ ghi đè phần đã có.
+            moc = self.out_dir / "last_checkpoint"
+            if not moc.is_file():
+                raise SystemExit(
+                    f"Không thấy {moc}: không có gì để chạy tiếp.\n"
+                    "  Lượt đã chạy xong sẽ không còn checkpoint định kỳ nào "
+                    "(model_final.pth đã được chuyển sang weights/last.pth), nên "
+                    "--resume chỉ dùng cho lượt bị ngắt giữa chừng.")
+            ckpt = self.out_dir / moc.read_text(encoding="utf-8").strip()
+            if not ckpt.is_file():
+                raise SystemExit(
+                    f"{moc} trỏ vào {ckpt.name} nhưng file đó không còn.\n"
+                    "  Lượt này đã chạy xong hoặc thư mục d2/ đã bị dọn.")
+            print(f"Chạy tiếp từ {ckpt.name}")
+        trainer.resume_or_load(resume=self.resume)
         self._train_or_say_why(trainer, cfg)
         train_seconds = round(time.time() - t0, 1)
 
