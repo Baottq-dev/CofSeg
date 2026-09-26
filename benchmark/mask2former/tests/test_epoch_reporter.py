@@ -18,7 +18,7 @@ import types
 
 import pytest
 
-from cofseg.training.detectron2 import D2_DEFAULTS, Detectron2Trainer
+from cofseg.training.detectron2 import D2_DEFAULTS, Detectron2Trainer, best_so_far
 
 
 class _History:
@@ -49,9 +49,9 @@ class _Storage:
 
 
 class _FakeTrainer:
-    def __init__(self, max_iter):
-        self.iter = 0
-        self.start_iter = 0
+    def __init__(self, max_iter, start_iter=0):
+        self.iter = start_iter
+        self.start_iter = start_iter
         self.max_iter = max_iter
         self.storage = _Storage()
 
@@ -84,16 +84,16 @@ def _trainer(tmp_path, epochs=3, batch=16, n_train=470):
     return t
 
 
-def _run(reporter, epochs, per_epoch, ap_at):
+def _run(reporter, epochs, per_epoch, ap_at, start_iter=0):
     """Vòng lặp y như TrainerBase.train, kể cả chỗ EvalHook bỏ qua iter cuối.
 
     `ap_at` ánh xạ epoch -> AP; epoch cuối được ghi ở after_train để mô phỏng
     đúng hành vi của EvalHook.
     """
-    trainer = _FakeTrainer(epochs * per_epoch)
+    trainer = _FakeTrainer(epochs * per_epoch, start_iter)
     reporter.trainer = trainer
     reporter.before_train()
-    for i in range(trainer.max_iter):
+    for i in range(start_iter, trainer.max_iter):
         trainer.iter = i
         trainer.storage.iter = i
         trainer.storage.put(total_loss=2.5 - i * 0.01, lr=1e-4)
@@ -278,3 +278,55 @@ def test_chay_het_thi_van_keo_day(tmp_path, fake_d2, capsys):
     r = t._epoch_reporter()
     _run(r, epochs=1, per_epoch=30, ap_at={1: 27.6})
     assert "epoch 1/1" in capsys.readouterr().out
+
+
+# ----------------------------------------------------------------- chạy tiếp
+def test_chay_tiep_dem_epoch_tuyet_doi(tmp_path, fake_d2, capsys):
+    """Nối tiếp từ giữa: nhãn epoch và cột iter phải TUYỆT ĐỐI.
+
+    detectron2 gọi train(start_iter, max_iter) nên trainer.iter chạy tiếp chứ
+    không về 0. Đếm tương đối thì một lượt 3 epoch nối tiếp ở epoch 1 in
+    "epoch 1/3" cho epoch thật là 2, và kết thúc ở "epoch 2/3" dù đã chạy đủ
+    tới max_iter — nhìn như thiếu một epoch trong khi không thiếu.
+    """
+    t = _trainer(tmp_path, epochs=3)
+    _run(t._epoch_reporter(), 3, 30, {2: 12.81, 3: 27.61}, start_iter=30)
+    lines = [l for l in capsys.readouterr().out.splitlines() if l.startswith("epoch")]
+    assert len(lines) == 2, "nối tiếp ở epoch 1 thì còn đúng 2 epoch"
+    assert lines[0].startswith("epoch 2/3   iter 60/90")
+    assert lines[1].startswith("epoch 3/3   iter 90/90")
+
+
+def test_chay_tiep_nap_lai_dinh_cu(tmp_path, fake_d2, capsys):
+    """`best` nằm trong RAM nên tiến trình mới là quên.
+
+    Không nạp lại từ metrics.json thì epoch đầu tiên sau mỗi lần chạy tiếp
+    đều được đánh "* tốt nhất", kể cả khi nó kém hơn đỉnh đã đạt.
+    """
+    t = _trainer(tmp_path, epochs=3)
+    t.resume = True
+    t.out_dir.mkdir(parents=True, exist_ok=True)
+    (t.out_dir / "metrics.json").write_text(
+        '{"iteration": 29, "segm/AP": 30.0}\n', encoding="utf-8")
+    _run(t._epoch_reporter(), 3, 30, {2: 12.0, 3: 20.0}, start_iter=30)
+    lines = [l for l in capsys.readouterr().out.splitlines() if l.startswith("epoch")]
+    assert lines and not any(l.endswith("* tốt nhất") for l in lines), \
+        "12.0 và 20.0 đều dưới đỉnh cũ 30.0 nên không dòng nào được đánh dấu"
+
+
+def test_best_so_far_doc_duoc_file_cut(tmp_path):
+    """Lượt trước bị giết giữa chừng thì dòng cuối metrics.json có thể cụt.
+
+    Ném JSONDecodeError ở đây nghĩa là không chạy tiếp được lượt vừa chết —
+    đúng lượt cần chạy tiếp nhất.
+    """
+    f = tmp_path / "metrics.json"
+    f.write_text(
+        '{"iteration": 29, "segm/AP": 30.0}\n'
+        '{"iteration": 59, "segm/AP": 41.5}\n'
+        '{"iteration": 89, "segm/AP": 12.0}\n'
+        '{"iteration": 119, "segm/A',                 # <- cụt
+        encoding="utf-8")
+    assert best_so_far(f, "segm/AP") == (41.5, 59)
+    assert best_so_far(f, "khong-co") is None
+    assert best_so_far(tmp_path / "chua-ton-tai.json", "segm/AP") is None
