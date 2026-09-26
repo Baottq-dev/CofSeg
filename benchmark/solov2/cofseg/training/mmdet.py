@@ -224,10 +224,16 @@ def build_overrides(arch: str, root: str | Path, splits: dict, n_train: int, arg
     if flip:
         train_pipeline.append(flip)
     train_pipeline.append(dict(type="PackDetInputs"))
+    # KHÔNG có LoadAnnotations, khác config mẫu của mmdet. Mẫu của họ có, và
+    # nó là công thuần tuý: `CocoMetric` bên dưới nhận `ann_file` nên nó đọc
+    # nhãn thẳng từ file JSON (`coco_metric.py`, nhánh `self._coco_api is not
+    # None`), chứ không đụng tới nhãn mà pipeline nạp. Mà `LoadAnnotations`
+    # mặc định `poly2mask=True`, tức rã đa giác thành bitmap ở ĐỘ PHÂN GIẢI
+    # GỐC cho từng vùng: đo trên 20 ảnh của bộ này là 24.3 ms và 32 MiB mỗi
+    # ảnh, tức nửa GiB RAM cho một lô 16 — rồi vứt đi nguyên vẹn.
     test_pipeline = [
         dict(type="LoadImageFromFile", backend_args=None),
         dict(type="Resize", scale=scale, keep_ratio=True),
-        dict(type="LoadAnnotations", with_bbox=True, with_mask=True),
         dict(type="PackDetInputs",
              meta_keys=("img_id", "img_path", "ori_shape", "img_shape", "scale_factor")),
     ]
