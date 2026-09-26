@@ -45,22 +45,44 @@ TORCH = ["torch==2.4.1", "torchvision==0.19.1",
          "--index-url", f"https://download.pytorch.org/whl/cu{CUDA_TAG.replace('.', '')}"]
 
 
+#: --no-cuda-ext: cài mà KHÔNG biên dịch op CUDA nào, để khỏi phải có nvcc
+#: khớp phiên bản. Xem ghi chú ở no_cuda_env().
+NO_CUDA_EXT = False
+
+
 class Step:
     def __init__(self, name: str, about: str, fn):
         self.name, self.about, self.fn = name, about, fn
 
 
-def sh(*cmd: str, check: bool = True) -> subprocess.CompletedProcess:
+def no_cuda_env() -> dict:
+    """Biến môi trường để pip cài mà không biên dịch op CUDA.
+
+    CUDA_VISIBLE_DEVICES="" là cái đòn bẩy: setup.py của detectron2 chọn
+    CUDAExtension khi `torch.cuda.is_available() and CUDA_HOME is not None`.
+    Giấu nvcc khỏi PATH KHÔNG đủ — torch vẫn đoán ra /usr/local/cuda. Giấu GPU
+    thì `is_available()` trả False và detectron2 tự dựng CppExtension, không
+    báo lỗi. Biến này chỉ có tác dụng lúc CÀI; lúc train GPU vẫn bình thường.
+
+    SAM2_BUILD_CUDA=0 bỏ op hậu xử lý của SAM 2 (setup.py của nó vốn đã cho
+    phép build hỏng, đây chỉ là nói thẳng ra).
+    """
+    import os
+
+    return {**os.environ, "CUDA_VISIBLE_DEVICES": "", "SAM2_BUILD_CUDA": "0"}
+
+
+def sh(*cmd: str, check: bool = True, env: dict | None = None) -> subprocess.CompletedProcess:
     print("  $", " ".join(cmd), flush=True)
-    return subprocess.run(cmd, cwd=ROOT, check=check)
+    return subprocess.run(cmd, cwd=ROOT, check=check, env=env)
 
 
-def py(*args: str) -> subprocess.CompletedProcess:
-    return sh(sys.executable, *args)
+def py(*args: str, env: dict | None = None) -> subprocess.CompletedProcess:
+    return sh(sys.executable, *args, env=env)
 
 
-def pip(*args: str) -> subprocess.CompletedProcess:
-    return sh(sys.executable, "-m", "pip", *args)
+def pip(*args: str, env: dict | None = None) -> subprocess.CompletedProcess:
+    return sh(sys.executable, "-m", "pip", *args, env=env)
 
 
 # ---------------------------------------------------------------- các bước
@@ -84,11 +106,20 @@ def step_check() -> None:
     if sys.version_info < (3, 12):
         raise SystemExit("Cần Python >= 3.12 (scipy/scikit-image ghim trong requirements.txt).\n"
                          "    conda create -y -n cofseg python=3.12 && conda activate cofseg")
+    if NO_CUDA_EXT:
+        print("  --no-cuda-ext: bỏ qua nvcc, không biên dịch op CUDA nào.")
+        print("    Mask R-CNN, SOLOv2, YOLO chạy như thường (không dùng op tự biên dịch).")
+        print("    Mask2Former rơi về MSDeformAttn thuần PyTorch — ĐÚNG KẾT QUẢ, chậm hơn.")
+        sh("nvidia-smi", "--query-gpu=name,memory.total,driver_version",
+           "--format=csv,noheader", check=False)
+        return
     if not shutil.which("nvcc"):
         raise SystemExit(
             "Thiếu nvcc (CUDA toolkit): detectron2, SAM 2 và MSDeformAttn đều biên dịch\n"
-            f"CUDA lúc cài. Cài đúng bản khớp torch vào chính env này:\n\n"
-            f"    conda install -y -c nvidia/label/cuda-{CUDA_FULL} cuda-toolkit\n")
+            f"CUDA lúc cài. Hoặc cài bản khớp torch vào chính env này:\n\n"
+            f"    conda install -y -c nvidia/label/cuda-{CUDA_FULL} cuda-toolkit\n\n"
+            "hoặc cài mà không biên dịch gì:\n\n"
+            "    python scripts/setup_env.py --no-cuda-ext\n")
 
     out = subprocess.run(["nvcc", "--version"], capture_output=True, text=True)
     print(out.stdout.strip())
@@ -106,6 +137,8 @@ def step_check() -> None:
             f"    conda install -y -c nvidia/label/cuda-{CUDA_FULL} cuda-toolkit\n"
             "    which nvcc && nvcc --version        # phải trỏ vào env và ra "
             f"{CUDA_TAG}\n\n"
+            "Không muốn cài thêm gì thì bỏ hẳn phần biên dịch:\n\n"
+            "    python scripts/setup_env.py --no-cuda-ext\n\n"
             f"Vì sao không nâng torch cho khớp CUDA {got[0]}: mmcv (SOLOv2) chỉ có wheel dựng\n"
             f"sẵn cho torch 2.4 / cu{CUDA_TAG.replace('.', '')}; index cho CUDA mới hơn không tồn tại.")
     if got and got != want:
@@ -124,7 +157,10 @@ def step_torch() -> None:
 
 def step_requirements() -> None:
     """--no-build-isolation vì detectron2/SAM 2 cần torch có sẵn trong env."""
-    pip("install", "-r", "requirements.txt", "--no-build-isolation")
+    env = no_cuda_env() if NO_CUDA_EXT else None
+    if NO_CUDA_EXT:
+        print("  (CUDA_VISIBLE_DEVICES=\"\" lúc cài -> detectron2 dựng CppExtension)")
+    pip("install", "-r", "requirements.txt", "--no-build-isolation", env=env)
     pip("install", "-e", ".")
     py("-c", "import detectron2; print('detectron2', detectron2.__version__)")
 
@@ -155,8 +191,14 @@ def step_mask2former() -> None:
     """
     sh("git", "submodule", "update", "--init", M2F_DIR)
     sh("git", "-C", M2F_DIR, "log", "-1", "--format=Mask2Former @ %h (%ad)", "--date=short")
-    pip("install", "--no-build-isolation", "--no-deps",
-        f"{M2F_DIR}/mask2former/modeling/pixel_decoder/ops")
+    if NO_CUDA_EXT:
+        # ms_deform_attn.py bọc lời gọi op trong try/except và rơi về
+        # ms_deform_attn_core_pytorch, nên không biên dịch vẫn ra ĐÚNG kết quả,
+        # chỉ chậm hơn. Bỏ hẳn bước build op.
+        print("  --no-cuda-ext: không build op MSDeformAttn, dùng đường PyTorch.")
+    else:
+        pip("install", "--no-build-isolation", "--no-deps",
+            f"{M2F_DIR}/mask2former/modeling/pixel_decoder/ops")
     py("-c", f"import sys; sys.path.insert(0, {M2F_DIR!r});"
              "from mask2former import add_maskformer2_config;"
              "from mask2former.modeling.pixel_decoder.ops.modules import MSDeformAttn;"
@@ -175,7 +217,8 @@ def step_sam2() -> None:
 
     Bước này chỉ cần nếu máy có chạy annotator; benchmark không import sam2.
     """
-    pip("install", "--no-deps", "--no-build-isolation", SAM2)
+    pip("install", "--no-deps", "--no-build-isolation", SAM2,
+        env=no_cuda_env() if NO_CUDA_EXT else None)
     py("-c", "from sam2.build_sam import build_sam2;"
              "from sam2.sam2_image_predictor import SAM2ImagePredictor;"
              "print('SAM 2 import OK')")
@@ -204,7 +247,13 @@ def main(argv=None) -> int:
     ap.add_argument("--only", default="", help="chỉ chạy các bước này, phẩy ngăn")
     ap.add_argument("--from", dest="start", default="", help="chạy từ bước này trở đi")
     ap.add_argument("--dry-run", action="store_true", help="in ra sẽ làm gì, không chạy")
+    ap.add_argument("--no-cuda-ext", action="store_true",
+                    help="cài mà KHÔNG biên dịch op CUDA nào — không cần nvcc khớp "
+                         "phiên bản. Mask2Former chậm hơn, ba model kia không đổi")
     a = ap.parse_args(argv)
+
+    global NO_CUDA_EXT
+    NO_CUDA_EXT = a.no_cuda_ext
 
     names = [s.name for s in STEPS]
     if a.list:

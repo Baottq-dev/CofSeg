@@ -63,23 +63,34 @@ conda create -y -n cofseg python=3.12 && conda activate cofseg
 python scripts/setup_env.py
 ```
 
-**Máy lab có CUDA 13.2 thì phải cài thêm toolkit 12.1 vào env.** Driver 13.2
-chạy binary cu121 bình thường (tương thích ngược), nhưng `nvcc` dùng để BIÊN
-DỊCH thì phải khớp major với torch, không thì torch từ chối:
+**Máy lab có nvcc lệch phiên bản với torch** (ví dụ nvcc 13.2, torch cu121)
+thì có hai đường, chọn một:
 
 ```
-RuntimeError: The detected CUDA version (13.2) mismatches the version that
-was used to compile PyTorch (12.1).
-```
+# A. không cài thêm gì, không biên dịch op CUDA nào
+python scripts/setup_env.py --no-cuda-ext
 
-```
+# B. cài nvcc khớp vào CHÍNH env này (không đụng CUDA của máy, không cần sudo)
 conda install -y -c nvidia/label/cuda-12.1.1 cuda-toolkit
-which nvcc && nvcc --version     # phải trỏ vào env và ra 12.1
+python scripts/setup_env.py
 ```
+
+| | A — `--no-cuda-ext` | B — cài toolkit vào env |
+|---|---|---|
+| Cài thêm | không | ~2–3 GB trong env của bạn |
+| Mask R-CNN, SOLOv2, YOLO | như thường | như thường |
+| Mask2Former | chậm hơn ~1,3–1,8 lần | đủ tốc độ |
+| Kết quả | **giống nhau** | |
+
+Đường A dựa vào hai đường lùi có sẵn trong chính mã nguồn: `setup.py` của
+detectron2 tự dựng `CppExtension` khi không thấy GPU lúc cài (Mask R-CNN
+không dùng op CUDA riêng nào của nó — ROIAlign và NMS lấy của torchvision),
+còn `ms_deform_attn.py` của Mask2Former bọc lời gọi op trong `try/except` và
+rơi về bản thuần PyTorch.
 
 Không nâng torch cho khớp CUDA 13 được: mmcv (SOLOv2) chỉ có wheel dựng sẵn
 cho torch 2.4 / cu121 — index `cu124` và `torch2.5` của OpenMMLab đều không
-tồn tại. Bước `check` của `setup_env.py` kiểm chuyện này và dừng ngay nếu lệch.
+tồn tại. Driver thì không sao, nó tương thích ngược.
 
 **Trên Linux đừng chạy `pip install -r requirements.txt` một mình** — nó sẽ
 dừng ở:
