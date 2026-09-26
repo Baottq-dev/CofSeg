@@ -781,8 +781,30 @@ class Detectron2Trainer(Trainer):
 
             @classmethod
             def build_evaluator(cls, cfg, dataset_name, output_folder=None):
-                if m2f is not None:
-                    return base.build_evaluator(cfg, dataset_name, output_folder)
+                """Một evaluator cho mọi kiến trúc, kể cả Mask2Former.
+
+                Nhánh Mask2Former trước đây trả thẳng `build_evaluator` của
+                repo gốc, tức `COCOEvaluator` trần. Nó mất cả ba việc
+                `QuietCOCOEvaluator` làm: không có thanh tiến trình val, bảng
+                12 dòng của pycocotools in thẳng ra màn hình, và `on_start`
+                không ai gọi — nên `close_train_bar()` mãi tới `after_step`
+                mới chạy, tức là SAU khi val xong, và `self.trained` ôm trọn
+                cả vòng val. Dòng epoch đọc thành `2:38 + val 0:00` trong khi
+                thật ra là 0:30 train + 2:08 val: toàn bộ giờ val bị ghi sang
+                cột giờ train.
+
+                `tasks=("segm",)` bỏ luôn lượt chấm box. `COCOEvaluator` với
+                `tasks=None` tự suy nhiệm vụ từ output nên chấm cả box, mà
+                Mask2Former không có box head — `maskformer_model.py:372` đặt
+                `pred_boxes = Boxes(torch.zeros(n, 4))` và để dòng suy
+                box-từ-mask ở dạng comment vì nó chậm. Bảng box vì thế luôn
+                ra 0.000, và `bbox/AP` trong results.csv là một cột 0 suốt
+                lượt chạy. Bỏ đi vừa đúng hơn vừa nhanh hơn, và khớp với
+                Mask R-CNN vốn đã chấm `segm` một mình.
+
+                Box AP của bảng kết quả KHÔNG mất: `evaluate.py` suy box từ
+                mask bằng `toBbox` lúc `loadRes`, đường hoàn toàn khác.
+                """
                 ev = QuietCOCOEvaluator(
                     dataset_name, tasks=("segm",),
                     output_dir=output_folder or str(Path(cfg.OUTPUT_DIR) / "inference"))
