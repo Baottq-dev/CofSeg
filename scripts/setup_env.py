@@ -33,6 +33,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 M2F_DIR = "benchmark/mask2former/upstream"
+#: detectron2 ghim theo commit; build từ source, xem step_detectron2.
+D2 = ("detectron2 @ git+https://github.com/facebookresearch/detectron2.git"
+      "@a2f4a8771ab77e8411c26b27f24f9489a28a2453")
 #: SAM 2.1 ghim theo commit; cài riêng với --no-deps, xem step_sam2.
 SAM2 = ("SAM-2 @ git+https://github.com/facebookresearch/sam2.git"
         "@2b90b9f5ceec907a1c18123530e92e794ad901a4")
@@ -156,12 +159,30 @@ def step_torch() -> None:
 
 
 def step_requirements() -> None:
-    """--no-build-isolation vì detectron2/SAM 2 cần torch có sẵn trong env."""
+    """Thuần wheel dựng sẵn — không gói nào biên dịch, chạy được ở mọi máy."""
+    pip("install", "-r", "requirements.txt")
+    pip("install", "-e", ".")
+    py("-c", "import torch, ultralytics, mmdet; print('torch', torch.__version__, "
+             "'| ultralytics', ultralytics.__version__, '| mmdet', mmdet.__version__)")
+
+
+def step_detectron2() -> None:
+    """Mask R-CNN và Mask2Former. Gói duy nhất build từ source (~5-10 phút).
+
+    --no-build-isolation vì setup.py của nó import torch, mà môi trường build
+    cô lập của pip không có.
+
+    Với --no-cuda-ext thì giấu GPU lúc cài: setup.py chọn CUDAExtension khi
+    `torch.cuda.is_available() and CUDA_HOME is not None`, không thấy GPU thì
+    nó tự dựng CppExtension và KHÔNG báo lỗi. Mask R-CNN không gọi op CUDA
+    riêng nào của detectron2 — ROIAlign và NMS lấy của torchvision — nên vẫn
+    train trên GPU như thường.
+    """
     env = no_cuda_env() if NO_CUDA_EXT else None
     if NO_CUDA_EXT:
-        print("  (CUDA_VISIBLE_DEVICES=\"\" lúc cài -> detectron2 dựng CppExtension)")
-    pip("install", "-r", "requirements.txt", "--no-build-isolation", env=env)
-    pip("install", "-e", ".")
+        print('  --no-cuda-ext: CUDA_VISIBLE_DEVICES="" lúc cài -> dựng CppExtension.')
+        print("    Chỉ có tác dụng lúc CÀI; lúc train GPU vẫn thấy đủ.")
+    pip("install", "--no-build-isolation", D2, env=env)
     py("-c", "import detectron2; print('detectron2', detectron2.__version__)")
 
 
@@ -232,7 +253,8 @@ def step_weights() -> None:
 STEPS = [
     Step("check", "kiểm python, nvcc, GPU", step_check),
     Step("torch", "torch 2.4.1+cu121", step_torch),
-    Step("requirements", "requirements.txt + gói repo + detectron2", step_requirements),
+    Step("requirements", "requirements.txt + gói repo (thuần wheel)", step_requirements),
+    Step("detectron2", "build detectron2 từ source (Mask R-CNN, Mask2Former)", step_detectron2),
     Step("mmdet", "nới kiểm phiên bản mmcv, thử import", step_mmdet),
     Step("mask2former", "submodule + op MSDeformAttn", step_mask2former),
     Step("sam2", "SAM 2.1 cho annotator (bỏ qua mốc torch của nó)", step_sam2),

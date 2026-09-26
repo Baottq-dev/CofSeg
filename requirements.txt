@@ -1,28 +1,28 @@
 # Một file cho cả máy nhà (Windows) và máy lab/máy thuê (Linux). Dòng có
 # "; sys_platform == ..." pip tự chọn theo hệ điều hành, không cần sửa tay.
 #
-#   nhà :  pip install -r requirements.txt
-#   lab :  python scripts/setup_env.py          <-- DÙNG CÁI NÀY
+# MỌI GÓI TRONG FILE NÀY ĐỀU LÀ WHEEL DỰNG SẴN — không gói nào biên dịch, nên
+# lệnh dưới chạy được trên MỌI máy: không cần nvcc, không cần CUDA toolkit,
+# không cần trình biên dịch C++, không cần --no-build-isolation.
 #
-# MỘT env cho cả app/ lẫn benchmark/. Riêng SAM 2 phải cài bằng lệnh riêng,
-# xem ghi chú ở dòng hydra-core bên dưới.
-#
-# TRÊN LINUX, `pip install -r requirements.txt` một mình sẽ HỎNG:
-#
-#     ModuleNotFoundError: No module named 'torch'
-#     ERROR: Failed to build 'detectron2' when getting requirements to build wheel
-#
-# detectron2 và SAM 2 biên dịch op CUDA ngay lúc cài và setup.py của họ import
-# torch, nhưng pip dựng gói trong môi trường cô lập không có torch — và ở thời
-# điểm đó torch trong file này cũng chưa kịp cài. Nên torch phải đi bằng một
-# lệnh RIÊNG, TRƯỚC, rồi phần còn lại mới cài với --no-build-isolation:
-#
-#     pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
-#     pip install -r requirements.txt --no-build-isolation
+#     pip install -r requirements.txt
 #     pip install -e .
 #
-# scripts/setup_env.py làm đúng thứ tự đó, kiểm nvcc trước, và dừng ngay chỗ
-# lỗi để biết hỏng ở bước nào. Trên Windows không có hai gói đó nên không cần.
+# Đủ để chạy: YOLOv11-Seg và SOLOv2, cộng annotator (trừ SAM 2).
+#
+# HAI GÓI BUILD TỪ SOURCE nằm ngoài file này, vì chúng phụ thuộc vào môi
+# trường lúc cài chứ không chỉ vào phiên bản:
+#
+#     detectron2   -> Mask R-CNN và Mask2Former     (xem cuối file)
+#     SAM 2.1      -> annotator                      (xem dòng hydra-core)
+#
+# Muốn đủ bốn model thì dùng scripts/setup_env.py — nó cài cả hai gói đó theo
+# đúng thứ tự:
+#
+#     python scripts/setup_env.py
+#     python scripts/setup_env.py --no-cuda-ext    # nvcc lệch phiên bản / không có nvcc
+#
+# MỘT env cho cả app/ lẫn benchmark/.
 --extra-index-url https://download.pytorch.org/whl/cu121
 --find-links https://download.openmmlab.com/mmcv/dist/cu121/torch2.4/index.html
 
@@ -76,8 +76,12 @@ mmdet==3.3.0
 shapely==2.1.2         # mmdet và Mask2Former cùng cần
 
 # ---- chỉ Linux: benchmark trên máy lab. Windows bỏ qua tự động.
-# detectron2: Mask R-CNN (mốc 0), Cascade, Mask2Former. Build từ source ~5-10 phút.
-detectron2 @ git+https://github.com/facebookresearch/detectron2.git@a2f4a8771ab77e8411c26b27f24f9489a28a2453 ; sys_platform == "linux"
+# detectron2 (Mask R-CNN, Mask2Former) KHÔNG nằm ở đây. Nó là gói duy nhất
+# phải build từ source, và setup.py của nó quyết định biên dịch op CUDA hay
+# không TUỲ THEO lúc cài có thấy GPU và nvcc hay không — thứ mà một dòng trong
+# requirements.txt không điều khiển được. Để trong đây thì `pip install -r
+# requirements.txt` trên máy có nvcc lệch phiên bản với torch sẽ chết giữa
+# chừng. Bước `detectron2` của scripts/setup_env.py cài nó và xử lý được.
 # mmcv có op CUDA biên dịch sẵn cho torch 2.4/cu121 (dòng --find-links trên).
 # mmdet 3.3.0 khai mmcv < 2.2 nhưng chạy được với 2.2.0; bước `mmdet` của
 # scripts/setup_env.py nới dòng kiểm phiên bản đó sau khi cài.

@@ -41,22 +41,31 @@ git submodule update --init
 
 ## 2. Cài môi trường
 
-Một env cho cả annotator (`app/`) lẫn benchmark. Máy nhà (Windows):
+Một env cho cả annotator (`app/`) lẫn benchmark.
+
+`requirements.txt` **thuần wheel dựng sẵn** — không gói nào biên dịch, nên cài
+được trên mọi máy mà không cần `nvcc`, CUDA toolkit hay trình biên dịch C++:
 
 ```
 conda create -n coffee python=3.12 -y
 conda activate coffee
 pip install -r requirements.txt
 pip install -e .
-pip install --no-deps --no-build-isolation "SAM-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4"
 ```
 
-Dòng cuối chỉ cần nếu bạn gán nhãn. `--no-deps` vì SAM 2 khai `torch>=2.5.1`
-mà máy lab phải ở 2.4.1 cho mmcv; mốc đó chỉ phục vụ `torch.compile` nhánh
-video, còn annotator dùng nhánh ảnh — chi tiết trong `requirements.txt`.
+Đủ để chạy **YOLOv11-Seg** và **SOLOv2**. Hai model còn lại cần `detectron2`,
+và annotator cần SAM 2 — cả hai build từ source nên nằm ngoài file đó:
 
-Máy lab / máy thuê (Linux, có `nvcc`) — sáu bước, dừng đúng chỗ lỗi; hỏng
-bước nào thì `--from <tên bước>` chạy tiếp từ đó (`--list` xem các bước):
+| Gói | Cho | Cài bằng |
+|---|---|---|
+| `detectron2` | Mask R-CNN, Mask2Former | `setup_env.py --only detectron2` |
+| `SAM 2.1` | annotator (`app/`) | `setup_env.py --only sam2` |
+
+Muốn đủ bốn model thì chạy thẳng `python scripts/setup_env.py`, nó làm cả hai
+bước đó theo đúng thứ tự.
+
+Máy lab / máy thuê (Linux) — tám bước, dừng đúng chỗ lỗi; hỏng bước nào thì
+`--from <tên bước>` chạy tiếp từ đó (`--list` xem các bước):
 
 ```
 conda create -y -n cofseg python=3.12 && conda activate cofseg
