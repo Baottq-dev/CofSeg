@@ -23,33 +23,33 @@ này** trên cùng một ruộng. Vì vậy hai thứ phải giữ nghiêm:
 ## Cách chạy
 
 Từ **gốc repo** (để `data/` và `weights/` dùng chung). Đặt `--runs` vào thư mục
-này và `--name` theo đúng dạng `<model>_<fold>` — bảng tổng hợp đọc tên đó để
-biết model nào chấm trên ruộng nào.
+này, và `--name` chỉ là **tên model** — bảng tổng hợp đọc fold và bộ fold từ
+đường dẫn dữ liệu chứ không từ tên, nên gõ lại fold vào tên chỉ tạo ra một bản
+thứ hai có thể sai lệch.
 
-`--data` nhận **thư mục fold**, viết thẳng ra cũng được —
-`--data data/export/flight/f1` — nhìn lệnh là biết đang chạy bộ nào, fold nào.
-Cùng một cú pháp cho cả bốn model, dù bên trong ba model đọc `data.root` còn
-ultralytics đọc `data.yaml`. Hai bộ fold cắt ra bằng `scripts/make_fold.py`,
-xem `benchmark/README.md`.
+`--data` nhận **thư mục fold**. Viết thẳng đường dẫn ra, đừng đặt biến shell:
+nhìn lệnh là biết ngay đang chạy bộ nào, fold nào. Cùng một cú pháp cho cả bốn
+model, dù bên trong ba model đọc `data.root` còn ultralytics đọc `data.yaml`.
+
+Lệnh dưới đây chạy bộ **block**, fold **f1**. Đổi lượt khác thì sửa `block`
+hoặc `f1` — có ba chỗ trong khối lệnh, sửa hết cả ba. Hai bộ fold cắt ra bằng
+`scripts/make_fold.py`, xem `benchmark/README.md`.
 
 ```bash
-SET=block        # bộ fold: block hoặc flight
-FOLD=f4
-
 # 1. huấn luyện (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
-python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --data data/export/$SET/$FOLD --runs benchmark/maskrcnn/runs --name maskrcnn
+python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --data data/export/block/f1 --runs benchmark/maskrcnn/runs --name maskrcnn --workers 8
 
 # 2. dự đoán test do trainer ghi ra -> preds/ để cả nhóm dùng chung
-RUN=$(ls -td benchmark/maskrcnn/runs/train/*_maskrcnn_${SET}-${FOLD}_* | head -1)
-mkdir -p preds && cp "$RUN/predictions.json" preds/maskrcnn_${SET}_$FOLD.json
+RUN=$(ls -td benchmark/maskrcnn/runs/train/*_maskrcnn_block-f1_* | head -1)
+mkdir -p preds && cp "$RUN/predictions.json" preds/maskrcnn_block_f1.json
 
 # 3. chấm: Boundary AP, Boundary IoU, sai số diện tích, bảng từng vùng
-python benchmark/maskrcnn/evaluate.py --config benchmark/maskrcnn/configs/eval/_coco.yaml --file preds/maskrcnn_${SET}_$FOLD.json --data data/export/$SET/$FOLD --split test --runs benchmark/maskrcnn/runs --name maskrcnn
+python benchmark/maskrcnn/evaluate.py --config benchmark/maskrcnn/configs/eval/_coco.yaml --file preds/maskrcnn_block_f1.json --data data/export/block/f1 --split test --runs benchmark/maskrcnn/runs --name maskrcnn
 
 # 4. chép file kết quả nhỏ vào results/ (runs/ không vào git)
-EV=$(ls -td benchmark/maskrcnn/runs/eval/*_maskrcnn_${SET}-${FOLD}_* | head -1)
-cp "$EV/metrics.json"   benchmark/maskrcnn/results/maskrcnn_${SET}_${FOLD}_metrics.json
-cp "$EV/per_region.csv" benchmark/maskrcnn/results/maskrcnn_${SET}_${FOLD}_per_region.csv
+EV=$(ls -td benchmark/maskrcnn/runs/eval/*_maskrcnn_block-f1_* | head -1)
+cp "$EV/metrics.json"   benchmark/maskrcnn/results/maskrcnn_block_f1_metrics.json
+cp "$EV/per_region.csv" benchmark/maskrcnn/results/maskrcnn_block_f1_per_region.csv
 
 # test của thư mục này, chạy trước khi commit
 cd benchmark/maskrcnn && python -m pytest tests
@@ -73,7 +73,12 @@ không còn so được với ba model kia. Sửa thì báo nhóm.
 
 ## Trạng thái
 
-- Đường detectron2 **chưa chạy thật lần nào** — mới có code + config, chờ máy
-  Linux có detectron2. Việc đầu tiên: `run_fold.sh f4 --smoke --only maskrcnn`.
-- Có sẵn bản torchvision (`configs/train/maskrcnn_r50.yaml`) chạy được ở nhà
-  trên Windows, dùng để thử nhanh; **không** dùng số của nó cho bảng.
+- **Chưa chạy thật lần nào** — mới có code + config, chờ máy Linux có
+  detectron2. Việc đầu tiên, một lượt khói trước khi chạy cả fold:
+
+  ```bash
+  python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --data data/export/block/f1 --set data.limit=16 --epochs 1
+  ```
+
+- Bản torchvision chạy ở nhà trên Windows đã bị gỡ khỏi repo; giờ chỉ còn
+  đường detectron2, nên phần này của bảng phải chờ máy Linux.
