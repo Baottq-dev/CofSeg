@@ -275,6 +275,41 @@ def iters_per_epoch(n_train: int, batch: int) -> int:
     return math.ceil(n_train / max(1, int(batch)))
 
 
+def best_so_far(metrics_json: str | Path, key: str) -> tuple[float, int] | None:
+    """Giá trị `key` lớn nhất đã ghi vào metrics.json, kèm iteration của nó.
+
+    Cần cho việc CHẠY TIẾP. `BestCheckpointer` của detectron2 giữ đỉnh trong
+    một thuộc tính RAM khởi tạo bằng None và không đọc lại gì từ đĩa, nên
+    tiến trình mới là nó quên: lần chấm val ĐẦU TIÊN sau khi chạy tiếp ghi đè
+    model_best.pth vô điều kiện, kể cả khi điểm thấp hơn cái đang nằm đó.
+    summary.json thì dựng lại từ chính metrics.json nên vẫn báo đỉnh thật —
+    hai thứ lệch nhau mà không dòng log nào nói ra.
+
+    Trả None khi chưa có lượt val nào, để bên gọi giữ đúng hành vi gốc.
+    """
+    src = Path(metrics_json)
+    if not src.is_file():
+        return None
+    dinh: tuple[float, int] | None = None
+    for line in src.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            # Lượt trước bị giết giữa chừng thì dòng cuối có thể cụt.
+            continue
+        if key not in d or "iteration" not in d:
+            continue
+        v = float(d[key])
+        if v != v:            # NaN — BestCheckpointer cũng bỏ qua
+            continue
+        if dinh is None or v > dinh[0]:
+            dinh = (v, int(d["iteration"]))
+    return dinh
+
+
 @register("trainer", "detectron2")
 class Detectron2Trainer(Trainer):
     # ----------------------------------------------------------------- backbone
@@ -543,6 +578,8 @@ class Detectron2Trainer(Trainer):
         per_epoch = iters_per_epoch(self.n_train, a["batch"])
         epochs = int(a["epochs"])
         total = per_epoch * epochs
+        resume = bool(self.resume)
+        metrics_json = self.out_dir / "metrics.json"
 
         def value(storage, key):
             """Số mới nhất của một khoá, None nếu khoá chưa từng được ghi."""
@@ -640,10 +677,25 @@ class Detectron2Trainer(Trainer):
 
             # ------------------------------------------------------ vòng đời
             def before_train(self):
+                # Đếm epoch TUYỆT ĐỐI. Chạy tiếp một lượt bị ngắt thì
+                # trainer.iter khởi đầu ở start_iter chứ không ở 0, nên đếm
+                # tương đối in "epoch 1/100" cho epoch thật là 34, và một lượt
+                # 100 epoch chạy đủ kết thúc ở dòng "epoch 67/100" — nhìn như
+                # thiếu 33 epoch trong khi nó đã chạy đúng tới max_iter.
+                # results.csv không dính vì nó lấy epoch từ iteration tuyệt
+                # đối trong metrics.json; chỉ màn hình sai.
+                self.epoch = self.trainer.start_iter // per_epoch
+                # `best` cũng nằm trong RAM nên cũng quên: không nạp lại thì
+                # epoch đầu tiên sau mỗi lần chạy tiếp đều được đánh dấu
+                # "* tốt nhất", kể cả khi nó kém hơn đỉnh đã có.
+                if resume and self.best is None:
+                    truoc = best_so_far(metrics_json, "segm/AP")
+                    if truoc is not None:
+                        self.best = truoc[0]
                 self._open()
 
             def after_step(self):
-                done = self.trainer.iter - self.trainer.start_iter + 1
+                done = self.trainer.iter + 1      # tuyệt đối; xem before_train
                 # Thanh có thể ĐÃ bị đóng ngay trong chính after_step này:
                 # EvalHook đứng trước hook này trong danh sách, nó chấm val, và
                 # evaluator gọi close_train_bar() lúc reset(). Nên đây không
@@ -653,7 +705,7 @@ class Detectron2Trainer(Trainer):
                 if done % per_epoch:
                     return
                 self.close_train_bar()
-                if done >= self.trainer.max_iter - self.trainer.start_iter:
+                if done >= self.trainer.max_iter:
                     self.pending = True     # AP của epoch cuối chưa có, xem docstring
                 else:
                     self._report()
@@ -681,6 +733,8 @@ class Detectron2Trainer(Trainer):
 
         a = self.train_args
         base = m2f.Trainer if m2f is not None else DefaultTrainer
+        resume = bool(self.resume)
+        metrics_json = self.out_dir / "metrics.json"
         val_batch = max(1, int(a.get("val_batch") or a["batch"]))
         keep_ckpts = max(1, int(a["keep_ckpts"]))
         bb = self.bb
@@ -866,9 +920,23 @@ class Detectron2Trainer(Trainer):
                             max_to_keep=keep_ckpts)
                         break
                 # Sau EvalHook (đọc segm/AP nó vừa ghi), trước PeriodicWriter.
-                ret.insert(-1, hooks.BestCheckpointer(
+                tot_nhat = hooks.BestCheckpointer(
                     self.cfg.TEST.EVAL_PERIOD, self.checkpointer, "segm/AP",
-                    mode="max", file_prefix="model_best"))
+                    mode="max", file_prefix="model_best")
+                if resume:
+                    # Xem best_so_far: hook này quên đỉnh cũ khi đổi tiến trình.
+                    if not hasattr(tot_nhat, "best_metric"):
+                        raise RuntimeError(
+                            "BestCheckpointer không còn thuộc tính best_metric: "
+                            "bản vá chạy-tiếp ở đây hết tác dụng, và model_best.pth "
+                            "sẽ bị ghi đè bằng lần val đầu tiên sau khi chạy tiếp.")
+                    truoc = best_so_far(metrics_json, "segm/AP")
+                    if truoc is not None:
+                        tot_nhat.best_metric, tot_nhat.best_iter = truoc
+                        print(f"Đỉnh val đã có: segm/AP {truoc[0]:.2f} ở iteration "
+                              f"{truoc[1]} — model_best.pth chỉ bị thay khi có lượt "
+                              "vượt được nó.", flush=True)
+                ret.insert(-1, tot_nhat)
                 # `log_every` được khai trong D2_DEFAULTS từ đầu nhưng KHÔNG
                 # nối vào đâu cả: nhịp 20 trong log là mặc định cứng của
                 # detectron2, trùng số nên nhìn như tham số đang có tác dụng.
