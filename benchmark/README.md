@@ -42,23 +42,26 @@ Sửa gì trong thư mục mình cũng được — kể cả `cofseg/`. Không 
 ## Chạy
 
 Cắt fold một lần cho cả nhóm, từ gốc repo. Sáu lượt luôn giống nhau (mỗi ruộng
-làm test một lần, train năm ruộng còn lại); khác nhau ở chỗ cắt val ra sao, và
-hai cách đang cân nhắc cho hai bộ fold riêng:
+làm test một lần, train năm ruộng còn lại); khác nhau ở chỗ cắt val ra sao.
+Nhóm chạy **cả hai cách**, nên cắt cả hai bộ fold:
 
 ```bash
-# cách 1: khối ảnh cuối mỗi đường bay, trượt theo lượt, đệm theo đồ thị chồng lấn
-python scripts/make_fold.py --export data/export/dataset_v1     --val configs/dataset/val_block.yaml --all --out-root data/export/block
+# bộ 1: khối ảnh cuối mỗi đường bay, trượt theo lượt, đệm theo đồ thị chồng lấn
+python scripts/make_fold.py --export data/export/dataset_v1 --val configs/dataset/val_block.yaml --all --out-root data/export/block
 
-# cách 2: trọn hai đường bay cuối (field_1/10/4 + field_2/10/2), cố định
-python scripts/make_fold.py --export data/export/dataset_v1     --val configs/dataset/val_flight.yaml --all --out-root data/export/flight
+# bộ 2: trọn hai đường bay cuối (field_1/10/4 + field_2/10/2), cố định
+python scripts/make_fold.py --export data/export/dataset_v1 --val configs/dataset/val_flight.yaml --all --out-root data/export/flight
 
-# so hai cách trên cả sáu lượt trước khi chốt
+# bảng so hai cách trên cả sáu lượt (để viết báo cáo, không phải để chọn một)
 python scripts/compare_val_splits.py
 ```
 
-Lệnh trong README của từng model đang trỏ vào `data/export/block/`. Đổi sang
-bộ kia là `--set data.root=data/export/flight/$FOLD`. **Cả bốn người phải dùng
-cùng một bộ** — số của hai bộ fold không so với nhau được.
+Ra 12 thư mục fold. Ảnh được hardlink nên gần như không tốn thêm đĩa.
+
+**Mỗi model chạy 12 lượt**: 6 fold x 2 bộ. Cả nhóm là 48 lượt. Lệnh trong
+README của từng model viết sẵn cho `data/export/block/f1`; đổi `block` thành
+`flight` hoặc `f1` thành `f2`..`f6` là ra các lượt còn lại. Số của hai bộ là
+hai thí nghiệm khác nhau — so trong cùng một bộ, đừng so chéo.
 
 Sau đó **mỗi người chạy model của mình** — lệnh cụ thể nằm trong README của
 từng thư mục. Không có script chạy cả bốn: mỗi model một framework, một lịch,
@@ -92,8 +95,15 @@ thường do người gõ đặt tên: hai bộ cùng đánh số f1..f6 nên
 Gộp kết quả bốn người thành bảng model × ruộng:
 
 ```bash
+# cả hai bộ trong một bảng, có cột "bộ fold"
 python scripts/summarize_folds.py --eval benchmark/*/runs/eval
+
+# chỉ một bộ
+python scripts/summarize_folds.py --eval benchmark/*/runs/eval --dataset block
 ```
+
+Nếu hai lần chấm trùng (cùng model, cùng bộ, cùng fold) thì bảng giữ lần mới
+nhất và **báo ra** — không im lặng đè.
 
 ## Cái giá của việc tách rời
 
@@ -125,8 +135,18 @@ Dùng chung thật sự chỉ còn: `data/` (ảnh + nhãn), `weights/` (trọng
 
 ## Commit đúng tên khi dùng chung một máy
 
-Tạo `.authors.local` ở gốc repo (không vào git), nội dung theo
-`docs/danh_tinh_thanh_vien.md`:
+Tạo `.authors.local` ở gốc repo — file này **không vào git** (tên và email
+thật của bốn người không cần nằm trên GitHub), nên mỗi máy tự tạo một lần. Nội
+dung hỏi trong nhóm; mẫu:
+
+```bash
+_as() { local n="$1" e="$2"; shift 2
+  GIT_AUTHOR_NAME="$n" GIT_AUTHOR_EMAIL="$e" \
+  GIT_COMMITTER_NAME="$n" GIT_COMMITTER_EMAIL="$e" "$@"; }
+as_quynh() { _as "PhuongQuynh" "<email của Quỳnh>" "$@"; }
+```
+
+Dùng:
 
 ```bash
 source .authors.local
@@ -134,6 +154,8 @@ as_quynh git commit -m "solov2: raise the score threshold for the f5 run"
 git log -1 --format="A: %an <%ae>%nC: %cn <%ce>"    # kiểm lại
 ```
 
-Đếm theo người: `git shortlog -sne`.
+Đếm theo người: `git shortlog -sne`. Ai muốn gộp hai tên của cùng một người
+(`Baottq-dev` và `QuangBao` chung một email) thì tự tạo `.mailmap` ở gốc repo
+— git đọc nó từ thư mục làm việc, không cần được track.
 
 Chỉ commit dưới tên một người khi người đó **thật sự làm phần đó**.

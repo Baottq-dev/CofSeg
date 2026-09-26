@@ -26,7 +26,7 @@ nhánh/commit và cách commit đúng author khi dùng chung một máy: xem
 
 - GPU NVIDIA có CUDA (khuyến nghị ≥ 8 GB VRAM cho SAM2 hiera-large khi gán nhãn; benchmark cần 24 GB). Không có GPU vẫn chạy được annotator nhưng rất chậm (đặt `sam.device: cpu`).
 - Python 3.12 (các gói ghim trong `requirements.txt` chỉ có wheel cho ≥ 3.12), ~25 GB đĩa trống cho weights + dữ liệu.
-- Windows chạy được annotator và YOLO/Mask R-CNN (torchvision); Mask2Former, Cascade (detectron2) và SOLOv2 (mmdet) chỉ chạy trên Linux.
+- Windows chạy được annotator và **YOLOv11-Seg**. Ba model còn lại (Mask R-CNN, Mask2Former trên detectron2; SOLOv2 trên mmdet) chỉ chạy trên Linux — bản Mask R-CNN torchvision từng chạy ở nhà đã bị gỡ.
 
 ## 1. Lấy mã
 
@@ -99,24 +99,29 @@ python -m uvicorn app.server:app --host 0.0.0.0 --port 1801
 ## 6. Chạy benchmark
 
 ```
-# xem nhật ký bay và đồ thị chồng lấn trước khi chia (bằng chứng cho cách chia)
+# 1. xem nhật ký bay và đồ thị chồng lấn — bằng chứng cho cách chia val
 python scripts/inspect_flights.py --export data/export/dataset_v1
 python scripts/export_overlap_edges.py
 
-# cắt 6 fold từ một bản xuất chưa chia, theo một trong hai cách chia val
-python scripts/make_fold.py --export data/export/dataset_v1     --val configs/dataset/val_block.yaml --all --out-root data/export/block
+# 2. cắt fold. Sáu lượt như nhau (mỗi ruộng làm test một lần, train năm ruộng
+#    còn lại), khác nhau ở cách cắt val. Nhóm chạy CẢ HAI cách nên cắt cả hai bộ.
+python scripts/make_fold.py --export data/export/dataset_v1 --val configs/dataset/val_block.yaml --all --out-root data/export/block
+python scripts/make_fold.py --export data/export/dataset_v1 --val configs/dataset/val_flight.yaml --all --out-root data/export/flight
 
-# so hai cách chia val trên cả sáu lượt
+# 3. bảng so hai cách chia trên cả sáu lượt (số liệu cho báo cáo)
 python scripts/compare_val_splits.py
 
-# chuẩn bị dữ liệu trên máy Linux (giải nén bản xuất rồi cắt fold)
-python scripts/prepare_data.py all_v2.tar
+# trên máy Linux, gộp bước giải nén và cắt fold làm một
+python scripts/prepare_data.py all_v2.tar --val configs/dataset/val_block.yaml
 
-# mỗi người chạy model của mình: lệnh trong benchmark/<model>/README.md
-# bảng model x ruộng từ kết quả của cả bốn thư mục
+# 4. mỗi người chạy model của mình: lệnh trong benchmark/<model>/README.md
+#    12 lượt mỗi model (6 fold x 2 bộ), cả nhóm 48 lượt
+
+# 5. bảng model x ruộng từ kết quả của cả bốn thư mục
 python scripts/summarize_folds.py --eval benchmark/*/runs/eval
+python scripts/summarize_folds.py --eval benchmark/*/runs/eval --dataset block
 
-# gói kết quả mang về
+# 6. gói kết quả mang về
 python scripts/pack_results.py
 ```
 
