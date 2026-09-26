@@ -119,6 +119,27 @@ checkout <commit>` rồi commit ở repo ngoài — git ghi lại commit mới c
   trước khi đặt lịch chạy dài. Batch khác ba model kia thì phải ghi vào bảng
   kết quả, vì nó ảnh hưởng tới cả tốc độ lẫn chất lượng.
 
+- **Mapper LSJ của họ gãy trên ảnh nền**, đã vá bằng `empty_safe_mapper` trong
+  `cofseg/models/detectron2.py` (không sửa repo con). Dòng gãy:
+
+  ```python
+  instances = utils.annotations_to_instances(annos, image_shape)
+  instances.gt_boxes = instances.gt_masks.get_bounding_boxes()   # <- gãy
+  ...
+  if hasattr(instances, 'gt_masks'):                             # <- có canh
+  ```
+
+  `annotations_to_instances` chỉ gắn `gt_masks` khi `len(annos)` > 0. Dòng canh
+  ở dưới cho thấy tác giả biết trường đó có thể vắng, chỉ sót một chỗ. Upstream
+  không lộ vì recipe COCO của họ để `FILTER_EMPTY_ANNOTATIONS: True`; ta cố ý
+  để `False` để giữ ảnh nền. block/f1 có **2 ảnh nền trên 470 ảnh train** (val
+  và test không có) — 0.4% đủ giết lượt chạy ở iteration 43/235.
+
+  Chọn vá mapper chứ không bật `FILTER_EMPTY_ANNOTATIONS` cho riêng model này:
+  bốn model phải ăn cùng một tập dữ liệu thì bảng so sánh mới có nghĩa.
+  **Chưa chạy thật trên GPU**; đường mất mát khi cả batch đều là ảnh nền mới
+  chỉ đọc mã, chưa đo.
+
   ```bash
   python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/block/f1 --imgsz 1024 --batch 4 --probe
   ```

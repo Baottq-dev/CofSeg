@@ -34,7 +34,8 @@ from types import SimpleNamespace
 
 from ..datasets.coco import CocoDataset
 from ..datasets.instances import imread
-from ..models.detectron2 import ARCHS, base_cfg, class_opts, require_detectron2, size_opts
+from ..models.detectron2 import (ARCHS, base_cfg, class_opts, empty_safe_mapper,
+                                 require_detectron2, size_opts)
 from ..registry import register
 from .. import progress
 from . import memory
@@ -460,7 +461,12 @@ class Detectron2Trainer(Trainer):
             @classmethod
             def build_train_loader(cls, cfg):
                 if m2f is not None:
-                    return base.build_train_loader(cfg)
+                    if cfg.INPUT.DATASET_MAPPER_NAME != "coco_instance_lsj":
+                        return base.build_train_loader(cfg)
+                    # Mapper LSJ của họ gãy trên ảnh nền; xem empty_safe_mapper.
+                    from detectron2.data import build_detection_train_loader as bdtl
+
+                    return bdtl(cfg, mapper=empty_safe_mapper(m2f)(cfg, True))
                 augs = [T.ResizeShortestEdge(cfg.INPUT.MIN_SIZE_TRAIN, cfg.INPUT.MAX_SIZE_TRAIN,
                                              cfg.INPUT.MIN_SIZE_TRAIN_SAMPLING)]
                 if a["fliplr"]:

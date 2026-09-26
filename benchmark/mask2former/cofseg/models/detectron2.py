@@ -72,6 +72,65 @@ def load_mask2former(repo: str | Path):
     return mod
 
 
+def empty_safe_mapper(m2f):
+    """Mapper LSJ của Mask2Former, vá chỗ nó gãy trên ẢNH NỀN.
+
+    `COCOInstanceNewBaselineDatasetMapper.__call__` làm thế này:
+
+        instances = utils.annotations_to_instances(annos, image_shape)
+        instances.gt_boxes = instances.gt_masks.get_bounding_boxes()   # <- gãy
+        ...
+        if hasattr(instances, 'gt_masks'):                             # <- có canh
+
+    `annotations_to_instances` chỉ gắn `gt_masks` khi `len(annos)` > 0. Ảnh
+    không có vùng nào thì dòng thứ hai nổ `Cannot find field 'gt_masks'`.
+    Dòng thứ tư cho thấy chính tác giả biết trường đó có thể vắng — chỉ là
+    canh sót một chỗ. Upstream không lộ vì recipe COCO của họ để
+    `FILTER_EMPTY_ANNOTATIONS: True`, còn ta cố ý để False.
+
+    Bộ block/f1 có ĐÚNG 2 ảnh nền trên 470 ảnh train (val và test không có).
+    0.4% đủ để giết lượt chạy ở iteration 43/235.
+
+    Vá bằng cách bọc chứ không sửa repo con: ảnh không vùng nào thì gỡ hẳn
+    khoá "annotations" để mapper cha bỏ qua cả khối đó, rồi tự gắn một
+    `Instances` rỗng đúng dạng mà model chờ. Giữ nguyên ảnh nền thay vì bật
+    FILTER_EMPTY_ANNOTATIONS cho riêng model này — bốn model phải ăn cùng
+    một tập dữ liệu thì bảng so sánh mới có nghĩa.
+    """
+    import copy
+
+    import torch
+    from detectron2.structures import Boxes, Instances
+
+    from mask2former.data.dataset_mappers.coco_instance_new_baseline_dataset_mapper import (
+        COCOInstanceNewBaselineDatasetMapper,
+    )
+
+    class EmptySafeLSJMapper(COCOInstanceNewBaselineDatasetMapper):
+        @staticmethod
+        def _co_vung(d) -> bool:
+            return any(a.get("iscrowd", 0) == 0 for a in (d.get("annotations") or []))
+
+        def __call__(self, dataset_dict):
+            if not self.is_train or self._co_vung(dataset_dict):
+                return super().__call__(dataset_dict)
+            dataset_dict = copy.deepcopy(dataset_dict)
+            dataset_dict.pop("annotations", None)
+            out = super().__call__(dataset_dict)
+            h, w = out["image"].shape[-2:]
+            inst = Instances((h, w))
+            inst.gt_boxes = Boxes(torch.zeros((0, 4), dtype=torch.float32))
+            inst.gt_classes = torch.zeros(0, dtype=torch.int64)
+            # uint8 (0, h, w): đúng dạng convert_coco_poly_to_mask trả về,
+            # để prepare_targets của MaskFormer đệm được mà không phải
+            # phân biệt trường hợp.
+            inst.gt_masks = torch.zeros((0, h, w), dtype=torch.uint8)
+            out["instances"] = inst
+            return out
+
+    return EmptySafeLSJMapper
+
+
 def base_cfg(arch: str, repo: str | None = None, config_file: str | None = None,
              weights: str | None = None):
     """Config detectron2 CHƯA freeze cho `arch`, đã gộp file gốc và trọng số COCO.
