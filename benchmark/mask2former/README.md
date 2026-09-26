@@ -24,33 +24,33 @@ chỉnh biên".
 ## Cách chạy
 
 Từ **gốc repo** (để `data/` và `weights/` dùng chung). Đặt `--runs` vào thư mục
-này và `--name` theo đúng dạng `<model>_<fold>` — bảng tổng hợp đọc tên đó để
-biết model nào chấm trên ruộng nào.
+này, và `--name` chỉ là **tên model** — bảng tổng hợp đọc fold và bộ fold từ
+đường dẫn dữ liệu chứ không từ tên, nên gõ lại fold vào tên chỉ tạo ra một bản
+thứ hai có thể sai lệch.
 
-`--data` nhận **thư mục fold**, viết thẳng ra cũng được —
-`--data data/export/flight/f1` — nhìn lệnh là biết đang chạy bộ nào, fold nào.
-Cùng một cú pháp cho cả bốn model, dù bên trong ba model đọc `data.root` còn
-ultralytics đọc `data.yaml`. Hai bộ fold cắt ra bằng `scripts/make_fold.py`,
-xem `benchmark/README.md`.
+`--data` nhận **thư mục fold**. Viết thẳng đường dẫn ra, đừng đặt biến shell:
+nhìn lệnh là biết ngay đang chạy bộ nào, fold nào. Cùng một cú pháp cho cả bốn
+model, dù bên trong ba model đọc `data.root` còn ultralytics đọc `data.yaml`.
+
+Lệnh dưới đây chạy bộ **block**, fold **f1**. Đổi lượt khác thì sửa `block`
+hoặc `f1` — có ba chỗ trong khối lệnh, sửa hết cả ba. Hai bộ fold cắt ra bằng
+`scripts/make_fold.py`, xem `benchmark/README.md`.
 
 ```bash
-SET=block        # bộ fold: block hoặc flight
-FOLD=f4
-
 # 1. huấn luyện (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
-python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/$SET/$FOLD --runs benchmark/mask2former/runs --name mask2former
+python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/block/f1 --runs benchmark/mask2former/runs --name mask2former --workers 8
 
 # 2. dự đoán test do trainer ghi ra -> preds/ để cả nhóm dùng chung
-RUN=$(ls -td benchmark/mask2former/runs/train/*_mask2former_${SET}-${FOLD}_* | head -1)
-mkdir -p preds && cp "$RUN/predictions.json" preds/mask2former_${SET}_$FOLD.json
+RUN=$(ls -td benchmark/mask2former/runs/train/*_mask2former_block-f1_* | head -1)
+mkdir -p preds && cp "$RUN/predictions.json" preds/mask2former_block_f1.json
 
 # 3. chấm: Boundary AP, Boundary IoU, sai số diện tích, bảng từng vùng
-python benchmark/mask2former/evaluate.py --config benchmark/mask2former/configs/eval/_coco.yaml --file preds/mask2former_${SET}_$FOLD.json --data data/export/$SET/$FOLD --split test --runs benchmark/mask2former/runs --name mask2former
+python benchmark/mask2former/evaluate.py --config benchmark/mask2former/configs/eval/_coco.yaml --file preds/mask2former_block_f1.json --data data/export/block/f1 --split test --runs benchmark/mask2former/runs --name mask2former
 
 # 4. chép file kết quả nhỏ vào results/ (runs/ không vào git)
-EV=$(ls -td benchmark/mask2former/runs/eval/*_mask2former_${SET}-${FOLD}_* | head -1)
-cp "$EV/metrics.json"   benchmark/mask2former/results/mask2former_${SET}_${FOLD}_metrics.json
-cp "$EV/per_region.csv" benchmark/mask2former/results/mask2former_${SET}_${FOLD}_per_region.csv
+EV=$(ls -td benchmark/mask2former/runs/eval/*_mask2former_block-f1_* | head -1)
+cp "$EV/metrics.json"   benchmark/mask2former/results/mask2former_block_f1_metrics.json
+cp "$EV/per_region.csv" benchmark/mask2former/results/mask2former_block_f1_per_region.csv
 
 # test của thư mục này, chạy trước khi commit
 cd benchmark/mask2former && python -m pytest tests
@@ -95,9 +95,15 @@ checkout <commit>` rồi commit ở repo ngoài — git ghi lại commit mới c
 
 - **Chưa chạy thật lần nào.** Cần máy Linux: detectron2 build từ source + repo
   Mask2Former (submodule `benchmark/mask2former/upstream`) + op `MSDeformAttn` biên
-  dịch tại chỗ — `scripts/setup_env.py` làm hết. Việc đầu tiên:
-  `run_fold.sh f4 --smoke --only mask2former`.
-- Tốn giờ nhất trong bốn model: recipe 100 epoch, ước ~3 h một fold trên 4090.
-  Chạy sau khi ba model kia đã xong một fold để không chiếm GPU quá lâu.
+  dịch tại chỗ — `scripts/setup_env.py` làm hết. Việc đầu tiên, một lượt khói:
+
+  ```bash
+  python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/block/f1 --set data.limit=16 --epochs 1
+  ```
+- Tốn giờ nhất trong bốn model: recipe **100 epoch**, gấp đôi Mask R-CNN và
+  SOLOv2, ước ~2–3 h một fold trên 4090 — riêng nó chiếm khoảng 59 % tổng giờ
+  máy của cả bảng. Chạy sau khi ba model kia đã xong một fold để không chiếm
+  GPU quá lâu. Nếu cần cắt giờ, `--epochs 50` đưa nó về ngang hai model kia và
+  bảng cũng công bằng hơn khi so bốn model.
 - Giữ nguyên tăng cường LSJ của recipe gốc (mapper trong `train_net.py` của
   repo), không áp flipud/rot90 như hai model R-CNN.
