@@ -352,11 +352,21 @@ class YoloTrainer(Trainer):
         tham số nào đổi được, và callback `on_fit_epoch_end` chạy SAU
         `save_model()`, nên cách sạch nhất là chép lại `last.pt` mà
         ultralytics vừa ghi cho epoch này — không đụng một dòng nào của thư viện.
+
+        Có MỘT lần bắn không phải của epoch nào cả. `final_eval()` chấm lại
+        best.pt rồi đẩy `self.epoch` lên `epochs` để ghi kết quả đó vào dòng
+        log cuối (trainer.py:985). Lần ấy `trainer.metrics` là của best.pt
+        trong khi `trainer.last` vẫn là epoch cuối cùng — hai file khác nhau.
+        Nghe nhầm lần đó thì bản "best theo mask AP" hoá ra epoch cuối: đã xảy
+        ra thật ở fold f2 và f5, best.pt ghi 67.73/71.46 còn file chép ra là
+        63.99/64.63, gắn nhãn epoch 101 trên một lượt chạy 100 epoch.
         """
         picked = SimpleNamespace(value=None, epoch=-1, path=None)
         store = self.run_dir / "weights"
 
         def on_fit_epoch_end(trainer):
+            if trainer.epoch >= trainer.epochs:
+                return  # lần bắn của final_eval, xem docstring
             got = (trainer.metrics or {}).get(FITNESS_KEY)
             if got is None or not Path(trainer.last).exists():
                 return
