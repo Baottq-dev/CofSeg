@@ -21,31 +21,31 @@ trực tiếp thì độ chính xác giảm bao nhiêu** — so ms/ảnh và mAP
 ## Cách chạy
 
 Từ **gốc repo** (để `data/` và `weights/` dùng chung). Đặt `--runs` vào thư mục
-này và `--name` theo đúng dạng `<model>_<fold>` — bảng tổng hợp đọc tên đó để
-biết model nào chấm trên ruộng nào.
+này, và `--name` chỉ là **tên model** — bảng tổng hợp đọc fold và bộ fold từ
+đường dẫn dữ liệu chứ không từ tên, nên gõ lại fold vào tên chỉ tạo ra một bản
+thứ hai có thể sai lệch.
 
-`--data` nhận **thư mục fold**, viết thẳng ra cũng được —
-`--data data/export/flight/f1` — nhìn lệnh là biết đang chạy bộ nào, fold nào.
-Cùng một cú pháp cho cả bốn model, dù bên trong ba model đọc `data.root` còn
-ultralytics đọc `data.yaml`. Hai bộ fold cắt ra bằng `scripts/make_fold.py`,
-xem `benchmark/README.md`.
+`--data` nhận **thư mục fold**. Viết thẳng đường dẫn ra, đừng đặt biến shell:
+nhìn lệnh là biết ngay đang chạy bộ nào, fold nào. Cùng một cú pháp cho cả bốn
+model, dù bên trong ba model đọc `data.root` còn ultralytics đọc `data.yaml`.
+
+Lệnh dưới đây chạy bộ **block**, fold **f1**. Đổi lượt khác thì sửa `block`
+hoặc `f1` — có ba chỗ trong khối lệnh, sửa hết cả ba. Hai bộ fold cắt ra bằng
+`scripts/make_fold.py`, xem `benchmark/README.md`.
 
 ```bash
-SET=block        # bộ fold: block hoặc flight
-FOLD=f4
-
 # 1. huấn luyện (thêm --epochs 1 --fraction 0.05 để khói)
-python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --data data/export/$SET/$FOLD --runs benchmark/yolo11/runs --name yolo11s
+python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --data data/export/block/f1 --runs benchmark/yolo11/runs --name yolo11s --workers 8
 
 # 2. chấm bằng trọng số tốt nhất
-RUN=$(ls -td benchmark/yolo11/runs/train/*_yolo11s_${SET}-${FOLD}_* | head -1)
-python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo11s.yaml --set model.weights="$RUN/ultralytics/weights/best.pt" --data data/export/$SET/$FOLD --split test --runs benchmark/yolo11/runs --name yolo11s
+RUN=$(ls -td benchmark/yolo11/runs/train/*_yolo11s_block-f1_* | head -1)
+python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo11s.yaml --set model.weights="$RUN/ultralytics/weights/best.pt" --data data/export/block/f1 --split test --runs benchmark/yolo11/runs --name yolo11s
 
 # 3. dự đoán + kết quả nhỏ
-EV=$(ls -td benchmark/yolo11/runs/eval/*_yolo11s_${SET}-${FOLD}_* | head -1)
-mkdir -p preds && cp "$EV/predictions.json" preds/yolo11s_${SET}_$FOLD.json
-cp "$EV/metrics.json"   benchmark/yolo11/results/yolo11s_${SET}_${FOLD}_metrics.json
-cp "$EV/per_region.csv" benchmark/yolo11/results/yolo11s_${SET}_${FOLD}_per_region.csv
+EV=$(ls -td benchmark/yolo11/runs/eval/*_yolo11s_block-f1_* | head -1)
+mkdir -p preds && cp "$EV/predictions.json" preds/yolo11s_block_f1.json
+cp "$EV/metrics.json"   benchmark/yolo11/results/yolo11s_block_f1_metrics.json
+cp "$EV/per_region.csv" benchmark/yolo11/results/yolo11s_block_f1_per_region.csv
 
 # test của thư mục này, chạy trước khi commit
 cd benchmark/yolo11 && python -m pytest tests
