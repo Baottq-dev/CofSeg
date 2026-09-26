@@ -41,6 +41,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+import yaml
+
 from . import config as cfgmod
 
 # Gộp mọi ký tự không an toàn cho tên file thành một dấu gạch ngang. Windows
@@ -84,12 +86,18 @@ def create_run_dir(
     return d
 
 
-def write_env(run_dir: str | Path, cfg: dict | None = None) -> dict:
+def write_env(run_dir: str | Path, cfg: dict | None = None,
+              name: str = "env.json") -> dict:
     """Ghi lại môi trường. Gọi TRƯỚC khi chạy để có dấu vết cả khi chạy hỏng.
 
     Có `cfg` thì ghi kèm bộ fold đã dùng (đọc từ fold.json của thư mục dữ
     liệu): ba tháng sau mở một thư mục kết quả là biết ngay nó train trên bộ
     nào, cắt val kiểu gì, bỏ bao nhiêu ảnh làm đệm.
+
+    `name` khác mặc định khi nối tiếp một lượt chạy: bản env của lượt đầu
+    phải còn nguyên, vì một lượt bị ngắt rồi chạy tiếp có thể đã đổi máy, đổi
+    phiên bản thư viện, hoặc đổi commit — và đúng những thứ đó mới giải thích
+    được vì sao nửa sau khác nửa đầu.
     """
     env: dict = {
         "time": datetime.now().isoformat(timespec="seconds"),
@@ -127,7 +135,7 @@ def write_env(run_dir: str | Path, cfg: dict | None = None) -> dict:
     if cfg is not None:
         env["dataset"] = fold_facts(cfg)
 
-    Path(run_dir, "env.json").write_text(
+    Path(run_dir, name).write_text(
         json.dumps(env, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     return env
@@ -135,6 +143,45 @@ def write_env(run_dir: str | Path, cfg: dict | None = None) -> dict:
 
 def snapshot_config(run_dir: str | Path, cfg: dict) -> None:
     cfgmod.dump(cfg, Path(run_dir) / "config.yaml")
+
+
+def check_resume(run_dir: str | Path, cfg: dict) -> str:
+    """Xác nhận `run_dir` nối tiếp được, trả về tên file env cho lượt này.
+
+    Nối tiếp một lượt chạy bằng THAM SỐ KHÁC thì summary.json cuối cùng mô tả
+    một cấu hình chỉ đúng với nửa sau của lượt đó, còn results.csv thì trộn
+    hai lịch học vào một đường cong — không dòng log nào nói ra. Đó đúng loại
+    sai lặng lẽ mà repo này biến thành lỗi dừng ở mọi chỗ khác, nên ở đây
+    cũng vậy: so nguyên văn config đã gộp với bản lượt trước chụp lại.
+
+    env.json của lượt đầu được giữ nguyên; lượt nối tiếp ghi sang
+    env.resume1.json, resume2.json... vì máy, phiên bản thư viện hay commit
+    có thể đã khác, và chính những thứ đó giải thích nửa sau khác nửa đầu.
+    """
+    run_dir = Path(run_dir)
+    if not run_dir.is_dir():
+        raise SystemExit(f"--resume trỏ vào {run_dir}, không phải một thư mục lần chạy.")
+    snap = run_dir / "config.yaml"
+    if not snap.is_file():
+        raise SystemExit(f"Không thấy {snap}: thư mục này không phải một lần chạy "
+                         "do train.py tạo, hoặc nó hỏng ngay trước khi kịp ghi config.")
+    cu = snap.read_text(encoding="utf-8")
+    moi = yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False)
+    if cu != moi:
+        import difflib
+
+        diff = "".join(difflib.unified_diff(cu.splitlines(True), moi.splitlines(True),
+                                            fromfile="config.yaml (lượt trước)",
+                                            tofile="lệnh lần này", n=1))
+        raise SystemExit(
+            "Config của lệnh này khác config lượt đang nối tiếp:\n"
+            + diff.rstrip()
+            + "\n\nNối tiếp bằng tham số khác cho ra một lượt chạy mà summary.json "
+              "mô tả sai. Gõ lại đúng lệnh cũ, hoặc bỏ --resume để chạy lượt mới.")
+    n = 1
+    while (run_dir / f"env.resume{n}.json").exists():
+        n += 1
+    return f"env.resume{n}.json"
 
 
 # --------------------------------------------------------- bộ fold của lần chạy
@@ -170,6 +217,84 @@ def dataset_tag(cfg: dict) -> str:
     fold = parts[-1]
     parent = parts[-2] if len(parts) >= 2 else ""
     return f"{parent}-{fold}" if parent and parent != "export" else fold
+
+
+def train_run_dir(weights) -> Path | None:
+    """Thư mục lượt train đã sinh ra `weights` — nơi có summary.json.
+
+    Hai bố cục đang dùng: `<run>/weights/best.pth` (detectron2, mmdet, và bản
+    mirror của yolo) và `<run>/ultralytics/weights/best.pt` (bản của chính
+    ultralytics). Đi ngược lên tối đa bốn bậc là đủ cho cả hai, và dừng ở thư
+    mục ĐẦU TIÊN có summary.json nên không phải đoán theo tên thư mục.
+    """
+    if not weights:
+        return None
+    for d in list(Path(str(weights)).parents)[:4]:
+        if (d / "summary.json").is_file():
+            return d
+    return None
+
+
+def train_args(weights) -> dict | None:
+    """Khối `args` trong summary.json của lượt train đã sinh ra `weights`."""
+    d = train_run_dir(weights)
+    if d is None:
+        return None
+    try:
+        doc = json.loads((d / "summary.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    args = doc.get("args")
+    return args if isinstance(args, dict) else None
+
+
+def train_imgsz(weights) -> int | None:
+    """imgsz của lượt train đã sinh ra `weights`; None nếu không tra được."""
+    try:
+        return int((train_args(weights) or {})["imgsz"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def check_imgsz(weights, used, explicit: bool = False) -> str:
+    """Dừng nếu chấm ở độ phân giải KHÁC lượt train, trừ khi cố ý.
+
+    Đây là lỗi đã xảy ra và đã ăn mất sáu lượt chấm: cả sáu lần train Mask
+    R-CNN chạy ở cạnh dài 1024, nhưng lúc chấm thiếu d2_config.yaml nên
+    detectron2 rơi về mặc định của nó (800/1333) và chấm ở 1333 mà không một
+    dòng log nào khác đi. Cùng lúc YOLO chấm ở đúng 1024, nên bảng so sánh
+    giữa hai model là so ở hai độ phân giải. Chỉ đọc lại log mới phát hiện ra.
+
+    Hàng rào ở `Detectron2Model` chặn trường hợp THIẾU file config. Hàm này
+    chặn trường hợp còn lại, nguy hiểm hơn vì không thiếu gì cả: file có mặt
+    nhưng con số trong đó khác con số đang dùng.
+
+    `explicit` là khi người chạy gõ thẳng `--imgsz`. Lúc đó lệch là chủ ý
+    (khảo sát độ phân giải) nên chỉ kêu to chứ không dừng. imgsz lấy từ file
+    config thì KHÔNG tính là chủ ý: config eval mặc định 1024, mà lượt train
+    640 vẫn nạp đúng config đó — đúng cái bẫy cần chặn.
+
+    Trả về một dòng để ghi vào run.log, kể cả khi mọi thứ khớp: một phép kiểm
+    im lặng là một phép kiểm không ai biết đã chạy hay chưa.
+    """
+    want = train_imgsz(weights)
+    if used is None:
+        return "imgsz: model không có khái niệm này, bỏ qua bước đối chiếu."
+    if want is None:
+        return (f"imgsz: đang chấm ở {used}; không tra được lượt train "
+                f"(không thấy summary.json cạnh {weights!r}) nên KHÔNG đối chiếu được.")
+    if int(want) == int(used):
+        return f"imgsz: {used}, khớp lượt train ({train_run_dir(weights)})."
+    msg = (f"imgsz lệch: lượt train chạy ở {want}, lần chấm này ở {used}.\n"
+           f"  Nguồn: {train_run_dir(weights)}/summary.json -> args.imgsz = {want}\n"
+           "  Chấm ở độ phân giải model chưa từng thấy thì con số không so được "
+           "với bất kỳ lượt nào khác.")
+    if explicit:
+        return "CẢNH BÁO: " + msg + "\n  Bỏ qua vì --imgsz được gõ thẳng (chủ ý khảo sát)."
+    raise SystemExit(
+        msg + "\n  Sửa config/trọng số cho khớp, hoặc gõ thẳng --imgsz "
+        f"{want} nếu đó đúng là ý bạn."
+    )
 
 
 def fold_facts(cfg: dict) -> dict | None:

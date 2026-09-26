@@ -14,6 +14,13 @@ from pathlib import Path
 class Trainer(ABC):
     """Nhận config + thư mục run, trả về tóm tắt kèm đường dẫn trọng số."""
 
+    #: True khi lượt này nối tiếp một lượt bị ngắt, viết tiếp vào chính
+    #: run_dir đó. train.py đặt cờ này sau khi đã kiểm config khớp
+    #: (artifacts.check_resume); trainer nào không nối tiếp được thì nêu lý do
+    #: trong fit() chứ đừng im lặng train lại từ đầu — một lượt tưởng là chạy
+    #: tiếp mà thật ra chạy lại sẽ ghi đè checkpoint cũ trước khi ai kịp nhận ra.
+    resume: bool = False
+
     def __init__(self, cfg: dict, run_dir: str | Path):
         self.cfg = cfg
         self.run_dir = Path(run_dir)

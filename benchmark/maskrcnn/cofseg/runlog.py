@@ -122,12 +122,16 @@ def _redirect_log_handlers(old_streams: dict, new_streams: dict) -> list:
 
 
 @contextlib.contextmanager
-def capture(path: str | Path, raw: bool = True):
+def capture(path: str | Path, raw: bool = True, append: bool = False):
     """Chuyển hướng stdout/stderr vào console VÀ file trong phạm vi khối with.
 
     raw=True (mặc định): file là bản sao đúng từng ký tự của terminal.
     raw=False: mỗi dòng chỉ giữ trạng thái cuối và bỏ mã màu — file nhỏ hơn
     nhiều nhưng không còn là bản sao trung thực.
+
+    append=True khi nối tiếp một lượt chạy: ghi đè run.log sẽ xoá mất đúng
+    phần cho biết lượt trước chết ở đâu và vì sao, tức xoá mất lý do người ta
+    phải chạy tiếp.
 
     Không ghi thêm header hay footer: xuất xứ của lần chạy đã nằm trong
     env.json và config.yaml cùng thư mục.
@@ -138,7 +142,7 @@ def capture(path: str | Path, raw: bool = True):
     # thứ Python làm với stdout, nên file trùng KHỚP TỪNG BYTE với kết quả của
     # `python benchmark/maskrcnn/train.py > terminal.txt`. Ký tự \r của thanh tiến trình
     # không bị dịch nên vẫn nguyên vẹn.
-    fh = path.open("w", encoding="utf-8")
+    fh = path.open("a" if append else "w", encoding="utf-8")
 
     out, err = sys.stdout, sys.stderr
     t_out, t_err = _Tee(out, fh, raw), _Tee(err, fh, raw)
