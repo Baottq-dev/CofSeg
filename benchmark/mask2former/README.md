@@ -41,6 +41,7 @@ pip install -r benchmark/mask2former/requirements.txt
 pip install --no-build-isolation "detectron2 @ git+https://github.com/facebookresearch/detectron2.git@a2f4a8771ab77e8411c26b27f24f9489a28a2453"
 
 git submodule update --init benchmark/mask2former/upstream
+sed -i "s/AT_DISPATCH_FLOATING_TYPES(value.type()/AT_DISPATCH_FLOATING_TYPES(value.scalar_type()/g" benchmark/mask2former/upstream/mask2former/modeling/pixel_decoder/ops/src/cuda/ms_deform_attn_cuda.cu
 pip install --no-build-isolation --no-deps benchmark/mask2former/upstream/mask2former/modeling/pixel_decoder/ops
 
 python -c "
@@ -53,9 +54,22 @@ print('detectron2', detectron2.__version__)"
 PYTHONPATH=benchmark/mask2former/upstream python -c "from mask2former.modeling.pixel_decoder.ops.modules import MSDeformAttn; print('MSDeformAttn OK')"
 ```
 
+`sed` vá hai dòng của repo gốc; thiếu nó thì nvcc dừng ngay.
+`AT_DISPATCH_FLOATING_TYPES` nhận `c10::ScalarType`, còn `value.type()` trả
+`at::DeprecatedTypeProperties`. Torch cũ cho chuyển ngầm giữa hai kiểu, torch
+2.11 đã gỡ, nên `src/cuda/ms_deform_attn_cuda.cu` dòng 69 và 139 báo `no
+suitable conversion function`. `value.scalar_type()` chính là thứ thông điệp
+deprecated của torch chỉ sang: cùng giá trị, không đổi hành vi. Chỉ đúng hai
+dòng đó hỏng — `THC/THCAtomics.cuh` torch vẫn giữ shim, `.data<scalar_t>()`
+(15 chỗ) và `AT_ASSERTM` (26 chỗ) vẫn biên dịch được.
+
 Build thẳng thư mục `ops` chứ đừng chạy `make.sh` của repo gốc: nó gọi
-`setup.py install`, thứ setuptools mới đã bỏ. Bỏ bước đó thì model vẫn chạy
-nhưng rơi xuống đường Python tốn 3.94 GiB VRAM mỗi lớp encoder, nhân 6 lớp.
+`setup.py install`, thứ setuptools mới đã bỏ. Bỏ hẳn bước đó thì model **không
+chạy được**: `ops/functions/ms_deform_attn_func.py` ném `ModuleNotFoundError`
+ngay lúc import. Đường lùi PyTorch có sẵn ở tầng trên —
+`ops/modules/ms_deform_attn.py` bọc lời gọi op trong `try/except` — nhưng
+không bao giờ tới lượt vì import chết trước, và có tới lượt thì cũng tốn
+3.94 GiB VRAM mỗi lớp encoder, nhân 6 lớp.
 
 ## Cách chạy
 
@@ -228,7 +242,7 @@ không còn so được với ba model kia. Sửa thì báo nhóm.
 | Nguồn | https://github.com/facebookresearch/Mask2Former |
 | Commit ghim | `9b0651c` (20/05/2022, bản cuối của repo) |
 | License | MIT |
-| Dùng làm gì | `cofseg/models/detectron2.py` nạp `train_net.py` và gói `mask2former` làm module; op `MSDeformAttn` biên dịch tại chỗ — xem `benchmark/README.md` mục *Dựng môi trường*, bước 7 |
+| Dùng làm gì | `cofseg/models/detectron2.py` nạp `train_net.py` và gói `mask2former` làm module; op `MSDeformAttn` vá hai dòng rồi biên dịch tại chỗ — xem `benchmark/README.md` mục *Dựng môi trường*, bước 7 |
 
 Repo con đi theo git: `git clone --recurse-submodules`, hoặc
 `git submodule update --init benchmark/mask2former/upstream` nếu đã clone rồi.
@@ -236,10 +250,31 @@ Repo con đi theo git: `git clone --recurse-submodules`, hoặc
 chỉ khác hoa thường — trên Windows và macOS nhìn như một.
 
 **Không sửa mã bên trong repo con.** Cần vá thì vá bằng code trong `cofseg/`
-(như hàm `load_mask2former`). Đổi commit: `git -C benchmark/mask2former/upstream
-checkout <commit>` rồi commit ở repo ngoài — git ghi lại commit mới của repo con.
+(như hàm `load_mask2former`).
+
+Ngoại lệ duy nhất là `sed` ở bước 7 của `benchmark/README.md`, vá hai dòng
+trong `ops/src/cuda/ms_deform_attn_cuda.cu`. Lý do không vá từ `cofseg/` được:
+đó là mã CUDA, và op phải biên dịch xong thì mới có gì để nạp. Vá nằm trong
+repo con nên clone lại là mất — chính vì thế nó phải là một bước có ghi trong
+README chứ không phải việc sửa tay trên máy. Hoàn tác:
+`git -C benchmark/mask2former/upstream checkout .`.
+
+Đổi commit: `git -C benchmark/mask2former/upstream checkout <commit>` rồi
+commit ở repo ngoài — git ghi lại commit mới của repo con.
 
 ## Trạng thái
+
+- **26/09: op `MSDeformAttn` đã biên dịch thật, trên máy thuê (5090, torch
+  2.11.0+cu128).** Bản gốc không build được: `AT_DISPATCH_FLOATING_TYPES` nhận
+  `c10::ScalarType` còn `value.type()` trả `at::DeprecatedTypeProperties`, phép
+  chuyển ngầm giữa hai kiểu đã bị torch gỡ, nvcc dừng ở
+  `ms_deform_attn_cuda.cu` dòng 69 và 139. Vá hai dòng sang
+  `value.scalar_type()` là đủ, xem bước 7 của `benchmark/README.md`.
+
+  Việc này xoá nguyên nhân (1) của mục 24/09 ngay dưới: có kernel CUDA thì
+  không còn `torch.stack` 3.94 GiB mỗi lớp nữa. Nguyên nhân (2) — recipe gốc
+  là batch 16 trên **8** GPU — thì vẫn nguyên, nên vẫn `--probe` trước khi
+  chốt batch.
 
 - **24/09: chạy thật lần đầu trên máy lab, OOM ngay iteration 1 ở `--batch 16`.**
   Không phải sự cố ngẫu nhiên, và biết trước được. Hai nguyên nhân cộng lại:

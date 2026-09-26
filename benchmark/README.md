@@ -149,6 +149,10 @@ nhất tồn tại.
 
 ```bash
 git submodule update --init benchmark/mask2former/upstream
+
+sed -i "s/AT_DISPATCH_FLOATING_TYPES(value.type()/AT_DISPATCH_FLOATING_TYPES(value.scalar_type()/g" \
+  benchmark/mask2former/upstream/mask2former/modeling/pixel_decoder/ops/src/cuda/ms_deform_attn_cuda.cu
+
 pip install --no-build-isolation --no-deps \
   benchmark/mask2former/upstream/mask2former/modeling/pixel_decoder/ops
 
@@ -156,9 +160,24 @@ PYTHONPATH=benchmark/mask2former/upstream python -c \
   "from mask2former.modeling.pixel_decoder.ops.modules import MSDeformAttn; print('MSDeformAttn OK')"
 ```
 
+`sed` vá hai dòng của repo gốc; thiếu nó thì nvcc dừng ngay.
+`AT_DISPATCH_FLOATING_TYPES` nhận `c10::ScalarType`, còn `value.type()` trả
+`at::DeprecatedTypeProperties`. Torch cũ cho chuyển ngầm giữa hai kiểu, torch
+2.11 đã gỡ, nên `src/cuda/ms_deform_attn_cuda.cu` dòng 69 và 139 báo `no
+suitable conversion function`. `value.scalar_type()` chính là thứ thông điệp
+deprecated của torch chỉ sang: cùng giá trị, không đổi hành vi. Chỉ đúng hai
+dòng đó hỏng — `THC/THCAtomics.cuh` torch vẫn giữ shim, `.data<scalar_t>()`
+(15 chỗ) và `AT_ASSERTM` (26 chỗ) vẫn biên dịch được. Vá nằm trong repo con
+nên clone lại là mất; hoàn tác bằng
+`git -C benchmark/mask2former/upstream checkout .`.
+
 Build thẳng thư mục `ops` chứ đừng chạy `make.sh` của repo gốc: nó gọi
-`setup.py install`, thứ setuptools mới đã bỏ. Bỏ bước này thì Mask2Former vẫn
-chạy nhưng rơi xuống đường Python tốn 3.94 GiB VRAM mỗi lớp encoder.
+`setup.py install`, thứ setuptools mới đã bỏ. Bỏ hẳn bước này thì Mask2Former
+**không chạy được**: `ops/functions/ms_deform_attn_func.py` ném
+`ModuleNotFoundError` ngay lúc import. Đường lùi PyTorch có sẵn ở tầng trên —
+`ops/modules/ms_deform_attn.py` bọc lời gọi op trong `try/except` — nhưng
+không bao giờ tới lượt vì import chết trước, và có tới lượt thì cũng tốn
+3.94 GiB VRAM mỗi lớp encoder.
 
 ### 8. Kiểm cả env
 
