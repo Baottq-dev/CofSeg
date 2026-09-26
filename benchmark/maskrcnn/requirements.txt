@@ -1,0 +1,54 @@
+# Mask R-CNN (detectron2). Người phụ trách: VanNguyen. CHỈ LINUX.
+#
+#     pip install -r benchmark/maskrcnn/requirements.txt
+#     python scripts/setup_env.py --only detectron2
+#
+# detectron2 KHÔNG nằm trong file này, và đó là cố ý: nó là gói duy nhất phải
+# build từ nguồn, và setup.py của nó quyết định có biên dịch op CUDA hay không
+# TUỲ THEO lúc cài có thấy GPU và nvcc hay không — thứ mà một dòng trong
+# requirements.txt không điều khiển được. Để ở đây thì `pip install -r` trên
+# máy có nvcc lệch phiên bản với torch sẽ chết giữa chừng.
+#
+# Tin tốt cho model này: `--skip-cuda-build` KHÔNG làm mất gì. detectron2
+# không dùng op CUDA riêng nào cho Mask R-CNN — ROIAlign và NMS lấy của
+# torchvision. (Mask2Former thì khác, xem file requirements của nó.)
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+torch==2.4.1+cu121
+torchvision==0.19.1+cu121
+
+# ---- setuptools: KHÔNG được bỏ ghim
+#
+# detectron2 0.6 mở model zoo bằng `import pkg_resources`, mà setuptools 82 đã
+# BỎ HẲN module đó (mở wheel ra đếm: 81.0.0 còn thư mục pkg_resources/, 82.0.1
+# không còn file nào). Không ghim thì Mask R-CNN chết ở lần train đầu, SAU KHI
+# đã nạp xong dữ liệu:
+#
+#     File ".../detectron2/model_zoo/model_zoo.py", line 4, in <module>
+#         import pkg_resources
+#     ModuleNotFoundError: No module named 'pkg_resources'
+#
+# Bẫy phụ: `import detectron2` KHÔNG kéo model_zoo vào, nên bước cài báo thành
+# công rồi mới chết lúc train. Bước `detectron2` của setup_env.py giờ kiểm cả
+# `from detectron2 import model_zoo`.
+setuptools<82
+
+# ---- cofseg/ dùng chung
+numpy==2.4.4
+opencv-python==5.0.0.93
+pycocotools==2.0.11
+pyyaml==6.0.3
+tqdm==4.68.3
+
+# ---- GPU đời Blackwell (RTX 50xx, RTX PRO 6000, B200)
+#
+# torch cu121 không có kernel cho sm_120. Trên những card đó đổi ba dòng trên
+# thành (bỏ luôn --extra-index-url cu121):
+#
+#     --extra-index-url https://download.pytorch.org/whl/cu130
+#     torch==2.9.1+cu130
+#     torchvision==0.24.1+cu130
+#
+# detectron2 đã được xác nhận build và import được với torch 2.11 + Python
+# 3.13 trên molab. Lúc đó SOLOv2 KHÔNG chạy chung env được nữa — xem
+# benchmark/solov2/requirements.txt.
