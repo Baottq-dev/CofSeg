@@ -28,6 +28,7 @@ nếu bốn model in ra giống nhau.
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -240,6 +241,34 @@ def summary(title: str, rows) -> str:
     # không ước theo bề rộng nhãn — nhãn ngắn mà giá trị dài thì khung hở.
     rule = "-" * max([len(title)] + [len(x) for x in body.splitlines()])
     return f"\n{rule}\n{title}\n{rule}\n{body}\n{rule}"
+
+
+_OOM_XIN = re.compile(r"Tried to allocate ([\d.]+ ?[KMG]i?B)")
+_OOM_CON = re.compile(r"of which ([\d.]+ ?[KMG]i?B) is free")
+
+
+def oom_rows(err, *, arch: str, batch: int, imgsz: int, log_path=None):
+    """Lỗi hết VRAM -> các dòng cho `summary()`, thay cho bức tường chữ.
+
+    Thông báo gốc của allocator dài 6 dòng liền nhau, kết thúc bằng gợi ý
+    `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` — thứ không cứu nổi
+    một lượt thiếu vài GiB. Điều thật sự cần làm là hạ batch, mà chữ "batch"
+    không xuất hiện lần nào trong cả thông báo lẫn 90 dòng traceback ở trên.
+
+    Regex có thể trượt khi torch đổi câu chữ; trượt thì bỏ dòng đó, không gãy.
+    """
+    msg = str(err)
+    xin, con = _OOM_XIN.search(msg), _OOM_CON.search(msg)
+    rows = [("lượt chạy", f"{arch}, batch {batch}, imgsz {imgsz}")]
+    if xin:
+        rows.append(("xin thêm", xin.group(1)))
+    if con:
+        rows.append(("còn trống", con.group(1)))
+    rows += [("hạ batch", f"--batch {max(1, batch // 2)}, không đủ thì --batch {max(1, batch // 4)}"),
+             ("đo trước khi chạy dài", f"--batch {max(1, batch // 4)} --probe")]
+    if log_path is not None:
+        rows.append(("traceback đầy đủ", str(log_path)))
+    return rows
 
 
 def data_line(info: dict) -> str | None:

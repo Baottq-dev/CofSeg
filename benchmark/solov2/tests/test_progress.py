@@ -407,3 +407,41 @@ def test_is_console_nhan_ca_stderr():
 
 def test_is_console_tra_false_cho_handler_khong_co_luong():
     assert not progress.is_console(logging.NullHandler())
+
+
+OOM_THAT = (
+    "CUDA out of memory. Tried to allocate 3.94 GiB. GPU 0 has a total capacity "
+    "of 23.52 GiB of which 828.69 MiB is free. Process 23431 has 5.87 GiB memory "
+    "in use. If reserved but unallocated memory is large try setting "
+    "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation."
+)
+
+
+def test_oom_rows_noi_ra_phai_ha_batch():
+    """Cả thông báo lẫn 90 dòng traceback không có chữ 'batch' lần nào."""
+    rows = dict(progress.oom_rows(RuntimeError(OOM_THAT), arch="mask2former",
+                                  batch=16, imgsz=1024))
+    assert rows["lượt chạy"] == "mask2former, batch 16, imgsz 1024"
+    assert rows["xin thêm"] == "3.94 GiB"
+    assert rows["còn trống"] == "828.69 MiB"
+    assert "--batch 8" in rows["hạ batch"] and "--batch 4" in rows["hạ batch"]
+    assert "--probe" in rows["đo trước khi chạy dài"]
+
+
+def test_oom_rows_khong_gay_khi_torch_doi_cau_chu():
+    rows = dict(progress.oom_rows(RuntimeError("hết bộ nhớ, không theo mẫu nào"),
+                                  arch="maskrcnn", batch=4, imgsz=1024))
+    assert "xin thêm" not in rows and "còn trống" not in rows
+    assert rows["hạ batch"].startswith("--batch 2")
+
+
+def test_oom_rows_batch_1_khong_de_xuat_batch_0():
+    rows = dict(progress.oom_rows(RuntimeError(OOM_THAT), arch="maskrcnn",
+                                  batch=1, imgsz=1024))
+    assert "--batch 0" not in rows["hạ batch"]
+
+
+def test_oom_rows_chi_duong_toi_traceback_day_du(tmp_path):
+    rows = dict(progress.oom_rows(RuntimeError(OOM_THAT), arch="maskrcnn",
+                                  batch=8, imgsz=1024, log_path=tmp_path / "log.txt"))
+    assert rows["traceback đầy đủ"].endswith("log.txt")
