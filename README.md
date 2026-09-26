@@ -67,18 +67,40 @@ toolkit đầy đủ trong env, `g++ ≤ 12`, và `nvcc` cùng major với torch
 hiện không thoả (nvcc 13.2, g++ > 12). Chi tiết và cách đổi ý sau:
 `docs/reports/cai_moi_truong_may_lab_2026-09-27.md`.
 
-### Chỉ cần YOLO hoặc SOLOv2
+### Một file cho app/, một file cho mỗi model
 
-`requirements.txt` **thuần wheel dựng sẵn** — không gói nào biên dịch, cài
-được trên mọi máy:
+`requirements.txt` ở gốc chỉ lo **annotator (`app/`) và `canopyseg/`**. Mỗi
+model benchmark khai gói riêng trong thư mục của nó:
 
 ```
-pip install -r requirements.txt
+pip install -r requirements.txt            # app/ + canopyseg
 pip install -e .
+
+pip install -r benchmark/yolo11/requirements.txt
+pip install -r benchmark/solov2/requirements.txt       # xem cảnh báo trong file
+pip install -r benchmark/maskrcnn/requirements.txt
+pip install -r benchmark/mask2former/requirements.txt
 ```
 
-Đủ cho **YOLOv11-Seg** và **SOLOv2**. Hai gói build từ source nằm ngoài file
-đó vì chúng phụ thuộc vào môi trường lúc cài chứ không chỉ vào phiên bản:
+Hoặc để `setup_env.py` làm: `--models yolo11,maskrcnn,mask2former`.
+
+Chạy benchmark **không cần** `pip install -e .`: mỗi thư mục tự chứa bản
+`cofseg/` riêng và `train.py` tự thêm thư mục của nó vào `sys.path`.
+
+**Vì sao tách.** Hai mốc phiên bản không giao nhau:
+
+| | đòi hỏi |
+|---|---|
+| `mmcv` (SOLOv2) | chỉ có wheel tới **torch 2.4 / cu121** |
+| GPU đời Blackwell (RTX 50xx, RTX PRO 6000, B200) | **torch ≥ 2.7** — cu121 không có kernel `sm_120` |
+
+Trên GPU đời **trước** Blackwell — 4090, L4, L40S, A40, A6000, A100, H100 —
+cả bốn file đều ghim torch 2.4.1+cu121 nên vẫn cài chung một env được. Chỉ
+khi chạy trên Blackwell mới buộc tách SOLOv2 ra env riêng.
+
+Mọi gói trong các file trên là **wheel dựng sẵn** — không gói nào biên dịch.
+Hai gói build từ source nằm ngoài, vì chúng phụ thuộc vào môi trường lúc cài
+chứ không chỉ vào phiên bản:
 
 | Gói | Cho | Cài bằng |
 |---|---|---|

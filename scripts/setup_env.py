@@ -1,9 +1,9 @@
 """Dựng môi trường trên máy Linux có GPU (máy lab / máy thuê).
 
-    python scripts/setup_env.py                  # chạy hết
-    python scripts/setup_env.py --dry-run        # in ra sẽ làm gì, không chạy
-    python scripts/setup_env.py --from mmdet     # chạy lại từ một bước
-    python scripts/setup_env.py --only weights
+    python scripts/setup_env.py --models yolo11,maskrcnn,mask2former
+    python scripts/setup_env.py --models solov2      # env RIÊNG, xem bên dưới
+    python scripts/setup_env.py --dry-run            # in ra sẽ làm gì, không chạy
+    python scripts/setup_env.py --from mmdet         # chạy lại từ một bước
     python scripts/setup_env.py --list
 
 Từng bước một, dừng ngay khi một bước lỗi và in đúng lệnh đã chạy, để lần đầu
@@ -11,10 +11,16 @@ dựng trên máy mới còn biết hỏng ở đâu. Chạy TRONG env đã kíc
 không tự tạo conda env (kích hoạt env từ bên trong một tiến trình Python
 không có tác dụng ra ngoài), nó kiểm tra và bảo bạn cần gõ gì.
 
-MỘT env cho tất cả — cả annotator (app/) lẫn benchmark: torch 2.4.1+cu121
-(mmcv chỉ có wheel dựng sẵn tới torch 2.4), ultralytics, detectron2 build từ
-source, mmcv/mmdet, submodule Mask2Former với op MSDeformAttn biên dịch tại
-chỗ, SAM 2.1, rồi trọng số COCO.
+`--models` quyết định cài gói của model nào; rỗng thì chỉ app/ + canopyseg.
+Mỗi thư mục benchmark khai gói riêng vì KHÔNG còn gộp chung được nữa:
+
+    mmcv (SOLOv2)          chỉ có wheel tới torch 2.4 / cu121
+    GPU đời Blackwell      đòi torch >= 2.7 (cu121 không có kernel sm_120)
+
+Hai mốc đó không giao nhau. Trên GPU đời TRƯỚC Blackwell — 4090, L4, L40S,
+A40, A6000, A100, H100 — thì cả bốn model vẫn cài chung một env được, vì mọi
+file đều ghim torch 2.4.1+cu121. Chỉ khi chạy trên Blackwell mới buộc tách
+SOLOv2 ra env riêng.
 
 SAM 2 khai `torch>=2.5.1` nên không để chung requirements.txt được; bước
 `sam2` cài nó với --no-deps. Máy chỉ chạy benchmark thì bỏ bước đó:
@@ -52,6 +58,9 @@ TORCH = ["torch==2.4.1", "torchvision==0.19.1",
 #: khỏi cần nvcc khớp phiên bản với torch. KHÔNG liên quan tới lúc train —
 #: train vẫn dùng GPU đầy đủ. Xem install_without_cuda_build().
 SKIP_CUDA_BUILD = False
+
+#: Model được cài trong lượt này. Mặc định rỗng = chỉ app/ + canopyseg.
+MODELS: list[str] = []
 
 
 class Step:
@@ -170,15 +179,31 @@ def step_torch() -> None:
              "print('torch', torch.__version__, torch.cuda.get_device_name(0))")
 
 
+#: Mỗi thư mục benchmark khai gói riêng. Gộp chung một file là điều KHÔNG làm
+#: được nữa: mmcv (SOLOv2) khoá ở torch 2.4/cu121, mà GPU đời Blackwell lại
+#: đòi torch >= 2.7 — hai mốc không giao nhau. Xem đầu mỗi file để biết vì sao.
+BENCH_REQS = {
+    "yolo11": "benchmark/yolo11/requirements.txt",
+    "solov2": "benchmark/solov2/requirements.txt",
+    "maskrcnn": "benchmark/maskrcnn/requirements.txt",
+    "mask2former": "benchmark/mask2former/requirements.txt",
+}
+
+
 def step_requirements() -> None:
-    """Thuần wheel dựng sẵn — không gói nào biên dịch, chạy được ở mọi máy."""
+    """app/ + canopyseg, rồi gói của các model được chọn qua --models.
+
+    Thuần wheel dựng sẵn — không gói nào biên dịch, chạy được ở mọi máy.
+    """
     pip("install", "-r", "requirements.txt")
     pip("install", "-e", ".")
+    for name in MODELS:
+        print(f"  gói riêng của {name}")
+        pip("install", "-r", BENCH_REQS[name])
     # KHÔNG import mmdet ở đây: mmdet 3.3.0 tự chặn khi thấy mmcv 2.2.0, và
     # chỗ nới dòng kiểm đó là bước `mmdet` NGAY SAU. Kiểm sớm một bước là báo
     # lỗi cho một thứ chưa tới lượt được sửa.
-    py("-c", "import torch, ultralytics; print('torch', torch.__version__, "
-             "'| ultralytics', ultralytics.__version__)")
+    py("-c", "import torch; print('torch', torch.__version__)")
 
 
 def step_detectron2() -> None:
@@ -315,7 +340,7 @@ def step_weights() -> None:
 STEPS = [
     Step("check", "kiểm python, nvcc, GPU", step_check),
     Step("torch", "torch 2.4.1+cu121", step_torch),
-    Step("requirements", "requirements.txt + gói repo (thuần wheel)", step_requirements),
+    Step("requirements", "app/ + canopyseg + gói của --models (thuần wheel)", step_requirements),
     Step("detectron2", "build detectron2 từ source (Mask R-CNN, Mask2Former)", step_detectron2),
     Step("mmdet", "nới kiểm phiên bản mmcv, thử import", step_mmdet),
     Step("mask2former", "submodule + op MSDeformAttn", step_mask2former),
@@ -335,10 +360,19 @@ def main(argv=None) -> int:
                     help="lúc CÀI không biên dịch nhân CUDA tự viết nào, nên không cần "
                          "nvcc khớp phiên bản. TRAIN VẪN DÙNG GPU như thường; chỉ "
                          "Mask2Former chậm hơn ~1,3-1,8 lần, ba model kia không đổi")
+    ap.add_argument("--models", default="",
+                    help="model cần cài, phẩy ngăn: " + ",".join(BENCH_REQS)
+                         + ". Rỗng = chỉ app/ + canopyseg. LƯU Ý: solov2 khoá ở "
+                           "torch 2.4/cu121 nên KHÔNG cài chung env với ba model "
+                           "kia được nếu GPU là đời Blackwell")
     a = ap.parse_args(argv)
 
-    global SKIP_CUDA_BUILD
+    global SKIP_CUDA_BUILD, MODELS
     SKIP_CUDA_BUILD = a.skip_cuda_build
+    MODELS = [n.strip() for n in a.models.split(",") if n.strip()]
+    bad = set(MODELS) - set(BENCH_REQS)
+    if bad:
+        raise SystemExit(f"không có model: {sorted(bad)}; có: {sorted(BENCH_REQS)}")
 
     names = [s.name for s in STEPS]
     if a.list:
