@@ -578,6 +578,30 @@ class Detectron2Trainer(Trainer):
         progress.drop_from_console("detectron2", name="detectron2.engine.train_loop",
                                    startswith="Exception during training")
 
+    def _train_or_say_why(self, trainer, cfg):
+        """Chạy train; hết VRAM thì nói ra phải làm gì, đừng đổ bức tường chữ.
+
+        Thông báo của allocator kết thúc bằng 90 dòng traceback rồi một đoạn
+        văn gợi ý `expandable_segments:True` — thứ không cứu nổi một lượt
+        thiếu vài GiB. Chữ "batch" không xuất hiện lần nào, dù đó chính là
+        thứ phải sửa.
+
+        Không mất traceback: `train_loop` của detectron2 đã gọi
+        `logger.exception` trước khi ném lại, nên bản đầy đủ nằm trong
+        d2/log.txt.
+        """
+        import torch
+
+        oom = getattr(torch, "OutOfMemoryError", None) or torch.cuda.OutOfMemoryError
+        try:
+            trainer.train()
+        except oom as err:
+            print(progress.summary("Hết VRAM", progress.oom_rows(
+                err, arch=self.arch, batch=int(cfg.SOLVER.IMS_PER_BATCH),
+                imgsz=int(cfg.INPUT.MAX_SIZE_TRAIN),
+                log_path=self.out_dir / "log.txt")), flush=True)
+            raise SystemExit(1) from None
+
     # ----------------------------------------------------------------- huấn luyện
     def fit(self) -> dict:
         from detectron2.checkpoint import DetectionCheckpointer
@@ -596,7 +620,7 @@ class Detectron2Trainer(Trainer):
         t0 = time.time()
         trainer = cls(cfg)
         trainer.resume_or_load(resume=False)
-        trainer.train()
+        self._train_or_say_why(trainer, cfg)
         train_seconds = round(time.time() - t0, 1)
 
         # Trọng số về cùng bố cục với các trainer khác; d2_config.yaml cạnh
