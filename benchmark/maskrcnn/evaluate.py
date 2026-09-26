@@ -108,7 +108,13 @@ def run_config(a, extra: list[str]) -> int:
     # config.yaml của lần chấm phải ghi đúng tên đã dùng (--name thắng file),
     # vì summarize_folds.py đọc tên "<model>_<fold>" từ đó.
     cfg["name"] = run_name
-    tag = data["split"] + (f"_i{cfg['model']['imgsz']}" if "imgsz" in cfg["model"] else "")
+    # Độ phân giải vào TÊN thư mục. Sáu lượt chấm Mask R-CNN chạy ở 1333 thay
+    # vì 1024 mà không ai nhận ra, một phần vì tên thư mục không nói gì —
+    # thư mục của YOLO có `_i1024`, của detectron2 thì không có gì cả. Với
+    # detectron2/mmdet, imgsz không nằm trong config mà trong bản dump của
+    # lượt train, nên tra ở đó.
+    imgsz = cfg["model"].get("imgsz") or artifacts.train_imgsz(cfg["model"].get("weights"))
+    tag = data["split"] + (f"_i{imgsz}" if imgsz else "")
     ds = artifacts.dataset_tag(cfg)
     run_dir = artifacts.create_run_dir(a.runs, "eval", run_name,
                                        "_".join(p for p in (ds, tag) if p))
@@ -124,6 +130,9 @@ def run_config(a, extra: list[str]) -> int:
             print("Bộ dữ liệu:", json.dumps(ds.summary(), ensure_ascii=False))
             model = build_model(cfg["model"])
             print("Model:", json.dumps(model.describe, ensure_ascii=False, default=str))
+            print(artifacts.check_imgsz(cfg["model"].get("weights"),
+                                        model.describe.get("imgsz"),
+                                        explicit=a.imgsz is not None))
             if model.needs_prompt:
                 print("Model cần gợi ý: dùng box THẬT của nhãn (dòng oracle, cận trên).")
             print()
@@ -136,7 +145,7 @@ def run_config(a, extra: list[str]) -> int:
             write_csv(rows, run_dir / "per_region.csv")
             write_csv(info["images"], run_dir / "per_image.csv")
 
-            print("\nChấm theo chuẩn COCO (Mask AP + Boundary AP)...", flush=True)
+            print("\nChấm theo chuẩn COCO (Mask AP + Box AP + Boundary AP)...", flush=True)
             coco = coco_eval.evaluate(
                 str(ds.ann_file), info["detections"], info["image_ids"],
                 dilation_ratio=float(ev["dilation_ratio"]),
@@ -147,7 +156,8 @@ def run_config(a, extra: list[str]) -> int:
                 "model": model.describe,
                 "data": {**data, "images_scored": len(info["image_ids"]), "limit": limit},
                 "eval": ev,
-                "coco": {k: coco.get(k) for k in ("mask", "boundary", "dilation_ratio", "error")},
+                "coco": {k: coco.get(k)
+                         for k in ("mask", "box", "boundary", "dilation_ratio", "error")},
                 "summary": summary,
                 "total_seconds": info["total_seconds"],
             }
@@ -164,7 +174,13 @@ def run_config(a, extra: list[str]) -> int:
                 if k in summary:
                     print(f"  {k:<26} {summary[k]}")
             print("\nKết quả:", run_dir)
-        except SystemExit:
+        except SystemExit as e:
+            # Trình thông dịch in thông điệp của SystemExit SAU khi khối with
+            # đóng, tức ngoài tầm tee: run.log sẽ dừng ngang mà không nói vì
+            # sao. In vào trong rồi thoát bằng mã lỗi trần.
+            if isinstance(e.code, str):
+                print(e.code)
+                raise SystemExit(1) from None
             raise
         except BaseException:
             traceback.print_exc()
