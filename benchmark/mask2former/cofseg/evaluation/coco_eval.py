@@ -232,27 +232,47 @@ def evaluate(
     img_ids,
     dilation_ratio: float = BOUNDARY_DILATION_RATIO,
     boundary: bool = True,
+    box: bool = True,
     show_progress: bool = True,
 ) -> dict:
-    """Chấm chuẩn COCO (Mask AP) và Boundary AP trên cùng bộ dự đoán.
+    """Chấm chuẩn COCO (Mask AP, Box AP) và Boundary AP trên cùng bộ dự đoán.
 
     `boundary=False` bỏ Boundary AP — dùng khi chấm val giữa các epoch, nơi
     tốc độ quan trọng hơn và Boundary AP sẽ được chấm đầy đủ ở bước đánh giá.
+
+    **Box AP ở đây là AP của HỘP BAO QUANH MẶT NẠ dự đoán**, không phải AP của
+    đầu hộp trong mạng. `COCO.loadRes` tự suy hộp đó bằng `toBbox` trên chính
+    RLE vừa nạp, nên hai con số đến từ cùng một bộ dự đoán và chênh lệch giữa
+    chúng đọc được thẳng: hộp đúng chỗ tới đâu, và mất thêm bao nhiêu khi đòi
+    đúng cả hình. Ở bộ này Mask AP50 xấp xỉ 0.92 trong khi Mask AP xấp xỉ 0.65
+    — Box AP cho biết phần hụt đó là do định vị hay do đường biên.
+
+    Lấy hộp từ mặt nạ chứ không lấy từ đầu hộp còn vì lý do so sánh: SOLOv2
+    không có đầu hộp nào cả. Suy từ mặt nạ là cách duy nhất cho ra một cột
+    Box AP mà cả bốn model đều điền được, và nó tự động dùng chung ngưỡng
+    diện tích small/medium/large với Mask AP vì `area` của nhãn thật là một.
     """
     with contextlib.redirect_stdout(io.StringIO()):
         gt = COCO(gt_json)
         if not detections:
-            return {"mask": None, "boundary": None, "error": "không có dự đoán nào"}
+            return {"mask": None, "box": None, "boundary": None,
+                    "error": "không có dự đoán nào"}
         dt = gt.loadRes(list(detections))
 
     mask_stats, mask_text = _run(COCOeval(gt, dt, iouType="segm"), img_ids)
     out = {
         "mask": mask_stats,
+        "box": None,
         "boundary": None,
         "mask_text": mask_text,
+        "box_text": None,
         "boundary_text": None,
         "dilation_ratio": dilation_ratio,
     }
+    if box:
+        # Chấm hộp rẻ hơn hẳn chấm mặt nạ (IoU trên 4 số thay vì trên RLE),
+        # nên không có thanh tiến trình cho nó.
+        out["box"], out["box_text"] = _run(COCOeval(gt, dt, iouType="bbox"), img_ids)
     if boundary:
         # Thanh phải dựng TRƯỚC _run: tqdm giữ lại sys.stdout lúc khởi tạo,
         # còn _run bọc cả lượt chấm trong redirect_stdout để nuốt bảng của

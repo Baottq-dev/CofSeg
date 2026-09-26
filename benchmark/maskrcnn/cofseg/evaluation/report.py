@@ -44,6 +44,8 @@ def write_coco_results(coco: dict, run_dir: str | Path) -> tuple[Path, Path]:
     run_dir = Path(run_dir)
     txt = run_dir / "cocoeval.txt"
     body = "Mask AP\n" + (coco.get("mask_text") or coco.get("error") or "")
+    if coco.get("box_text"):
+        body += "\n\nBox AP (hộp bao quanh mặt nạ dự đoán)\n" + coco["box_text"]
     if coco.get("boundary_text"):
         body += ("\n\nBoundary AP (dilation_ratio=" + str(coco.get("dilation_ratio")) + ")\n"
                  + coco["boundary_text"])
@@ -51,7 +53,8 @@ def write_coco_results(coco: dict, run_dir: str | Path) -> tuple[Path, Path]:
     js = run_dir / "coco_metrics.json"
     js.write_text(
         json.dumps(
-            {"mask": coco.get("mask"), "boundary": coco.get("boundary"),
+            {"mask": coco.get("mask"), "box": coco.get("box"),
+             "boundary": coco.get("boundary"),
              "dilation_ratio": coco.get("dilation_ratio"), "error": coco.get("error")},
             indent=2,
         ),
