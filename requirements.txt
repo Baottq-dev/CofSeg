@@ -20,7 +20,8 @@
 # đúng thứ tự:
 #
 #     python scripts/setup_env.py
-#     python scripts/setup_env.py --no-cuda-ext    # nvcc lệch phiên bản / không có nvcc
+#     python scripts/setup_env.py --skip-cuda-build   # nvcc lệch phiên bản / không có nvcc
+#                                                     (train vẫn dùng GPU)
 #
 # MỘT env cho cả app/ lẫn benchmark/.
 --extra-index-url https://download.pytorch.org/whl/cu121
