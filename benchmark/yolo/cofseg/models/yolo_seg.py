@@ -54,6 +54,43 @@ class YoloSegModel(SegmentationModel):
     def predict(
         self, image: np.ndarray, boxes: np.ndarray | None = None
     ) -> list[Prediction]:
+        """Mỗi dự đoán về khung cục bộ, KHÔNG chạm vào `res.masks.xy`.
+
+        Hai chặng từng nằm ở đây đều làm trên cả khung 1440x2560 cho TỪNG dự
+        đoán, và mỗi chặng đắt hơn chính lượt truyền xuôi của mạng:
+
+        - `res.masks.xy` là cached_property gọi `ops.masks2segments(self.data)`
+          (ops.py:678). Hàm đó chuyển cả chồng NxHxW từ GPU về CPU LẦN THỨ HAI
+          rồi chạy cv2.findContours trên khung đầy đủ cho từng mặt nạ: 2.89 ms
+          mỗi dự đoán. Polygon nó trả về không chỗ nào trong đường chấm đọc
+          tới — `matching.py` dùng `region.polygon` của NHÃN THẬT, không phải
+          của dự đoán.
+        - `astype(bool)` trên khung đầy đủ rồi mới trả về mặt nạ toàn khung.
+          Mảng đó vứt đi hơn 99%, và vì `origin` là (0, 0) nên `full_frame`
+          ở bước mã hoá RLE phải chép lại cả khung thay vì dán một cửa sổ.
+
+        Đo trên đúng trọng số f6 và một ảnh thật của bộ này, 64 dự đoán,
+        1440x2560 (ms mỗi dự đoán):
+
+            masks.xy -> masks2segments        1.59   bỏ
+            astype(bool) khung đầy đủ         1.38   bỏ
+            cắt cửa sổ + astype nhỏ           2.01   thêm
+            predictions_to_coco, toàn khung   4.27 -> 1.89 khi đã cắt
+            ------------------------------------------------------
+            cũ 7.23   mới 3.90   (1.9 lần)
+
+        Con số đó còn là cận DƯỚI: phép đo chạy trên CPU nên hai lần chuyển
+        cả chồng NxHxW từ GPU về host mà đường cũ phải trả đều bằng 0 ở đây.
+        Trên máy thật, hồi quy 850 ảnh đã chấm cho `ms = -4.01 + 4.109 x
+        số_dự_đoán` (R2 = 0.914) — hệ số chặn bằng 0 nghĩa là lượt truyền
+        xuôi của mạng còn không hiện ra bên cạnh mấy chặng này.
+
+        Phép quét để cắt (2.01 ms) không phải chi phí mới: `Prediction.
+        bbox_xyxy` nhớ kết quả vào meta, và đường cũ vẫn phải quét đúng như
+        thế ở `match_instances` — chỉ là quét trên khung đầy đủ, muộn hơn.
+
+        RLE của hai đường trùng khớp trên 122 dự đoán thật của hai ảnh f6.
+        """
         res = self.model.predict(image, **self.kw)[0]
         if res.masks is None:
             return []
@@ -65,27 +102,22 @@ class YoloSegModel(SegmentationModel):
         )
         out: list[Prediction] = []
         for i, m in enumerate(res.masks.data.cpu().numpy()):
-            mask = m.astype(bool)
-            if mask.shape != (h, w):
+            # retina_masks cho uint8 sẵn; nhánh này chỉ chạy khi tắt nó, và
+            # khi đó mặt nạ còn ở lưới proto nên bản sao là nhỏ.
+            if m.dtype != np.uint8:
+                m = m.astype(np.uint8)
+            if m.shape != (h, w):
                 import cv2
 
-                mask = (
-                    cv2.resize(
-                        mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST
-                    ).astype(bool)
-                )
-            poly = None
-            if res.masks.xy is not None and i < len(res.masks.xy):
-                p = np.asarray(res.masks.xy[i], dtype=np.float64)
-                poly = p if p.ndim == 2 and len(p) >= 3 else None
-            out.append(
-                Prediction(
-                    mask=mask,
-                    origin=(0, 0),
-                    score=float(scores[i]) if i < len(scores) else 1.0,
-                    polygon=poly,
-                )
-            )
+                m = cv2.resize(m, (w, h), interpolation=cv2.INTER_NEAREST)
+            pred = Prediction(
+                mask=m,
+                origin=(0, 0),
+                score=float(scores[i]) if i < len(scores) else 1.0,
+            ).cropped()
+            # Sau cropped() mảng là cửa sổ sát tán, nên đổi kiểu ở đây rẻ.
+            pred.mask = pred.mask.astype(bool)
+            out.append(pred)
         return out
 
     @property
