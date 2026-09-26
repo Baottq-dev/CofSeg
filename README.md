@@ -63,6 +63,24 @@ conda create -y -n cofseg python=3.12 && conda activate cofseg
 python scripts/setup_env.py
 ```
 
+**Máy lab có CUDA 13.2 thì phải cài thêm toolkit 12.1 vào env.** Driver 13.2
+chạy binary cu121 bình thường (tương thích ngược), nhưng `nvcc` dùng để BIÊN
+DỊCH thì phải khớp major với torch, không thì torch từ chối:
+
+```
+RuntimeError: The detected CUDA version (13.2) mismatches the version that
+was used to compile PyTorch (12.1).
+```
+
+```
+conda install -y -c nvidia/label/cuda-12.1.1 cuda-toolkit
+which nvcc && nvcc --version     # phải trỏ vào env và ra 12.1
+```
+
+Không nâng torch cho khớp CUDA 13 được: mmcv (SOLOv2) chỉ có wheel dựng sẵn
+cho torch 2.4 / cu121 — index `cu124` và `torch2.5` của OpenMMLab đều không
+tồn tại. Bước `check` của `setup_env.py` kiểm chuyện này và dừng ngay nếu lệch.
+
 **Trên Linux đừng chạy `pip install -r requirements.txt` một mình** — nó sẽ
 dừng ở:
 

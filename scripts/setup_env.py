@@ -36,8 +36,13 @@ M2F_DIR = "benchmark/mask2former/upstream"
 #: SAM 2.1 ghim theo commit; cài riêng với --no-deps, xem step_sam2.
 SAM2 = ("SAM-2 @ git+https://github.com/facebookresearch/sam2.git"
         "@2b90b9f5ceec907a1c18123530e92e794ad901a4")
+#: CUDA của torch trong env này. Bị khoá ở 12.1 vì mmcv (SOLOv2) chỉ có wheel
+#: dựng sẵn cho torch 2.4 / cu121 — index cu124 và torch2.5 đều không tồn tại.
+#: Đổi ở đây thì phải đổi cả --find-links trong requirements.txt.
+CUDA_TAG = "12.1"        # dùng để so với nvcc
+CUDA_FULL = "12.1.1"     # tên nhãn kênh conda nvidia
 TORCH = ["torch==2.4.1", "torchvision==0.19.1",
-         "--index-url", "https://download.pytorch.org/whl/cu121"]
+         "--index-url", f"https://download.pytorch.org/whl/cu{CUDA_TAG.replace('.', '')}"]
 
 
 class Step:
@@ -59,17 +64,55 @@ def pip(*args: str) -> subprocess.CompletedProcess:
 
 
 # ---------------------------------------------------------------- các bước
+def nvcc_version(text: str) -> tuple[int, int] | None:
+    """'... Cuda compilation tools, release 13.2, V13.2.78 ...' -> (13, 2)."""
+    import re
+
+    m = re.search(r"release\s+(\d+)\.(\d+)", text)
+    return (int(m[1]), int(m[2])) if m else None
+
+
 def step_check() -> None:
-    """Máy có đủ thứ để biên dịch không, và đang ở env nào."""
+    """Máy có đủ thứ để biên dịch không, và đang ở env nào.
+
+    Kiểm cả PHIÊN BẢN nvcc chứ không chỉ sự tồn tại: ba gói trong env này
+    biên dịch op CUDA tại chỗ và link vào header của torch, nên nvcc lệch
+    major với torch là torch từ chối build. Trên máy lab đây đúng là chuyện
+    đã xảy ra — nvcc hệ thống 13.2 còn torch là cu121.
+    """
     print(f"  python {sys.version.split()[0]} tại {sys.executable}")
     if sys.version_info < (3, 12):
         raise SystemExit("Cần Python >= 3.12 (scipy/scikit-image ghim trong requirements.txt).\n"
                          "    conda create -y -n cofseg python=3.12 && conda activate cofseg")
     if not shutil.which("nvcc"):
-        raise SystemExit("Thiếu nvcc (CUDA toolkit): detectron2, SAM 2 và MSDeformAttn "
-                         "đều biên dịch CUDA lúc cài.")
-    sh("nvcc", "--version")
-    sh("nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader", check=False)
+        raise SystemExit(
+            "Thiếu nvcc (CUDA toolkit): detectron2, SAM 2 và MSDeformAttn đều biên dịch\n"
+            f"CUDA lúc cài. Cài đúng bản khớp torch vào chính env này:\n\n"
+            f"    conda install -y -c nvidia/label/cuda-{CUDA_FULL} cuda-toolkit\n")
+
+    out = subprocess.run(["nvcc", "--version"], capture_output=True, text=True)
+    print(out.stdout.strip())
+    got = nvcc_version(out.stdout)
+    want = tuple(int(x) for x in CUDA_TAG.split("."))
+    if got and got[0] != want[0]:
+        raise SystemExit(
+            f"\nnvcc là CUDA {got[0]}.{got[1]} nhưng torch của env này dựng bằng CUDA {CUDA_TAG}.\n"
+            "torch từ chối build op CUDA khi lệch major:\n\n"
+            f"    RuntimeError: The detected CUDA version ({got[0]}.{got[1]}) mismatches the\n"
+            f"    version that was used to compile PyTorch ({CUDA_TAG}).\n\n"
+            f"Driver thì không sao — nó tương thích ngược, chạy binary cu{CUDA_TAG.replace('.', '')}\n"
+            "bình thường. Chỉ khâu biên dịch cần toolkit khớp. Cài vào CHÍNH env này,\n"
+            "nó sẽ che nvcc của hệ thống:\n\n"
+            f"    conda install -y -c nvidia/label/cuda-{CUDA_FULL} cuda-toolkit\n"
+            "    which nvcc && nvcc --version        # phải trỏ vào env và ra "
+            f"{CUDA_TAG}\n\n"
+            f"Vì sao không nâng torch cho khớp CUDA {got[0]}: mmcv (SOLOv2) chỉ có wheel dựng\n"
+            f"sẵn cho torch 2.4 / cu{CUDA_TAG.replace('.', '')}; index cho CUDA mới hơn không tồn tại.")
+    if got and got != want:
+        print(f"  (nvcc {got[0]}.{got[1]} vs torch cu{CUDA_TAG.replace('.', '')} — lệch minor, "
+              "thường build được)")
+    sh("nvidia-smi", "--query-gpu=name,memory.total,driver_version",
+       "--format=csv,noheader", check=False)
 
 
 def step_torch() -> None:
