@@ -23,6 +23,7 @@ import time
 
 import numpy as np
 
+from .. import progress
 from ..datasets.coco import CocoDataset, ImageRecord
 from ..datasets.instances import imread
 from ..metrics import boundary as B
@@ -96,7 +97,7 @@ def evaluate_split(
     band_ratio: float = 0.02,
     nsd_tau: float = 2.0,
     limit: int | None = None,
-    progress: bool = True,
+    show_progress: bool = True,
 ) -> tuple[list[dict], dict]:
     """Chấm model trên toàn bộ split. Trả về (các hàng, thông tin cấp ảnh).
 
@@ -112,6 +113,11 @@ def evaluate_split(
     set_context = getattr(model, "set_context", None)
     model.warmup()
     t0 = time.time()
+
+    # Thanh tiến trình khi chạy ở terminal; khi xuất ra file (`> log.txt`,
+    # nohup) tqdm tự tắt, và lúc đó dòng đếm mỗi 10 ảnh mới là thứ đọc được.
+    bar = progress.Bar(len(images), "eval", enabled=show_progress)
+    dem_dong = show_progress and bar.bar is None
 
     for i, im in enumerate(images, 1):
         img = imread(im.path)
@@ -142,8 +148,10 @@ def evaluate_split(
             "count_error": len(preds) - len(im.regions),
             "ms": round(ms, 1),
         })
-        if progress and (i % 10 == 0 or i == len(images)):
+        bar.advance(1)
+        if dem_dong and (i % 10 == 0 or i == len(images)):
             print(f"  {i}/{len(images)} ảnh  ({time.time() - t0:.0f}s)", flush=True)
+    bar.close()
 
     return rows, {
         "images": per_image,

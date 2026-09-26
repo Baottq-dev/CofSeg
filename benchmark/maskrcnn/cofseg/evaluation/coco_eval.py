@@ -17,12 +17,15 @@ from __future__ import annotations
 import contextlib
 import io
 import math
+from typing import NamedTuple
 
 import cv2
 import numpy as np
 from pycocotools import mask as mask_utils
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
+
+from .. import progress
 
 #: Tỉ lệ trong bài báo Boundary IoU: d = 0.02 x đường chéo ảnh.
 BOUNDARY_DILATION_RATIO = 0.02
@@ -97,23 +100,84 @@ def _boundary_band(mask_u8: np.ndarray, d: float) -> np.ndarray:
     return (mask_u8 > 0) & (dist <= d)
 
 
-class BoundaryCOCOeval(COCOeval):
-    """COCOeval với Boundary IoU thay cho Mask IoU khi ghép cặp."""
+class _Band(NamedTuple):
+    """Vành biên của một mặt nạ, giữ trong cửa sổ cắt sát nó.
 
-    def __init__(self, cocoGt, cocoDt, dilation_ratio=BOUNDARY_DILATION_RATIO):
+    Vành trên cả khung 2560x1440 là một mảng bool 3,5 MiB. Tán trung vị chỉ
+    rộng 324 px, nên hơn 95% mảng đó là số 0 — vừa tốn bộ nhớ vừa tốn phép
+    đếm. Cửa sổ giữ nguyên toạ độ gốc ở (x0, y0) để hai vành khác cửa sổ vẫn
+    giao nhau đúng chỗ.
+    """
+
+    m: np.ndarray
+    x0: int
+    y0: int
+    area: int
+
+
+def _band_of(rle, d: float, size: tuple[int, int]) -> _Band:
+    """Vành của một RLE, tính trên cửa sổ bbox nới ra d px.
+
+    Nới đúng d là đủ để kết quả TRÙNG với tính trên cả khung. distanceTransform
+    đo tới điểm 0 gần nhất; điểm nào có khoảng cách <= d thì điểm 0 gần nhất
+    của nó nằm trong bán kính d quanh nó, tức vẫn nằm trong cửa sổ. Ngoài bbox
+    mặt nạ rỗng nên không có gì để mất.
+    """
+    h, w = size
+    x, y, bw, bh = mask_utils.toBbox(rle)
+    if bw <= 0 or bh <= 0:
+        return _Band(np.zeros((0, 0), bool), 0, 0, 0)
+    pad = int(math.ceil(d)) + 1
+    x0, y0 = max(0, int(math.floor(x)) - pad), max(0, int(math.floor(y)) - pad)
+    x1 = min(w, int(math.ceil(x + bw)) + pad)
+    y1 = min(h, int(math.ceil(y + bh)) + pad)
+    sub = np.ascontiguousarray(mask_utils.decode(rle)[y0:y1, x0:x1])
+    band = _boundary_band(sub, d)
+    return _Band(band, x0, y0, int(np.count_nonzero(band)))
+
+
+def _band_iou(a: _Band, b: _Band) -> float:
+    """IoU của hai vành nằm trên hai cửa sổ khác nhau.
+
+    |a & b| chỉ cần tính trên phần giao của hai cửa sổ; hợp suy ra từ hai diện
+    tích đã biết. Kết quả bằng đúng phép tính trên cả khung.
+    """
+    if a.area == 0 or b.area == 0:
+        return 0.0
+    x0, y0 = max(a.x0, b.x0), max(a.y0, b.y0)
+    x1 = min(a.x0 + a.m.shape[1], b.x0 + b.m.shape[1])
+    y1 = min(a.y0 + a.m.shape[0], b.y0 + b.m.shape[0])
+    if x1 <= x0 or y1 <= y0:
+        return 0.0
+    inter = int(np.count_nonzero(
+        a.m[y0 - a.y0:y1 - a.y0, x0 - a.x0:x1 - a.x0]
+        & b.m[y0 - b.y0:y1 - b.y0, x0 - b.x0:x1 - b.x0]))
+    return 0.0 if inter == 0 else inter / (a.area + b.area - inter)
+
+
+class BoundaryCOCOeval(COCOeval):
+    """COCOeval với Boundary IoU thay cho Mask IoU khi ghép cặp.
+
+    KHÔNG có cache vành. Bản trước giữ lại vành full-frame của mọi vùng thật
+    và mọi dự đoán tới hết lượt chấm: 280 ảnh x (14 vùng + tới 100 dự đoán) x
+    3,5 MiB là hàng chục GB, và tiến trình bị kernel giết giữa chừng. Cache đó
+    còn không bao giờ trúng — COCOeval.evaluate() gọi computeIoU đúng một lần
+    cho mỗi cặp (ảnh, lớp), mà bộ này chỉ có một lớp, nên mỗi RLE được giải mã
+    một lần dù có cache hay không.
+    """
+
+    def __init__(self, cocoGt, cocoDt, dilation_ratio=BOUNDARY_DILATION_RATIO,
+                 on_image=None):
         super().__init__(cocoGt, cocoDt, iouType="segm")
         self.dilation_ratio = dilation_ratio
-        self._band_cache: dict[int, np.ndarray] = {}
-
-    def _band(self, rle, d: float) -> np.ndarray:
-        key = id(rle)
-        band = self._band_cache.get(key)
-        if band is None:
-            band = _boundary_band(mask_utils.decode(rle), d)
-            self._band_cache[key] = band
-        return band
+        #: Gọi một lần mỗi ảnh, để bước này có thanh tiến trình. Nó chạy vài
+        #: phút và trước đây không in gì, nên nhìn từ ngoài không phân biệt
+        #: được "đang chạy" với "đã treo".
+        self.on_image = on_image
 
     def computeIoU(self, imgId, catId):
+        if self.on_image is not None:
+            self.on_image()
         p = self.params
         gt = self._gts[imgId, catId] if p.useCats else [
             _ for cId in p.catIds for _ in self._gts[imgId, cId]
@@ -130,13 +194,12 @@ class BoundaryCOCOeval(COCOeval):
         h, w = self.cocoGt.imgs[imgId]["height"], self.cocoGt.imgs[imgId]["width"]
         d = self.dilation_ratio * math.sqrt(h * h + w * w)
 
-        g_bands = [self._band(g["segmentation"], d) for g in gt]
+        g_bands = [_band_of(g["segmentation"], d, (h, w)) for g in gt]
         ious = np.zeros((len(dt), len(gt)))
         for i, det in enumerate(dt):
-            db = self._band(det["segmentation"], d)
+            db = _band_of(det["segmentation"], d, (h, w))
             for j, gb in enumerate(g_bands):
-                union = np.count_nonzero(db | gb)
-                ious[i, j] = 0.0 if union == 0 else np.count_nonzero(db & gb) / union
+                ious[i, j] = _band_iou(db, gb)
         return ious
 
 
@@ -157,6 +220,7 @@ def evaluate(
     img_ids,
     dilation_ratio: float = BOUNDARY_DILATION_RATIO,
     boundary: bool = True,
+    show_progress: bool = True,
 ) -> dict:
     """Chấm chuẩn COCO (Mask AP) và Boundary AP trên cùng bộ dự đoán.
 
@@ -178,7 +242,15 @@ def evaluate(
         "dilation_ratio": dilation_ratio,
     }
     if boundary:
-        out["boundary"], out["boundary_text"] = _run(
-            BoundaryCOCOeval(gt, dt, dilation_ratio), img_ids
-        )
+        # Thanh phải dựng TRƯỚC _run: tqdm giữ lại sys.stdout lúc khởi tạo,
+        # còn _run bọc cả lượt chấm trong redirect_stdout để nuốt bảng của
+        # pycocotools. Dựng bên trong thì thanh vẽ vào StringIO.
+        bar = progress.Bar(len(set(img_ids)), "boundary", enabled=show_progress)
+        try:
+            out["boundary"], out["boundary_text"] = _run(
+                BoundaryCOCOeval(gt, dt, dilation_ratio, on_image=bar.advance),
+                img_ids,
+            )
+        finally:
+            bar.close()
     return out
