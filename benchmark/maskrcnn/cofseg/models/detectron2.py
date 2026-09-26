@@ -156,13 +156,22 @@ class Detectron2Model(SegmentationModel):
     `weights` là best.pth do trainer ghi; config đầy đủ của lần chạy nằm cạnh
     nó (d2_config.yaml) nên không cần nhắc lại imgsz hay số query. `repo`
     chỉ cần cho Mask2Former.
+
+    Thiếu d2_config.yaml thì hàm khởi tạo DỪNG chứ không chấm tiếp. Lý do là
+    một lỗi đã xảy ra thật: sáu lượt chấm split test của Mask R-CNN chạy ở
+    cạnh dài 1333 — mặc định của detectron2 — trong khi cả sáu lần train đều
+    ở 1024, và không có một dòng nào báo. Cùng lúc đó YOLO chấm ở đúng 1024,
+    nên bảng so sánh giữa hai model là so ở hai độ phân giải khác nhau. Đây
+    là thứ chỉ phát hiện được khi ngồi đọc lại log, tức đúng loại lỗi phải
+    biến thành lỗi dừng máy.
     """
 
     needs_prompt = False
 
     def __init__(self, weights: str, arch: str, repo: str | None = None,
                  config_file: str | None = None, conf: float = 0.05,
-                 max_det: int | None = 100, device: str | None = None):
+                 max_det: int | None = 100, device: str | None = None,
+                 imgsz: int | None = None):
         require_detectron2()
         import torch
         from detectron2.config import get_cfg
@@ -181,9 +190,21 @@ class Detectron2Model(SegmentationModel):
 
                 add_pointrend_config(cfg)
             cfg.merge_from_file(str(saved))
+        elif imgsz is None:
+            raise SystemExit(
+                f"Không thấy {saved}.\n"
+                "File đó do trainer ghi cạnh best.pth và nó giữ imgsz của lần "
+                "huấn luyện. Thiếu nó, detectron2 quay về mặc định của nó "
+                "(cạnh ngắn 800 / cạnh dài 1333) và chấm ở độ phân giải model "
+                "chưa từng thấy — im lặng, không sai một dòng log nào.\n"
+                "Chép d2_config.yaml về cạnh trọng số, hoặc khai thẳng "
+                "--imgsz 1024 nếu biết chắc lần train chạy ở cạnh dài nào.")
         else:
             cfg, _ = base_cfg(arch, repo=repo, config_file=config_file)
             cfg.merge_from_list(class_opts(arch))
+        if imgsz:
+            # Khai thẳng thì thắng file: người gõ lệnh cụ thể hơn bản dump.
+            cfg.merge_from_list(size_opts(int(imgsz)))
         cfg.MODEL.WEIGHTS = self.weights
         cfg.MODEL.DEVICE = self.device
         if arch != "mask2former":
