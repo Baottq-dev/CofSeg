@@ -1,0 +1,58 @@
+# Mask2Former (detectron2 + repo gốc facebookresearch/Mask2Former).
+# Người phụ trách: AnhVu. CHỈ LINUX.
+#
+#     git submodule update --init benchmark/mask2former/upstream
+#     pip install -r benchmark/mask2former/requirements.txt
+#     python scripts/setup_env.py --only detectron2,mask2former
+#
+# detectron2 không nằm trong file này — xem benchmark/maskrcnn/requirements.txt
+# để biết vì sao.
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+torch==2.4.1+cu121
+torchvision==0.19.1+cu121
+
+setuptools<82         # detectron2 0.6 cần pkg_resources; xem maskrcnn/requirements.txt
+
+# ---- repo gốc Mask2Former (benchmark/mask2former/upstream) cần thêm
+scipy==1.18.0         # modeling/matcher.py: linear_sum_assignment (ghép Hungarian)
+shapely==2.1.2        # upstream/train_net.py
+timm==1.0.29          # backbone Swin của họ; import ở tầng module
+
+# ---- cofseg/ dùng chung
+numpy==2.4.4
+opencv-python==5.0.0.93
+pycocotools==2.0.11
+pyyaml==6.0.3
+tqdm==4.68.3
+
+# ============================================================================
+# MSDeformAttn — model DUY NHẤT mà `--skip-cuda-build` phải trả giá
+# ============================================================================
+#
+# Mask R-CNN không mất gì khi bỏ biên dịch CUDA (ROIAlign/NMS lấy của
+# torchvision). Mask2Former thì mất: thiếu kernel, mỗi forward ném
+# AttributeError rồi rơi xuống `ms_deform_attn_core_pytorch`, và đường lùi đó
+# HIỆN VẬT HOÁ một tensor mà kernel CUDA không bao giờ dựng:
+#
+#     torch.stack(sampling_value_list, dim=-2)   # (N*M, D, Lq, L, P)
+#
+#     imgsz 1024, batch  4  ->  0.98 GiB mỗi lớp  ->  5.9 GiB  (6 lớp encoder)
+#     imgsz 1024, batch 16  ->  3.94 GiB mỗi lớp  -> 23.6 GiB  -> OOM trên 24 GB
+#
+# Muốn có kernel thật thì cần BA thứ khớp nhau; thiếu một là gãy sau vài phút:
+#
+#     1. toolkit ĐẦY ĐỦ, không phải mỗi nvcc — header của torch còn
+#        #include <cusparse.h> và <cublas_v2.h>:
+#            conda install -c nvidia/label/cuda-12.1.1 cuda-toolkit
+#     2. g++ <= 12  (nvcc 12.1 từ chối host compiler mới hơn):
+#            conda install -c conda-forge gxx_linux-64=12
+#     3. nvcc cùng major với torch — cả hai đều 12 sau bước 1
+#
+# Rồi cài lại BỎ cờ --skip-cuda-build:
+#
+#     python scripts/setup_env.py --only detectron2,mask2former
+#
+# Không làm được thì vẫn chạy được, chỉ phải hạ batch. VRAM cần (ước, chưa đo
+# lại sau khi có kernel): batch 4 / imgsz 1024 khoảng 38–51 GB với đường lùi.
+# ============================================================================
