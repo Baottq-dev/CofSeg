@@ -58,6 +58,28 @@ conda create -y -n cofseg python=3.12 && conda activate cofseg
 python scripts/setup_env.py
 ```
 
+**Trên Linux đừng chạy `pip install -r requirements.txt` một mình** — nó sẽ
+dừng ở:
+
+```
+ModuleNotFoundError: No module named 'torch'
+ERROR: Failed to build 'detectron2' when getting requirements to build wheel
+```
+
+detectron2 và SAM 2 biên dịch op CUDA lúc cài và `setup.py` của họ import
+torch, mà pip dựng gói trong môi trường cô lập không có torch — ở thời điểm
+đó torch trong `requirements.txt` cũng chưa kịp cài. Torch phải đi bằng một
+lệnh riêng, trước:
+
+```
+pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
+pip install -r requirements.txt --no-build-isolation
+pip install -e .
+```
+
+`setup_env.py` làm đúng thứ tự đó và kiểm `nvcc` trước, nên dùng nó thì không
+phải nhớ.
+
 Mask2Former, Cascade (detectron2) và SOLOv2 (mmdet) **chưa chạy thật trên
 Linux lần nào** — máy phát triển là Windows. Lần đầu nên đi từng bước và khói
 một fold trước khi chạy cả sáu.

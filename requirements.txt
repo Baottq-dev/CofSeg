@@ -2,12 +2,24 @@
 # "; sys_platform == ..." pip tự chọn theo hệ điều hành, không cần sửa tay.
 #
 #   nhà :  pip install -r requirements.txt
-#   lab :  pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
-#          pip install -r requirements.txt --no-build-isolation
+#   lab :  python scripts/setup_env.py          <-- DÙNG CÁI NÀY
 #
-# --no-build-isolation vì detectron2 và SAM 2 biên dịch op CUDA ngay lúc cài,
-# setup.py của họ import torch — torch phải có sẵn trong env trước. Trên
-# Windows chúng không được cài (detectron2) hoặc bỏ qua op (SAM 2), nên không cần.
+# TRÊN LINUX, `pip install -r requirements.txt` một mình sẽ HỎNG:
+#
+#     ModuleNotFoundError: No module named 'torch'
+#     ERROR: Failed to build 'detectron2' when getting requirements to build wheel
+#
+# detectron2 và SAM 2 biên dịch op CUDA ngay lúc cài và setup.py của họ import
+# torch, nhưng pip dựng gói trong môi trường cô lập không có torch — và ở thời
+# điểm đó torch trong file này cũng chưa kịp cài. Nên torch phải đi bằng một
+# lệnh RIÊNG, TRƯỚC, rồi phần còn lại mới cài với --no-build-isolation:
+#
+#     pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
+#     pip install -r requirements.txt --no-build-isolation
+#     pip install -e .
+#
+# scripts/setup_env.py làm đúng thứ tự đó, kiểm nvcc trước, và dừng ngay chỗ
+# lỗi để biết hỏng ở bước nào. Trên Windows không có hai gói đó nên không cần.
 --extra-index-url https://download.pytorch.org/whl/cu121
 --find-links https://download.openmmlab.com/mmcv/dist/cu121/torch2.4/index.html
 
@@ -48,9 +60,9 @@ shapely==2.1.2         # mmdet và Mask2Former cùng cần
 # detectron2: Mask R-CNN (mốc 0), Cascade, Mask2Former. Build từ source ~5-10 phút.
 detectron2 @ git+https://github.com/facebookresearch/detectron2.git@a2f4a8771ab77e8411c26b27f24f9489a28a2453 ; sys_platform == "linux"
 # mmcv có op CUDA biên dịch sẵn cho torch 2.4/cu121 (dòng --find-links trên).
-# mmdet 3.3.0 khai mmcv < 2.2 nhưng chạy được với 2.2.0; scripts/remote/setup.sh
-# nới dòng kiểm phiên bản đó sau khi cài.
+# mmdet 3.3.0 khai mmcv < 2.2 nhưng chạy được với 2.2.0; bước `mmdet` của
+# scripts/setup_env.py nới dòng kiểm phiên bản đó sau khi cài.
 mmcv==2.2.0 ; sys_platform == "linux"
-# Mask2Former (third_party/Mask2Former, submodule) cần thêm:
+# Mask2Former (submodule benchmark/mask2former/upstream) cần thêm:
 timm==1.0.29 ; sys_platform == "linux"
 h5py==3.16.0 ; sys_platform == "linux"
