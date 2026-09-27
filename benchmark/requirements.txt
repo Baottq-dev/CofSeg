@@ -1,20 +1,14 @@
 # Cả bốn model vào MỘT env.
 #
+#     python scripts/setup_env.py --only torch     # torch trước, tuỳ GPU
 #     pip install -r benchmark/requirements.txt
 #
-# Muốn BỐN env riêng thì cài từng file một, mỗi env một lệnh:
+# Muốn BỐN env riêng thì cài từng file, mỗi env một lệnh — xem
+# benchmark/README.md mục "Dựng môi trường".
 #
-#     pip install -r benchmark/yolo11/requirements.txt
-#     pip install -r benchmark/solov2/requirements.txt
-#     pip install -r benchmark/maskrcnn/requirements.txt
-#     pip install -r benchmark/mask2former/requirements.txt
-#
-# Cả hai cách đều ra cùng một bản torch, vì cả bốn file cùng `-r ../base.txt`
-# và base.txt `-r torch.txt`. Sửa torch thì sửa MỘT chỗ: benchmark/torch.txt.
-#
-# Nếu có ngày bốn file ghim torch lệch nhau thì lệnh trên GÃY TO ở đây với
-# thông báo xung đột phiên bản — đúng chỗ nên gãy, thay vì cài đè im lặng rồi
-# một model chạy sai mà không ai biết.
+# Không file nào trong số này ghim torch: bản torch phụ thuộc GPU chứ không
+# phụ thuộc model. Ghim trong từng file là cách chắc chắn để bốn file trôi ra
+# xa nhau rồi không cài chung một env được nữa.
 -r yolo11/requirements.txt
 -r solov2/requirements.txt
 -r maskrcnn/requirements.txt

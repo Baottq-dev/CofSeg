@@ -45,29 +45,32 @@ D2 = ("detectron2 @ git+https://github.com/facebookresearch/detectron2.git"
 #: SAM 2.1 ghim theo commit; cài riêng với --no-deps, xem step_sam2.
 SAM2 = ("SAM-2 @ git+https://github.com/facebookresearch/sam2.git"
         "@2b90b9f5ceec907a1c18123530e92e794ad901a4")
-#: Bản torch nằm ở MỘT chỗ: benchmark/torch.txt. Script đọc lại chỉ mục cuXXX
-#: từ đó thay vì ghim riêng, để đổi khối A <-> khối B trong file ấy là mọi
-#: thông báo lỗi ở đây tự nói đúng phiên bản.
-TORCH_TXT = "benchmark/torch.txt"
-
+#: torch theo CUDA. MỘT chỗ ghim cho cả bốn model — bản torch phụ thuộc kiến
+#: trúc GPU chứ không phụ thuộc kiến trúc mạng, nên nó không nằm trong file
+#: requirements của từng model. Chọn bằng --cuda.
+TORCH = {
+    # sm_50..sm_90: T4, V100, RTX 20/30/40, L4, L40S, A40, A6000, A100, H100.
+    # Tổ hợp DUY NHẤT mmcv còn phát hành wheel, nên SOLOv2 không phải build gì.
+    "121": ["torch==2.4.1+cu121", "torchvision==0.19.1+cu121"],
+    # sm_75..sm_120, gồm RTX 50xx / RTX PRO 6000 / B200. CUDA 13 bỏ sm_50-sm_70.
+    # 2.11 vì đó là bản DUY NHẤT ta có bằng chứng của chính mình: detectron2
+    # 0.6 build và import được với torch 2.11 + Python 3.13 trên molab. Cặp
+    # hợp lệ khác trên cu130, nếu muốn đi cao hơn:
+    #   2.9.0/0.24.0  2.9.1/0.24.1  2.10.0/0.25.0  2.12.0/0.27.0
+    #   2.12.1/0.27.1 2.13.0/0.28.0 2.14.0/0.29.0
+    # ĐỔI SANG ĐÂY LÀ mmcv MẤT WHEEL: phải --build-mmcv.
+    "130": ["torch==2.11.0+cu130", "torchvision==0.26.0+cu130"],
+}
 #: cuXXX -> nhãn kênh conda nvidia, để thông báo lỗi đưa đúng lệnh cài.
-CONDA_LABEL = {"12.1": "12.1.1", "12.8": "12.8.1", "13.0": "13.0.3"}
+CONDA_LABEL = {"12.1": "12.1.1", "13.0": "13.0.3"}
+
+#: Bản CUDA đang chọn, đặt bởi --cuda.
+CUDA = "121"
 
 
 def torch_cuda_tag() -> str:
-    """'--extra-index-url https://download.pytorch.org/whl/cu121' -> '12.1'.
-
-    Chỉ đọc dòng KHÔNG bị chú thích, nên khối đang tắt trong torch.txt không
-    tính — đổi khối là con số ở đây đổi theo, không phải sửa hai chỗ.
-    """
-    import re
-
-    for raw in (ROOT / TORCH_TXT).read_text(encoding="utf-8").splitlines():
-        m = re.search(r"/whl/cu(\d+)", raw.split("#", 1)[0])
-        if m:
-            d = m[1]
-            return f"{d[:-1]}.{d[-1]}"
-    raise SystemExit(f"Không đọc được chỉ mục cuXXX trong {TORCH_TXT}")
+    """'121' -> '12.1'."""
+    return f"{CUDA[:-1]}.{CUDA[-1]}"
 
 
 #: --skip-cuda-build: lúc CÀI thì không biên dịch nhân CUDA tự viết nào, để
@@ -137,7 +140,7 @@ def step_check() -> None:
     major với torch là torch từ chối build. Trên máy lab đây đúng là chuyện
     đã xảy ra — nvcc hệ thống 13.2 còn torch là cu121.
     """
-    cuda_tag = torch_cuda_tag()        # đọc từ benchmark/torch.txt
+    cuda_tag = torch_cuda_tag()        # theo --cuda
     cuda_full = CONDA_LABEL.get(cuda_tag, cuda_tag)
     print(f"  python {sys.version.split()[0]} tại {sys.executable}")
     if sys.version_info < (3, 12):
@@ -196,18 +199,19 @@ def step_check() -> None:
 def step_torch() -> None:
     """torch trước requirements: detectron2 và SAM 2 import torch lúc build.
 
-    Phiên bản ghim ở benchmark/torch.txt, MỘT chỗ cho cả bốn model — torch
-    phụ thuộc GPU chứ không phụ thuộc model, nên nó không nằm trong file của
-    từng model.
+    Phiên bản ghim ở TORCH đầu file, MỘT chỗ cho cả bốn model — torch phụ
+    thuộc GPU chứ không phụ thuộc model, nên nó không nằm trong file
+    requirements của từng model. Chọn bằng --cuda 121 (mặc định) hoặc 130.
     """
-    pip("install", "-r", "benchmark/torch.txt")
+    pip("install", *TORCH[CUDA], "--index-url",
+        f"https://download.pytorch.org/whl/cu{CUDA}")
     py("-c", "import torch; assert torch.cuda.is_available(), 'torch không thấy CUDA'; "
              "print('torch', torch.__version__, torch.cuda.get_device_name(0))")
 
 
-#: Mỗi thư mục benchmark khai gói riêng của model đó. Cả bốn đều `-r
-#: ../base.txt` -> `../torch.txt`, nên cài bốn file vào MỘT env hay vào BỐN
-#: env riêng đều ra cùng một bản torch.
+#: Mỗi thư mục benchmark khai gói riêng của model đó. Không file nào ghim
+#: torch — nó cài trước bằng bước `torch`, nên cài bốn file vào MỘT env hay
+#: vào BỐN env riêng đều ra cùng một bản torch.
 BENCH_REQS = {
     "yolo11": "benchmark/yolo11/requirements.txt",
     "solov2": "benchmark/solov2/requirements.txt",
@@ -307,7 +311,7 @@ def step_mmcv() -> None:
             "Hai lối đi:\n\n"
             "  1. Đổi sang GPU đời trước Blackwell (A100, L40S, A6000, 4090...)\n"
             "     — mmcv dùng wheel, không biên dịch gì.\n\n"
-            "  2. Dùng KHỐI B trong benchmark/torch.txt (CUDA 13) rồi build:\n"
+            "  2. Cài lại torch với --cuda 130 (CUDA 13) rồi build:\n"
             "         python scripts/setup_env.py --only mmcv --build-mmcv\n"
             "     Mất 20-120 phút. Có người báo làm được ở torch 2.7 + CUDA 12.8\n"
             "     (mmcv#3327), nhưng upstream đứng yên từ 04/2024 nên không ai\n"
@@ -441,7 +445,7 @@ def step_weights() -> None:
 
 STEPS = [
     Step("check", "kiểm python, nvcc, GPU", step_check),
-    Step("torch", "torch theo benchmark/torch.txt", step_torch),
+    Step("torch", "torch theo --cuda (mặc định 121)", step_torch),
     Step("requirements", "app/ + canopyseg + gói của --models (thuần wheel)", step_requirements),
     Step("detectron2", "build detectron2 từ source (Mask R-CNN, Mask2Former)", step_detectron2),
     Step("mmcv", "mmcv: wheel dựng sẵn, hoặc --build-mmcv để build từ nguồn", step_mmcv),
@@ -472,9 +476,14 @@ def main(argv=None) -> int:
                     help="build mmcv từ nguồn thay vì lấy wheel. Bắt buộc trên GPU "
                          "Blackwell (sm_120): wheel duy nhất của OpenMMLab là "
                          "torch 2.4/cu121, ra đời trước kiến trúc đó. Mất 20-120 phút")
+    ap.add_argument("--cuda", default="121", choices=sorted(TORCH),
+                    help="chỉ mục CUDA của torch. 121 = GPU đời trước Blackwell "
+                         "(mmcv có wheel). 130 = CUDA 13, cần cho RTX 50xx / "
+                         "RTX PRO 6000 / B200, và khi đó mmcv phải --build-mmcv")
     a = ap.parse_args(argv)
 
-    global SKIP_CUDA_BUILD, MODELS, BUILD_MMCV
+    global SKIP_CUDA_BUILD, MODELS, BUILD_MMCV, CUDA
+    CUDA = a.cuda
     BUILD_MMCV = a.build_mmcv
     SKIP_CUDA_BUILD = a.skip_cuda_build
     MODELS = [n.strip() for n in a.models.split(",") if n.strip()]
