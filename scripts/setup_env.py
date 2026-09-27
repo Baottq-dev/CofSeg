@@ -124,11 +124,14 @@ def step_check() -> None:
         return
     if not shutil.which("nvcc"):
         raise SystemExit(
-            "Thiếu nvcc (CUDA toolkit): detectron2, SAM 2 và MSDeformAttn đều biên dịch\n"
-            f"CUDA lúc cài. Hoặc cài bản khớp torch vào chính env này:\n\n"
-            f"    conda install -y -c nvidia/label/cuda-{CUDA_FULL} cuda-toolkit\n\n"
-            "hoặc cài mà không biên dịch gì:\n\n"
-            "    python scripts/setup_env.py --skip-cuda-build\n")
+            "Thiếu nvcc. Cách nhanh nhất là bỏ hẳn phần biên dịch — train vẫn dùng GPU:\n\n"
+            "    python scripts/setup_env.py --skip-cuda-build\n\n"
+            "Muốn Mask2Former đủ tốc độ thì cần CẢ toolkit đầy đủ LẪN g++ <= 12:\n\n"
+            f"    conda install -y -c nvidia/label/cuda-{CUDA_FULL} cuda-toolkit\n"
+            "    conda install -y -c conda-forge gxx_linux-64=12\n"
+            "    export CXX=$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++\n\n"
+            "(cuda-nvcc một mình KHÔNG đủ: header của torch cần cusparse.h, cublas_v2.h\n"
+            " từ các gói lib*-dev mà chỉ metapackage cuda-toolkit mới kéo đủ.)\n")
 
     out = subprocess.run(["nvcc", "--version"], capture_output=True, text=True)
     print(out.stdout.strip())
@@ -146,8 +149,11 @@ def step_check() -> None:
             f"    conda install -y -c nvidia/label/cuda-{CUDA_FULL} cuda-toolkit\n"
             "    which nvcc && nvcc --version        # phải trỏ vào env và ra "
             f"{CUDA_TAG}\n\n"
-            "Không muốn cài thêm gì thì bỏ hẳn phần biên dịch (train vẫn dùng GPU):\n\n"
+            "Cách nhanh nhất: bỏ hẳn phần biên dịch. Train vẫn dùng GPU, chỉ\n"
+            "Mask2Former chậm hơn:\n\n"
             "    python scripts/setup_env.py --skip-cuda-build\n\n"
+            "Muốn biên dịch thật thì cần cả toolkit ĐẦY ĐỦ lẫn g++ <= 12 —\n"
+            "cuda-nvcc một mình không đủ (thiếu cusparse.h, cublas_v2.h):\n\n"
             f"Vì sao không nâng torch cho khớp CUDA {got[0]}: mmcv (SOLOv2) chỉ có wheel dựng\n"
             f"sẵn cho torch 2.4 / cu{CUDA_TAG.replace('.', '')}; index cho CUDA mới hơn không tồn tại.")
     if got and got != want:
@@ -180,6 +186,10 @@ def step_detectron2() -> None:
 
     --no-build-isolation vì setup.py của nó import torch, mà môi trường build
     cô lập của pip không có.
+
+    Trên máy không biên dịch CUDA được, --skip-cuda-build né được cả hai lỗi
+    hay gặp: nvcc không được gọi nên luật "g++ <= 12" của nó không áp, và
+    không file .cu nào được dịch nên không cần cusparse.h/cublas_v2.h.
 
     Với --skip-cuda-build thì giấu GPU lúc cài: setup.py chọn CUDAExtension khi
     `torch.cuda.is_available() and CUDA_HOME is not None`, không thấy GPU thì

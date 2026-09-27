@@ -72,38 +72,33 @@ conda create -y -n cofseg python=3.12 && conda activate cofseg
 python scripts/setup_env.py
 ```
 
-**Máy lab có nvcc lệch phiên bản với torch** (ví dụ nvcc 13.2, torch cu121)
-thì có hai đường, chọn một:
+**Máy lab không biên dịch được op CUDA** (nvcc lệch phiên bản với torch,
+hoặc g++ quá mới, hoặc thiếu header) thì dùng:
 
 ```
-# A. không cài thêm gì. Lúc CÀI không biên dịch nhân CUDA nào;
-#    lúc TRAIN vẫn dùng GPU đầy đủ.
 python scripts/setup_env.py --skip-cuda-build
-
-# B. cài nvcc khớp vào CHÍNH env này (không đụng CUDA của máy, không cần sudo)
-conda install -y -c nvidia/label/cuda-12.1.1 cuda-toolkit
-python scripts/setup_env.py
 ```
 
-| | A — `--skip-cuda-build` | B — cài toolkit vào env |
-|---|---|---|
-| Cài thêm | không | ~2–3 GB trong env của bạn |
-| **Train trên GPU** | **có** | **có** |
-| Mask R-CNN, SOLOv2, YOLO | như thường | như thường |
-| Mask2Former | chậm hơn ~1,3–1,8 lần | đủ tốc độ |
-| Kết quả | **giống nhau** | |
+Lúc **cài** không biên dịch nhân CUDA tự viết nào; lúc **train** vẫn dùng GPU
+đầy đủ. Mask R-CNN, SOLOv2 và YOLO không đổi gì. Chỉ Mask2Former chậm hơn:
+MSDeformAttn chạy bằng op PyTorch thường — vẫn trên GPU, đúng kết quả, chỉ
+không phải một nhân gộp sẵn.
 
-`--skip-cuda-build` chỉ tác động lúc **cài**: nó bảo pip đừng biên dịch nhân
-CUDA tự viết của detectron2 và Mask2Former. Lúc **train**, torch vẫn là bản
-cu121 và GPU vẫn chạy đầy tải. Mask2Former chậm hơn không phải vì rơi xuống
-CPU — tensor vẫn trên GPU — mà vì phép attention đa tỉ lệ được ghép từ nhiều
-`grid_sample` rời thay cho một nhân gộp sẵn.
+Đây là đường mặc định nên đi. Muốn Mask2Former đủ tốc độ thì cần **cả ba**
+thứ sau khớp nhau, và thiếu một là gãy:
 
-Đường A dựa vào hai đường lùi có sẵn trong chính mã nguồn: `setup.py` của
-detectron2 tự dựng `CppExtension` khi không thấy GPU lúc cài (Mask R-CNN
-không dùng op CUDA riêng nào của nó — ROIAlign và NMS lấy của torchvision),
-còn `ms_deform_attn.py` của Mask2Former bọc lời gọi op trong `try/except` và
-rơi về bản thuần PyTorch.
+| Cần | Vì sao |
+|---|---|
+| CUDA toolkit **đầy đủ** trong env | `cuda-nvcc` + `cuda-cudart-dev` KHÔNG đủ — header của torch còn cần `cusparse.h`, `cublas_v2.h`… từ các gói `lib*-dev` |
+| **g++ ≤ 12** | nvcc 12.1 từ chối g++ mới hơn: `unsupported GNU version!` |
+| nvcc cùng major với torch | torch chặn khi lệch: `The detected CUDA version mismatches…` |
+
+```
+conda install -y -n <env> -c nvidia/label/cuda-12.1.1 cuda-toolkit
+conda install -y -n <env> -c conda-forge gxx_linux-64=12
+export CXX=$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++
+python scripts/setup_env.py --only mask2former --only detectron2
+```
 
 Không nâng torch cho khớp CUDA 13 được: mmcv (SOLOv2) chỉ có wheel dựng sẵn
 cho torch 2.4 / cu121 — index `cu124` và `torch2.5` của OpenMMLab đều không
