@@ -3,19 +3,8 @@
 #     pip install -r benchmark/maskrcnn/requirements.txt
 #     python scripts/setup_env.py --only detectron2
 #
-# detectron2 KHÔNG nằm trong file này, và đó là cố ý: nó là gói duy nhất phải
-# build từ nguồn, và setup.py của nó quyết định có biên dịch op CUDA hay không
-# TUỲ THEO lúc cài có thấy GPU và nvcc hay không — thứ mà một dòng trong
-# requirements.txt không điều khiển được. Để ở đây thì `pip install -r` trên
-# máy có nvcc lệch phiên bản với torch sẽ chết giữa chừng.
-#
-# Tin tốt cho model này: `--skip-cuda-build` KHÔNG làm mất gì. detectron2
-# không dùng op CUDA riêng nào cho Mask R-CNN — ROIAlign và NMS lấy của
-# torchvision. (Mask2Former thì khác, xem file requirements của nó.)
---extra-index-url https://download.pytorch.org/whl/cu121
-
-torch==2.4.1+cu121
-torchvision==0.19.1+cu121
+# torch nằm ở ../base.txt -> ../torch.txt, một chỗ cho cả bốn model.
+-r ../base.txt
 
 # ---- setuptools: KHÔNG được bỏ ghim
 #
@@ -33,22 +22,13 @@ torchvision==0.19.1+cu121
 # `from detectron2 import model_zoo`.
 setuptools<82
 
-# ---- cofseg/ dùng chung
-numpy==2.4.4
-opencv-python==5.0.0.93
-pycocotools==2.0.11
-pyyaml==6.0.3
-tqdm==4.68.3
-
-# ---- GPU đời Blackwell (RTX 50xx, RTX PRO 6000, B200)
+# ---- detectron2 KHÔNG nằm ở đây
 #
-# torch cu121 không có kernel cho sm_120. Trên những card đó đổi ba dòng trên
-# thành (bỏ luôn --extra-index-url cu121):
+# Nó build từ nguồn, và setup.py của nó quyết định có biên dịch op CUDA hay
+# không TUỲ THEO lúc cài có thấy GPU và nvcc hay không — thứ mà một dòng
+# requirements không điều khiển được. Để ở đây thì `pip install -r` trên máy
+# có nvcc lệch phiên bản với torch sẽ chết giữa chừng.
 #
-#     --extra-index-url https://download.pytorch.org/whl/cu130
-#     torch==2.9.1+cu130
-#     torchvision==0.24.1+cu130
-#
-# detectron2 đã được xác nhận build và import được với torch 2.11 + Python
-# 3.13 trên molab. Lúc đó SOLOv2 KHÔNG chạy chung env được nữa — xem
-# benchmark/solov2/requirements.txt.
+# Tin tốt cho model này: `--skip-cuda-build` KHÔNG làm mất gì. detectron2
+# không dùng op CUDA riêng nào cho Mask R-CNN — ROIAlign và NMS lấy của
+# torchvision. (Mask2Former thì khác, xem file requirements của nó.)
