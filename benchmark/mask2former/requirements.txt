@@ -1,13 +1,14 @@
 # Mask2Former (detectron2 + repo gốc facebookresearch/Mask2Former).
 # Người phụ trách: AnhVu. CHỈ LINUX.
 #
+# CÀI torch TRƯỚC — file này cố ý KHÔNG ghim torch, xem benchmark/README.md.
+#
 #     git submodule update --init benchmark/mask2former/upstream
+#     python scripts/setup_env.py --only torch
 #     pip install -r benchmark/mask2former/requirements.txt
 #     python scripts/setup_env.py --only detectron2,mask2former
 #
-# torch nằm ở ../base.txt -> ../torch.txt, một chỗ cho cả bốn model.
 # detectron2 không nằm ở đây — xem ../maskrcnn/requirements.txt để biết vì sao.
--r ../base.txt
 
 setuptools<82         # detectron2 0.6 cần pkg_resources; xem ../maskrcnn/requirements.txt
 
@@ -16,9 +17,14 @@ scipy==1.18.0         # modeling/matcher.py: linear_sum_assignment (ghép Hungar
 shapely==2.1.2        # upstream/train_net.py
 timm==1.0.29          # backbone Swin của họ; import ở tầng module
 
-# ============================================================================
-# MSDeformAttn — model DUY NHẤT mà `--skip-cuda-build` phải trả giá
-# ============================================================================
+# ---- gói mà cofseg/ của thư mục này import
+numpy==2.4.4
+opencv-python==5.0.0.93
+pycocotools==2.0.11
+pyyaml==6.0.3
+tqdm==4.68.3
+
+# ---- MSDeformAttn: model DUY NHẤT mà --skip-cuda-build phải trả giá
 #
 # Mask R-CNN không mất gì khi bỏ biên dịch CUDA (ROIAlign/NMS lấy của
 # torchvision). Mask2Former thì mất: thiếu kernel, mỗi forward ném
@@ -30,20 +36,4 @@ timm==1.0.29          # backbone Swin của họ; import ở tầng module
 #     imgsz 1024, batch  4  ->  0.98 GiB mỗi lớp  ->  5.9 GiB  (6 lớp encoder)
 #     imgsz 1024, batch 16  ->  3.94 GiB mỗi lớp  -> 23.6 GiB  -> OOM trên 24 GB
 #
-# Muốn có kernel thật thì cần BA thứ khớp nhau; thiếu một là gãy sau vài phút.
-# Với KHỐI A của ../torch.txt (torch 2.4/cu121):
-#
-#     1. toolkit ĐẦY ĐỦ, không phải mỗi nvcc — header của torch còn
-#        #include <cusparse.h> và <cublas_v2.h>:
-#            conda install -c nvidia/label/cuda-12.1.1 cuda-toolkit
-#     2. g++ <= 12  (nvcc 12.1 từ chối host compiler mới hơn):
-#            conda install -c conda-forge gxx_linux-64=12
-#     3. nvcc cùng major với torch — cả hai đều 12 sau bước 1
-#
-# Với KHỐI B (CUDA 13) thì dễ hơn: `conda install -c nvidia cuda-toolkit=13.0`
-# và CUDA 13 nhận tới GCC 15, nên điều kiện 2 tự biến mất.
-#
-# Rồi cài lại BỎ cờ --skip-cuda-build:
-#
-#     python scripts/setup_env.py --only detectron2,mask2former
-# ============================================================================
+# Cách lấy lại kernel: benchmark/README.md mục "Biên dịch op CUDA".
