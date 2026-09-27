@@ -1,50 +1,43 @@
 # SOLOv2 (mmdet + mmcv). Người phụ trách: PhuongQuynh. CHỈ LINUX.
 #
+# CÀI torch TRƯỚC — file này cố ý KHÔNG ghim torch, xem benchmark/README.md.
+#
+#     python scripts/setup_env.py --only torch
 #     pip install -r benchmark/solov2/requirements.txt
 #     python scripts/setup_env.py --only mmcv,mmdet
 #
-# torch nằm ở ../base.txt -> ../torch.txt, một chỗ cho cả bốn model.
--r ../base.txt
+# ĐỌC KỸ: model này kén phiên bản nhất trong bốn. mmcv chỉ có wheel dựng sẵn
+# cho torch 2.4/cu121, mà tổ hợp đó ra đời TRƯỚC Blackwell nên SOLOv2 không
+# chạy được trên RTX 50xx / RTX PRO 6000 / B200 nếu không build lại mmcv.
+# benchmark/README.md mục "Build mmcv" nói đủ.
 
 mmengine==0.10.7
 mmdet==3.3.0
 
-# ============================================================================
-# mmcv KHÔNG nằm ở đây — cách cài phụ thuộc MÁY, không phụ thuộc phiên bản
-# ============================================================================
+# ---- gói mà cofseg/ của thư mục này import
+numpy==2.4.4
+opencv-python==5.0.0.93
+pycocotools==2.0.11
+pyyaml==6.0.3
+tqdm==4.68.3
+
+# ---- mmcv KHÔNG nằm ở đây
 #
-# Cùng lý do detectron2 không nằm trong file của Mask R-CNN: có máy thì lấy
-# wheel, có máy phải biên dịch, mà một dòng requirements không rẽ nhánh được.
+# Cùng lý do detectron2 không nằm trong file của Mask R-CNN: cách cài phụ
+# thuộc MÁY, không phụ thuộc phiên bản, mà một dòng requirements không rẽ
+# nhánh theo GPU được.
 #
-#     KHỐI A trong ../torch.txt (torch 2.4/cu121)  -> wheel dựng sẵn, vài giây
-#     KHỐI B (CUDA 13, Blackwell)                  -> build từ nguồn, 20-120 phút
+#     torch 2.4/cu121  -> wheel dựng sẵn, vài giây
+#     CUDA 12.8 / 13.x -> build từ nguồn, 20-120 phút
 #
 #     python scripts/setup_env.py --only mmcv                 # wheel
 #     python scripts/setup_env.py --only mmcv --build-mmcv    # từ nguồn
 #
-# VÌ SAO KHÔNG CÓ WHEEL MỚI HƠN. Dò thẳng chỉ mục của OpenMMLab:
+# ---- mmengine: với torch >= 2.6 phải lấy từ git, không dùng dòng ghim trên
 #
-#     cu118/torch2.3.0  cu118/torch2.4.0     -> 200
-#     cu121/torch2.3.0  cu121/torch2.4.0     -> 200
-#     cu124/*  cu128/*  cu130/*  torch2.5+   -> 404, không tổ hợp nào tồn tại
-#
-# Và họ đã dừng: mmcv 2.2.0 ra 24/04/2024, mmdet 3.3.0 ra 05/01/2024. Commit
-# gần đây trên nhánh main chỉ là NPU (Ascend) và MUSA, không đụng CUDA.
-#
-# HỆ QUẢ: torch 2.4/cu121 có trước Blackwell nên KHÔNG có kernel sm_120. Với
-# KHỐI A thì SOLOv2 không chạy được trên RTX 50xx, RTX PRO 6000 hay B200 —
-# chết ngay lời gọi kernel đầu tiên:
-#
-#     RuntimeError: CUDA error: no kernel image is available for execution
-#
-# Muốn chạy trên Blackwell thì phải KHỐI B + build mmcv. Có người làm được và
-# ghi lại: mmcv#3327 (11/02/2026), torch 2.7 + CUDA 12.8.
-#
-# Kèm theo một cái bẫy mà công thức đó không nhắc: torch >= 2.6 đổi mặc định
-# `torch.load(weights_only=True)`, còn checkpoint mmdet chứa dict `meta` với
-# object tuỳ ý nên sẽ ném UnpicklingError lúc nạp trọng số COCO. mmengine
-# 0.10.7 (04/03/2025) ra TRƯỚC bản vá (PR 25/10/2025), nên với KHỐI B phải
-# lấy mmengine từ git thay vì dòng ghim ở trên:
+# torch 2.6 đổi mặc định `torch.load(weights_only=True)`, còn checkpoint mmdet
+# chứa dict `meta` với object tuỳ ý nên sẽ ném UnpicklingError lúc nạp trọng
+# số COCO. mmengine 0.10.7 ra 04/03/2025, bản vá merge 25/10/2025 — bản trên
+# PyPI ra trước bản vá bảy tháng:
 #
 #     pip install 'git+https://github.com/open-mmlab/mmengine'
-# ============================================================================
