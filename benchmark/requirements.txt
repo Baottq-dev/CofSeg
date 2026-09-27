@@ -1,0 +1,21 @@
+# Cả bốn model vào MỘT env.
+#
+#     pip install -r benchmark/requirements.txt
+#
+# Muốn BỐN env riêng thì cài từng file một, mỗi env một lệnh:
+#
+#     pip install -r benchmark/yolo11/requirements.txt
+#     pip install -r benchmark/solov2/requirements.txt
+#     pip install -r benchmark/maskrcnn/requirements.txt
+#     pip install -r benchmark/mask2former/requirements.txt
+#
+# Cả hai cách đều ra cùng một bản torch, vì cả bốn file cùng `-r ../base.txt`
+# và base.txt `-r torch.txt`. Sửa torch thì sửa MỘT chỗ: benchmark/torch.txt.
+#
+# Nếu có ngày bốn file ghim torch lệch nhau thì lệnh trên GÃY TO ở đây với
+# thông báo xung đột phiên bản — đúng chỗ nên gãy, thay vì cài đè im lặng rồi
+# một model chạy sai mà không ai biết.
+-r yolo11/requirements.txt
+-r solov2/requirements.txt
+-r maskrcnn/requirements.txt
+-r mask2former/requirements.txt

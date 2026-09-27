@@ -1,0 +1,15 @@
+# Gói mà bản `cofseg/` của MỌI thư mục benchmark đều import.
+#
+# Không gọi thẳng file này; bốn file model đều `-r ../base.txt`.
+#
+# Danh sách lấy từ import thật, không đoán: grep toàn bộ benchmark/*/cofseg/
+# ra đúng numpy, cv2, pycocotools, yaml, tqdm, torch. Ba khung lớn
+# (ultralytics, detectron2, mmdet) đều import LƯỜI bên trong hàm, nên chúng
+# thuộc file của từng model chứ không thuộc đây.
+-r torch.txt
+
+numpy==2.4.4
+opencv-python==5.0.0.93
+pycocotools==2.0.11
+pyyaml==6.0.3
+tqdm==4.68.3
