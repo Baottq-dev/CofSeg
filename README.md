@@ -69,57 +69,45 @@ hiện không thoả (nvcc 13.2, g++ > 12). Chi tiết và cách đổi ý sau:
 
 ### Một file cho app/, một file cho mỗi model
 
-`requirements.txt` ở gốc chỉ lo **annotator (`app/`) và `canopyseg/`**. Mỗi
-model benchmark khai gói riêng trong thư mục của nó:
+`requirements.txt` ở gốc chỉ lo **annotator (`app/`) và `canopyseg/`**. Bốn
+model benchmark khai gói riêng trong thư mục của mình, và **torch cài trước,
+riêng** — hướng dẫn đầy đủ ở [`benchmark/README.md`](benchmark/README.md) mục
+*Dựng môi trường*.
 
 ```
 pip install -r requirements.txt            # app/ + canopyseg
 pip install -e .
 
+python scripts/setup_env.py --only torch   # torch, tuỳ GPU (--cuda 121 | 130)
 pip install -r benchmark/requirements.txt  # cả bốn model, MỘT env
 ```
 
-Muốn **bốn env riêng** thì cài từng file, mỗi env một lệnh:
+Muốn bốn env riêng thì cài từng file `benchmark/<model>/requirements.txt`.
 
-```
-pip install -r benchmark/yolo11/requirements.txt
-pip install -r benchmark/solov2/requirements.txt
-pip install -r benchmark/maskrcnn/requirements.txt
-pip install -r benchmark/mask2former/requirements.txt
-```
+Không file requirements nào ghim torch: bản torch phụ thuộc **kiến trúc GPU**
+chứ không phụ thuộc model. Nó nằm ở hằng `TORCH` trong `scripts/setup_env.py`,
+chọn bằng `--cuda`:
 
-Hai cách đều ra **cùng một bản torch**, vì cả bốn file cùng `-r ../base.txt`
-và `base.txt` `-r torch.txt`:
-
-```
-benchmark/torch.txt        torch + torchvision   <- ĐỔI Ở ĐÂY, một chỗ
-benchmark/base.txt         -r torch.txt + numpy/cv2/pycocotools/yaml/tqdm
-benchmark/<model>/requirements.txt   -r ../base.txt + gói riêng của model
-```
-
-torch là lựa chọn của **máy** (kiến trúc GPU), không phải của model — nên nó
-không nằm trong file của từng model. `benchmark/torch.txt` có hai khối, bỏ
-chú thích một khối:
-
-| khối | torch | GPU | mmcv |
+| `--cuda` | torch | GPU | mmcv |
 |---|---|---|---|
-| **A** (mặc định) | 2.4.1+cu121 | `sm_50`–`sm_90`: 4090, L4, L40S, A40, A6000, A100, H100 | **wheel dựng sẵn** |
-| **B** | 2.11.0+cu130 | `sm_75`–`sm_120`, gồm RTX 50xx, RTX PRO 6000, B200 | **phải build từ nguồn** |
+| `121` (mặc định) | 2.4.1+cu121 | `sm_50`–`sm_90`: 4090, L4, L40S, A40, A6000, A100, H100 | **wheel dựng sẵn** |
+| `130` | 2.11.0+cu130 | `sm_75`–`sm_120`, gồm RTX 50xx, RTX PRO 6000, B200 | **phải build từ nguồn** |
 
-Ranh giới thật sự không phải "Blackwell hay không", mà là **mmcv có wheel hay
-phải build**: OpenMMLab chỉ phát hành cu118/cu121 tới torch 2.4, và torch
-2.4/cu121 ra đời trước Blackwell nên không có kernel `sm_120`.
+Ranh giới không phải "Blackwell hay không" mà là **mmcv có wheel hay phải
+build**: OpenMMLab chỉ phát hành cu118/cu121 tới torch 2.4, mà tổ hợp đó ra đời
+trước Blackwell nên thiếu kernel `sm_120`.
 
 Chạy benchmark **không cần** `pip install -e .`: mỗi thư mục tự chứa bản
 `cofseg/` riêng và `train.py` tự thêm thư mục của nó vào `sys.path`.
 
 Mọi gói trong các file trên là **wheel dựng sẵn** — không gói nào biên dịch.
-Hai gói build từ source nằm ngoài, vì chúng phụ thuộc vào môi trường lúc cài
+Ba gói build từ source nằm ngoài, vì chúng phụ thuộc vào môi trường lúc cài
 chứ không chỉ vào phiên bản:
 
 | Gói | Cho | Cài bằng |
 |---|---|---|
 | `detectron2` | Mask R-CNN, Mask2Former | `setup_env.py --only detectron2` |
+| `mmcv` | SOLOv2 | `setup_env.py --only mmcv` (wheel), `--build-mmcv` (từ nguồn) |
 | `SAM 2.1` | annotator (`app/`) | `setup_env.py --only sam2` |
 
 ### Kiểm lại sau khi cài

@@ -1,17 +1,13 @@
 """Bố cục requirements: gốc lo app/, mỗi model lo phần của mình, torch một chỗ.
 
-    requirements.txt                  app/ + canopyseg
-    benchmark/torch.txt               torch  <- DUY NHẤT một chỗ ghim
-    benchmark/base.txt                -r torch.txt + gói cofseg dùng chung
-    benchmark/<model>/requirements.txt  -r ../base.txt + gói riêng
-    benchmark/requirements.txt        -r cả bốn, để cài một env
+    requirements.txt                    app/ + canopyseg
+    benchmark/<model>/requirements.txt  gói của model đó, KHÔNG có torch
+    benchmark/requirements.txt          -r cả bốn, để cài một env
 
-Bất biến quan trọng nhất và cũng là thứ dễ vỡ nhất: **cả bốn file phải dẫn về
-cùng một bản torch**. Vỡ cái đó thì `pip install -r benchmark/requirements.txt`
-gãy vì xung đột, tức mất khả năng cài chung một env.
-
-torch là lựa chọn của MÁY (kiến trúc GPU), không phải của model. Ghim nó trong
-từng file model là cách chắc chắn để bốn file trôi ra xa nhau.
+Bất biến quan trọng nhất: **không file nào ghim torch**. Bản torch phụ thuộc
+kiến trúc GPU chứ không phụ thuộc kiến trúc mạng, nên nó nằm ở hằng `TORCH`
+trong scripts/setup_env.py, chọn bằng `--cuda`. Ghim trong từng file model là
+cách chắc chắn để bốn file trôi ra xa nhau rồi không cài chung một env được.
 """
 
 from __future__ import annotations
@@ -36,17 +32,6 @@ def _lines(path: Path) -> list[str]:
     return out
 
 
-def _resolve(path: Path) -> list[str]:
-    """Mở hết chuỗi `-r` lồng nhau, theo đúng cách pip làm (tương đối với file)."""
-    out = []
-    for line in _lines(path):
-        if line.startswith("-r "):
-            out += _resolve((path.parent / line[3:].strip()).resolve())
-        else:
-            out.append(line)
-    return out
-
-
 def _pins(lines) -> dict[str, str]:
     pins = {}
     for line in lines:
@@ -63,62 +48,46 @@ def _req(model: str) -> Path:
 
 
 # ------------------------------------------------------------- bố cục cơ bản
-@pytest.mark.parametrize("model", MODELS)
-def test_moi_model_co_file_rieng_va_dan_ve_base(model):
-    assert "-r ../base.txt" in _lines(_req(model))
-
-
-def test_base_dan_ve_torch():
-    assert "-r torch.txt" in _lines(BENCH / "base.txt")
-
-
 def test_file_gop_dan_ve_ca_bon():
     lines = _lines(BENCH / "requirements.txt")
     for model in MODELS:
         assert f"-r {model}/requirements.txt" in lines
 
 
-# ---------------------------------------------- bất biến: một bản torch duy nhất
 @pytest.mark.parametrize("model", MODELS)
-def test_khong_file_model_nao_tu_ghim_torch(model):
-    """Ghim ở đây là bước đầu tiên để bốn file trôi ra xa nhau."""
+def test_moi_model_co_file_rieng(model):
+    assert _req(model).exists()
+
+
+# ------------------------------------------ bất biến: không file nào ghim torch
+@pytest.mark.parametrize("model", MODELS)
+def test_khong_file_model_nao_ghim_torch(model):
+    """Ghim ở đây là bước đầu tiên để bốn file trôi ra xa nhau.
+
+    torch phụ thuộc GPU chứ không phụ thuộc model; nó ở TORCH trong
+    scripts/setup_env.py, chọn bằng --cuda.
+    """
     for line in _lines(_req(model)):
-        assert not line.startswith(("torch=", "torch>", "torchvision", "--extra-index-url")), \
-            f"{model}: torch phải ghim ở benchmark/torch.txt, không phải ở đây"
+        assert not line.startswith(("torch=", "torch>", "torchvision",
+                                    "--extra-index-url", "--index-url")),             f"{model}: torch thuộc setup_env.py --cuda, không thuộc file này"
 
 
-def test_bon_model_cung_dan_ve_mot_ban_torch():
-    """Đây chính là điều kiện để `pip install -r benchmark/requirements.txt` chạy."""
-    lay = lambda m: {l for l in _resolve(_req(m))
-                     if l.startswith(("torch", "--extra-index-url"))}
-    chuan = lay(MODELS[0])
-    assert chuan, "không thấy dòng torch nào sau khi mở chuỗi -r"
-    for model in MODELS[1:]:
-        assert lay(model) == chuan, f"{model} dẫn về bản torch khác"
-
-
-def test_torch_txt_chi_bat_mot_khoi():
-    """Hai khối cùng bật thì pip thấy hai bản torch và gãy."""
-    lines = _lines(BENCH / "torch.txt")
-    assert len([l for l in lines if l.startswith("torch==")]) == 1
-    assert len([l for l in lines if l.startswith("--extra-index-url")]) == 1
-
-
-def test_torch_va_torchvision_cung_mot_chi_muc_cuda():
-    lines = _lines(BENCH / "torch.txt")
-    tag = next(re.search(r"/whl/cu(\d+)", l)[1] for l in lines
-               if l.startswith("--extra-index-url"))
-    for l in lines:
-        if l.startswith(("torch==", "torchvision==")):
-            assert l.endswith(f"+cu{tag}"), f"{l} không khớp chỉ mục cu{tag}"
+def test_moi_file_nhac_cai_torch_truoc():
+    """Cài file này mà quên torch thì pip kéo bản CPU từ PyPI, và im lặng."""
+    for model in MODELS:
+        assert "torch" in _req(model).read_text(encoding="utf-8"),             f"{model}: phải có ghi chú cài torch trước"
 
 
 # ------------------------------------------------------------- nội dung từng file
 @pytest.mark.parametrize("model", MODELS)
-def test_goi_cofseg_dung_chung_nam_o_base(model):
-    """cofseg/ của mọi thư mục đều import numpy, cv2, pycocotools, yaml, tqdm."""
-    pins = _pins(_resolve(_req(model)))
-    for goi in ("numpy", "opencv-python", "pycocotools", "pyyaml", "tqdm", "torch"):
+def test_moi_file_khai_du_goi_cofseg_dung_chung(model):
+    """cofseg/ của mọi thư mục đều import numpy, cv2, pycocotools, yaml, tqdm.
+
+    Mỗi file tự khai đủ, không `-r` sang file khác: mở ra là đọc được ngay
+    thư mục này cần gì, không phải lần theo hai ba file.
+    """
+    pins = _pins(_lines(_req(model)))
+    for goi in ("numpy", "opencv-python", "pycocotools", "pyyaml", "tqdm"):
         assert goi in pins, f"{model}: thiếu {goi}"
 
 
@@ -197,12 +166,26 @@ def test_setup_env_tro_dung_cac_file_do(setup_env):
         assert (ROOT / rel).exists(), rel
 
 
-def test_setup_env_doc_cuda_tu_torch_txt(setup_env):
-    """Đổi khối trong torch.txt thì mọi thông báo lỗi phải nói đúng phiên bản."""
-    tag = setup_env.torch_cuda_tag()
-    assert re.fullmatch(r"\d+\.\d", tag), tag
-    lines = _lines(BENCH / "torch.txt")
-    url = next(l for l in lines if l.startswith("--extra-index-url"))
-    assert f"cu{tag.replace('.', '')}" in url
-    assert tag in setup_env.CONDA_LABEL, \
-        f"thiếu nhãn kênh conda cho CUDA {tag}; thông báo lỗi sẽ đưa lệnh sai"
+def test_moi_lua_chon_cuda_deu_co_nhan_conda(setup_env):
+    """Thông báo lỗi của step_check đưa lệnh `conda install ... cuda-toolkit`.
+
+    Thêm một lựa chọn --cuda mà quên nhãn là người dùng nhận lệnh sai.
+    """
+    for cuda in setup_env.TORCH:
+        setup_env.CUDA = cuda
+        tag = setup_env.torch_cuda_tag()
+        assert re.fullmatch(r"\d+\.\d", tag), tag
+        assert tag in setup_env.CONDA_LABEL, f"thiếu nhãn conda cho CUDA {tag}"
+    setup_env.CUDA = "121"
+
+
+def test_torch_va_torchvision_cung_mot_chi_muc_cuda(setup_env):
+    for cuda, pkgs in setup_env.TORCH.items():
+        for pkg in pkgs:
+            assert pkg.endswith(f"+cu{cuda}"), f"{pkg} không khớp cu{cuda}"
+
+
+def test_co_lua_chon_cho_blackwell(setup_env):
+    """cu121 không có kernel sm_120; thiếu lựa chọn CUDA 13 là RTX 50xx bó tay."""
+    assert any(int(c) >= 128 for c in setup_env.TORCH), \
+        "cần ít nhất một lựa chọn CUDA >= 12.8 cho Blackwell"
