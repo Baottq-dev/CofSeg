@@ -2,28 +2,15 @@
 #
 #     pip install -r benchmark/yolo11/requirements.txt
 #
-# KHÔNG cần `pip install -e .`: benchmark/yolo11/train.py tự thêm thư mục của
-# nó vào sys.path, nên nó nạp benchmark/yolo11/cofseg/ chứ không phải canopyseg.
+# torch và các gói dùng chung nằm ở ../base.txt -> ../torch.txt. Đổi phiên bản
+# torch thì sửa ở đó, không sửa ở đây: torch phụ thuộc GPU chứ không phụ thuộc
+# model, và ghim riêng trong từng file là cách chắc chắn để bốn file lệch nhau.
 #
-# Đây là model dễ cài nhất trong bốn: thuần wheel, không biên dịch gì, chạy
-# được trên Windows lẫn Linux, và không kén phiên bản CUDA. Nếu máy có GPU đời
-# Blackwell (RTX 50xx, RTX PRO 6000, B200) thì đổi hai dòng torch sang cu130 —
-# xem khối ghi chú ở benchmark/solov2/requirements.txt.
---extra-index-url https://download.pytorch.org/whl/cu121
-
-torch==2.5.1+cu121; sys_platform == "win32"
-torchvision==0.20.1+cu121; sys_platform == "win32"
-torch==2.4.1+cu121; sys_platform == "linux"
-torchvision==0.19.1+cu121; sys_platform == "linux"
+# KHÔNG cần `pip install -e .`: benchmark/yolo11/train.py tự thêm thư mục của
+# nó vào sys.path nên nạp benchmark/yolo11/cofseg/, không phải canopyseg.
+-r ../base.txt
 
 ultralytics==8.4.143
-
-# ---- cofseg/ dùng chung (progress, artifacts, datasets, evaluation)
-numpy==2.4.4
-opencv-python==5.0.0.93
-pycocotools==2.0.11
-pyyaml==6.0.3
-tqdm==4.68.3
 
 # ---- CỐ Ý KHÔNG CÀI: albumentations
 #
@@ -36,7 +23,7 @@ tqdm==4.68.3
 #             T = [A.Blur(p=0.01), A.ToGray(p=0.01), A.CLAHE(p=0.01), ...]
 #         except ImportError:   # package not installed, skip
 #
-# Nghĩa là CÓ hay KHÔNG có gói này sẽ cho ra hai pipeline huấn luyện khác
-# nhau, mà không dòng config nào của ta nói ra điều đó. Với một bảng so sánh
-# bốn model thì đó là biến ẩn. Để ngoài là lựa chọn có chủ đích; muốn bật thì
-# thêm vào đây VÀ ghi vào phần phương pháp.
+# Nghĩa là CÓ hay KHÔNG có gói này cho ra hai pipeline huấn luyện khác nhau,
+# mà không dòng config nào của ta nói ra điều đó. Với bảng so sánh bốn model
+# thì đó là biến ẩn. Để ngoài là lựa chọn có chủ đích; muốn bật thì thêm vào
+# đây VÀ ghi vào phần phương pháp.
