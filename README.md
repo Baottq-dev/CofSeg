@@ -41,94 +41,64 @@ git submodule update --init
 
 ## 2. Cài môi trường
 
-Một env cho cả annotator (`app/`) lẫn benchmark.
-
-`requirements.txt` **thuần wheel dựng sẵn** — không gói nào biên dịch, nên cài
-được trên mọi máy mà không cần `nvcc`, CUDA toolkit hay trình biên dịch C++:
+**Một env** cho cả annotator (`app/`) lẫn benchmark, chạy được cả bốn model.
 
 ```
-conda create -n coffee python=3.12 -y
-conda activate coffee
+conda create -y -n cofseg python=3.12 && conda activate cofseg
+python scripts/setup_env.py --skip-cuda-build
+```
+
+Tám bước, dừng đúng chỗ lỗi và in cách chạy tiếp. `--list` xem các bước,
+`--from <tên bước>` chạy tiếp từ một bước, `--only <tên bước>` chạy đúng một.
+
+### `--skip-cuda-build` là gì
+
+Lúc **cài** thì không biên dịch nhân CUDA tự viết nào, nên không cần `nvcc`
+khớp phiên bản với torch, không cần CUDA toolkit, không cần g++ đúng đời. Lúc
+**train** vẫn dùng GPU đầy đủ — cờ này chỉ đi vào các lệnh pip.
+
+| | |
+|---|---|
+| Mask R-CNN, SOLOv2, YOLOv11-Seg | không đổi gì |
+| Mask2Former | chậm hơn, **đúng kết quả** — MSDeformAttn chạy bằng op PyTorch thường, vẫn trên GPU |
+
+Bỏ cờ này đi thì Mask2Former đủ tốc độ, nhưng máy phải có **cả ba**: CUDA
+toolkit đầy đủ trong env, `g++ ≤ 12`, và `nvcc` cùng major với torch. Máy lab
+hiện không thoả (nvcc 13.2, g++ > 12). Chi tiết và cách đổi ý sau:
+`docs/reports/cai_moi_truong_may_lab_2026-09-27.md`.
+
+### Chỉ cần YOLO hoặc SOLOv2
+
+`requirements.txt` **thuần wheel dựng sẵn** — không gói nào biên dịch, cài
+được trên mọi máy:
+
+```
 pip install -r requirements.txt
 pip install -e .
 ```
 
-Đủ để chạy **YOLOv11-Seg** và **SOLOv2**. Hai model còn lại cần `detectron2`,
-và annotator cần SAM 2 — cả hai build từ source nên nằm ngoài file đó:
+Đủ cho **YOLOv11-Seg** và **SOLOv2**. Hai gói build từ source nằm ngoài file
+đó vì chúng phụ thuộc vào môi trường lúc cài chứ không chỉ vào phiên bản:
 
 | Gói | Cho | Cài bằng |
 |---|---|---|
 | `detectron2` | Mask R-CNN, Mask2Former | `setup_env.py --only detectron2` |
 | `SAM 2.1` | annotator (`app/`) | `setup_env.py --only sam2` |
 
-Muốn đủ bốn model thì chạy thẳng `python scripts/setup_env.py`, nó làm cả hai
-bước đó theo đúng thứ tự.
-
-Máy lab / máy thuê (Linux) — tám bước, dừng đúng chỗ lỗi; hỏng bước nào thì
-`--from <tên bước>` chạy tiếp từ đó (`--list` xem các bước):
+### Kiểm lại sau khi cài
 
 ```
-conda create -y -n cofseg python=3.12 && conda activate cofseg
-python scripts/setup_env.py
+python -c "
+import torch, ultralytics, detectron2, mmdet, mmcv
+from mmcv.ops import nms
+print('torch', torch.__version__, '| GPU:', torch.cuda.get_device_name(0))
+print('detectron2', detectron2.__version__, '| mmdet', mmdet.__version__,
+      '| mmcv', mmcv.__version__, '| ultralytics', ultralytics.__version__)
+"
 ```
 
-**Máy lab không biên dịch được op CUDA** (nvcc lệch phiên bản với torch,
-hoặc g++ quá mới, hoặc thiếu header) thì dùng:
-
-```
-python scripts/setup_env.py --skip-cuda-build
-```
-
-Lúc **cài** không biên dịch nhân CUDA tự viết nào; lúc **train** vẫn dùng GPU
-đầy đủ. Mask R-CNN, SOLOv2 và YOLO không đổi gì. Chỉ Mask2Former chậm hơn:
-MSDeformAttn chạy bằng op PyTorch thường — vẫn trên GPU, đúng kết quả, chỉ
-không phải một nhân gộp sẵn.
-
-Đây là đường mặc định nên đi. Muốn Mask2Former đủ tốc độ thì cần **cả ba**
-thứ sau khớp nhau, và thiếu một là gãy:
-
-| Cần | Vì sao |
-|---|---|
-| CUDA toolkit **đầy đủ** trong env | `cuda-nvcc` + `cuda-cudart-dev` KHÔNG đủ — header của torch còn cần `cusparse.h`, `cublas_v2.h`… từ các gói `lib*-dev` |
-| **g++ ≤ 12** | nvcc 12.1 từ chối g++ mới hơn: `unsupported GNU version!` |
-| nvcc cùng major với torch | torch chặn khi lệch: `The detected CUDA version mismatches…` |
-
-```
-conda install -y -n <env> -c nvidia/label/cuda-12.1.1 cuda-toolkit
-conda install -y -n <env> -c conda-forge gxx_linux-64=12
-export CXX=$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++
-python scripts/setup_env.py --only mask2former --only detectron2
-```
-
-Không nâng torch cho khớp CUDA 13 được: mmcv (SOLOv2) chỉ có wheel dựng sẵn
-cho torch 2.4 / cu121 — index `cu124` và `torch2.5` của OpenMMLab đều không
-tồn tại. Driver thì không sao, nó tương thích ngược.
-
-**Trên Linux đừng chạy `pip install -r requirements.txt` một mình** — nó sẽ
-dừng ở:
-
-```
-ModuleNotFoundError: No module named 'torch'
-ERROR: Failed to build 'detectron2' when getting requirements to build wheel
-```
-
-detectron2 và SAM 2 biên dịch op CUDA lúc cài và `setup.py` của họ import
-torch, mà pip dựng gói trong môi trường cô lập không có torch — ở thời điểm
-đó torch trong `requirements.txt` cũng chưa kịp cài. Torch phải đi bằng một
-lệnh riêng, trước:
-
-```
-pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu121
-pip install -r requirements.txt --no-build-isolation
-pip install -e .
-```
-
-`setup_env.py` làm đúng thứ tự đó và kiểm `nvcc` trước, nên dùng nó thì không
-phải nhớ.
-
-Mask2Former, Cascade (detectron2) và SOLOv2 (mmdet) **chưa chạy thật trên
-Linux lần nào** — máy phát triển là Windows. Lần đầu nên đi từng bước và khói
-một fold trước khi chạy cả sáu.
+Bốn model đã cài được trên máy lab (2 × RTX 4090). **Chưa train thật lần nào**
+— khói một lượt mỗi model trước khi chạy cả sáu fold.
 
 ## 3. Tải trọng số
 
