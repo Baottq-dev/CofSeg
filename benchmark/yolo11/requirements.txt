@@ -1,16 +1,26 @@
 # YOLO11-Seg (ultralytics). Người phụ trách: QuangBao.
 #
+# CÀI torch TRƯỚC — file này cố ý KHÔNG ghim torch, vì bản torch phụ thuộc
+# GPU chứ không phụ thuộc model. Ghim ở đây thì bốn file model sẽ trôi ra xa
+# nhau rồi không cài chung một env được nữa.
+#
+#     python scripts/setup_env.py --only torch              # GPU thường
+#     python scripts/setup_env.py --only torch --cuda 130   # Blackwell (RTX 50xx)
 #     pip install -r benchmark/yolo11/requirements.txt
 #
-# torch và các gói dùng chung nằm ở ../base.txt -> ../torch.txt. Đổi phiên bản
-# torch thì sửa ở đó, không sửa ở đây: torch phụ thuộc GPU chứ không phụ thuộc
-# model, và ghim riêng trong từng file là cách chắc chắn để bốn file lệch nhau.
+# Xem benchmark/README.md mục "Dựng môi trường" cho bảng chọn phiên bản.
 #
 # KHÔNG cần `pip install -e .`: benchmark/yolo11/train.py tự thêm thư mục của
 # nó vào sys.path nên nạp benchmark/yolo11/cofseg/, không phải canopyseg.
--r ../base.txt
 
 ultralytics==8.4.143
+
+# ---- gói mà cofseg/ của thư mục này import
+numpy==2.4.4
+opencv-python==5.0.0.93
+pycocotools==2.0.11
+pyyaml==6.0.3
+tqdm==4.68.3
 
 # ---- CỐ Ý KHÔNG CÀI: albumentations
 #
