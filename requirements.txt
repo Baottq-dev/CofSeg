@@ -69,7 +69,11 @@ ultralytics==8.4.143   # YOLO11-seg: huấn luyện + đọc bộ YOLO-seg do an
 # build_sam2 + SAM2ImagePredictor, tức nhánh ảnh, và không gọi torch.compile ở
 # đâu. Hai gói SAM 2 thật sự cần mà không có sẵn thì ghim ngay dưới đây.
 hydra-core==1.3.3      # SAM 2 đọc config model bằng hydra
-iopath==0.1.10         # SAM 2 nạp checkpoint qua iopath
+# iopath: detectron2 ghim `<0.1.10`, SAM 2 đòi `>=0.1.10`. Hai mốc đó không
+# gặp nhau. Lấy theo detectron2 vì nó ÉP thật lúc cài (pip hạ xuống 0.1.9 dù
+# ta ghim 0.1.10), còn SAM 2 cài với --no-deps nên mốc của nó không áp. Khác
+# biệt giữa hai bản là vài hàm tiện ích, annotator không đụng tới.
+iopath==0.1.9          # SAM 2 nạp checkpoint qua iopath; detectron2 cũng cần
 # mmengine/mmdet thuần Python: cài được mọi nơi, để ở nhà kiểm config SOLOv2
 # (canopyseg/training/mmdet.py). Chạy thật cần mmcv bên dưới.
 mmengine==0.10.7

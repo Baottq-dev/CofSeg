@@ -207,12 +207,19 @@ def step_detectron2() -> None:
 
 def step_mmdet() -> None:
     """mmdet 3.3.0 khai mmcv < 2.2.0, nhưng wheel dựng sẵn cho torch 2.4 là
-    2.2.0 và chạy được: nới đúng dòng kiểm phiên bản đó."""
+    2.2.0 và chạy được: nới đúng dòng kiểm phiên bản đó.
+
+    Tìm file bằng find_spec chứ KHÔNG `import mmdet`: chính dòng assert ta sắp
+    gỡ nằm trong __init__.py, nên import nó là gãy trước khi kịp sửa.
+    """
+    import importlib.util
     import re
 
-    import mmdet
-
-    p = Path(mmdet.__file__)
+    spec = importlib.util.find_spec("mmdet")
+    if spec is None or not spec.origin:
+        raise SystemExit("Không thấy gói mmdet. Chạy lại: "
+                         "python scripts/setup_env.py --from requirements")
+    p = Path(spec.origin)
     s = p.read_text(encoding="utf-8")
     out = re.sub(r"mmcv_maximum_version = '2\.2\.0'", "mmcv_maximum_version = '2.3.0'", s)
     if out != s:
