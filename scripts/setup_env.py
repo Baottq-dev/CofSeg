@@ -168,8 +168,11 @@ def step_requirements() -> None:
     """Thuần wheel dựng sẵn — không gói nào biên dịch, chạy được ở mọi máy."""
     pip("install", "-r", "requirements.txt")
     pip("install", "-e", ".")
-    py("-c", "import torch, ultralytics, mmdet; print('torch', torch.__version__, "
-             "'| ultralytics', ultralytics.__version__, '| mmdet', mmdet.__version__)")
+    # KHÔNG import mmdet ở đây: mmdet 3.3.0 tự chặn khi thấy mmcv 2.2.0, và
+    # chỗ nới dòng kiểm đó là bước `mmdet` NGAY SAU. Kiểm sớm một bước là báo
+    # lỗi cho một thứ chưa tới lượt được sửa.
+    py("-c", "import torch, ultralytics; print('torch', torch.__version__, "
+             "'| ultralytics', ultralytics.__version__)")
 
 
 def step_detectron2() -> None:
