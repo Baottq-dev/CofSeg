@@ -76,27 +76,42 @@ model benchmark khai gói riêng trong thư mục của nó:
 pip install -r requirements.txt            # app/ + canopyseg
 pip install -e .
 
+pip install -r benchmark/requirements.txt  # cả bốn model, MỘT env
+```
+
+Muốn **bốn env riêng** thì cài từng file, mỗi env một lệnh:
+
+```
 pip install -r benchmark/yolo11/requirements.txt
-pip install -r benchmark/solov2/requirements.txt       # xem cảnh báo trong file
+pip install -r benchmark/solov2/requirements.txt
 pip install -r benchmark/maskrcnn/requirements.txt
 pip install -r benchmark/mask2former/requirements.txt
 ```
 
-Hoặc để `setup_env.py` làm: `--models yolo11,maskrcnn,mask2former`.
+Hai cách đều ra **cùng một bản torch**, vì cả bốn file cùng `-r ../base.txt`
+và `base.txt` `-r torch.txt`:
+
+```
+benchmark/torch.txt        torch + torchvision   <- ĐỔI Ở ĐÂY, một chỗ
+benchmark/base.txt         -r torch.txt + numpy/cv2/pycocotools/yaml/tqdm
+benchmark/<model>/requirements.txt   -r ../base.txt + gói riêng của model
+```
+
+torch là lựa chọn của **máy** (kiến trúc GPU), không phải của model — nên nó
+không nằm trong file của từng model. `benchmark/torch.txt` có hai khối, bỏ
+chú thích một khối:
+
+| khối | torch | GPU | mmcv |
+|---|---|---|---|
+| **A** (mặc định) | 2.4.1+cu121 | `sm_50`–`sm_90`: 4090, L4, L40S, A40, A6000, A100, H100 | **wheel dựng sẵn** |
+| **B** | 2.11.0+cu130 | `sm_75`–`sm_120`, gồm RTX 50xx, RTX PRO 6000, B200 | **phải build từ nguồn** |
+
+Ranh giới thật sự không phải "Blackwell hay không", mà là **mmcv có wheel hay
+phải build**: OpenMMLab chỉ phát hành cu118/cu121 tới torch 2.4, và torch
+2.4/cu121 ra đời trước Blackwell nên không có kernel `sm_120`.
 
 Chạy benchmark **không cần** `pip install -e .`: mỗi thư mục tự chứa bản
 `cofseg/` riêng và `train.py` tự thêm thư mục của nó vào `sys.path`.
-
-**Vì sao tách.** Hai mốc phiên bản không giao nhau:
-
-| | đòi hỏi |
-|---|---|
-| `mmcv` (SOLOv2) | chỉ có wheel tới **torch 2.4 / cu121** |
-| GPU đời Blackwell (RTX 50xx, RTX PRO 6000, B200) | **torch ≥ 2.7** — cu121 không có kernel `sm_120` |
-
-Trên GPU đời **trước** Blackwell — 4090, L4, L40S, A40, A6000, A100, H100 —
-cả bốn file đều ghim torch 2.4.1+cu121 nên vẫn cài chung một env được. Chỉ
-khi chạy trên Blackwell mới buộc tách SOLOv2 ra env riêng.
 
 Mọi gói trong các file trên là **wheel dựng sẵn** — không gói nào biên dịch.
 Hai gói build từ source nằm ngoài, vì chúng phụ thuộc vào môi trường lúc cài

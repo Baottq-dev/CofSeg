@@ -204,9 +204,10 @@ Dùng chung thật sự chỉ còn: `data/` (ảnh + nhãn), `weights/` (trọng
 - **Gói của model nào khai trong thư mục model đó** — `benchmark/<model>/requirements.txt`.
   Cần thư viện mới thì thêm vào file của mình rồi báo nhóm, không `pip install`
   riêng rồi quên ghi. `requirements.txt` ở gốc chỉ lo `app/` và `canopyseg/`.
-  Tách ra vì mmcv (SOLOv2) khoá ở torch 2.4/cu121 còn GPU đời Blackwell đòi
-  torch >= 2.7 — hai mốc không giao nhau. Trên GPU đời trước Blackwell thì cả
-  bốn file vẫn cài chung một env được.
+  **torch thì KHÔNG khai ở đó** — nó là lựa chọn của máy, không phải của model,
+  nên nằm ở `benchmark/torch.txt`, một chỗ cho cả bốn. Cả bốn file model đều
+  `-r ../base.txt` -> `-r torch.txt`, nên cài vào một env chung hay bốn env
+  riêng đều ra cùng một bản torch. Một env: `pip install -r benchmark/requirements.txt`.
 - **Mỗi người một nhánh**, gộp vào `main` bằng merge hoặc rebase.
   **Không dùng "Squash and merge"**: squash gộp nhiều commit thành một và làm
   mất author của từng commit, tức mất dấu vết phân công.

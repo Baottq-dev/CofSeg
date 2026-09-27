@@ -45,13 +45,29 @@ D2 = ("detectron2 @ git+https://github.com/facebookresearch/detectron2.git"
 #: SAM 2.1 ghim theo commit; cài riêng với --no-deps, xem step_sam2.
 SAM2 = ("SAM-2 @ git+https://github.com/facebookresearch/sam2.git"
         "@2b90b9f5ceec907a1c18123530e92e794ad901a4")
-#: CUDA của torch trong env này. Bị khoá ở 12.1 vì mmcv (SOLOv2) chỉ có wheel
-#: dựng sẵn cho torch 2.4 / cu121 — index cu124 và torch2.5 đều không tồn tại.
-#: Đổi ở đây thì phải đổi cả --find-links trong requirements.txt.
-CUDA_TAG = "12.1"        # dùng để so với nvcc
-CUDA_FULL = "12.1.1"     # tên nhãn kênh conda nvidia
-TORCH = ["torch==2.4.1", "torchvision==0.19.1",
-         "--index-url", f"https://download.pytorch.org/whl/cu{CUDA_TAG.replace('.', '')}"]
+#: Bản torch nằm ở MỘT chỗ: benchmark/torch.txt. Script đọc lại chỉ mục cuXXX
+#: từ đó thay vì ghim riêng, để đổi khối A <-> khối B trong file ấy là mọi
+#: thông báo lỗi ở đây tự nói đúng phiên bản.
+TORCH_TXT = "benchmark/torch.txt"
+
+#: cuXXX -> nhãn kênh conda nvidia, để thông báo lỗi đưa đúng lệnh cài.
+CONDA_LABEL = {"12.1": "12.1.1", "12.8": "12.8.1", "13.0": "13.0.3"}
+
+
+def torch_cuda_tag() -> str:
+    """'--extra-index-url https://download.pytorch.org/whl/cu121' -> '12.1'.
+
+    Chỉ đọc dòng KHÔNG bị chú thích, nên khối đang tắt trong torch.txt không
+    tính — đổi khối là con số ở đây đổi theo, không phải sửa hai chỗ.
+    """
+    import re
+
+    for raw in (ROOT / TORCH_TXT).read_text(encoding="utf-8").splitlines():
+        m = re.search(r"/whl/cu(\d+)", raw.split("#", 1)[0])
+        if m:
+            d = m[1]
+            return f"{d[:-1]}.{d[-1]}"
+    raise SystemExit(f"Không đọc được chỉ mục cuXXX trong {TORCH_TXT}")
 
 
 #: --skip-cuda-build: lúc CÀI thì không biên dịch nhân CUDA tự viết nào, để
@@ -61,6 +77,9 @@ SKIP_CUDA_BUILD = False
 
 #: Model được cài trong lượt này. Mặc định rỗng = chỉ app/ + canopyseg.
 MODELS: list[str] = []
+
+#: True = build mmcv từ nguồn thay vì lấy wheel. Xem step_mmcv.
+BUILD_MMCV = False
 
 
 class Step:
@@ -118,6 +137,8 @@ def step_check() -> None:
     major với torch là torch từ chối build. Trên máy lab đây đúng là chuyện
     đã xảy ra — nvcc hệ thống 13.2 còn torch là cu121.
     """
+    cuda_tag = torch_cuda_tag()        # đọc từ benchmark/torch.txt
+    cuda_full = CONDA_LABEL.get(cuda_tag, cuda_tag)
     print(f"  python {sys.version.split()[0]} tại {sys.executable}")
     if sys.version_info < (3, 12):
         raise SystemExit("Cần Python >= 3.12 (scipy/scikit-image ghim trong requirements.txt).\n"
@@ -136,7 +157,7 @@ def step_check() -> None:
             "Thiếu nvcc. Cách nhanh nhất là bỏ hẳn phần biên dịch — train vẫn dùng GPU:\n\n"
             "    python scripts/setup_env.py --skip-cuda-build\n\n"
             "Muốn Mask2Former đủ tốc độ thì cần CẢ toolkit đầy đủ LẪN g++ <= 12:\n\n"
-            f"    conda install -y -c nvidia/label/cuda-{CUDA_FULL} cuda-toolkit\n"
+            f"    conda install -y -c nvidia/label/cuda-{cuda_full} cuda-toolkit\n"
             "    conda install -y -c conda-forge gxx_linux-64=12\n"
             "    export CXX=$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++\n\n"
             "(cuda-nvcc một mình KHÔNG đủ: header của torch cần cusparse.h, cublas_v2.h\n"
@@ -145,43 +166,48 @@ def step_check() -> None:
     out = subprocess.run(["nvcc", "--version"], capture_output=True, text=True)
     print(out.stdout.strip())
     got = nvcc_version(out.stdout)
-    want = tuple(int(x) for x in CUDA_TAG.split("."))
+    want = tuple(int(x) for x in cuda_tag.split("."))
     if got and got[0] != want[0]:
         raise SystemExit(
-            f"\nnvcc là CUDA {got[0]}.{got[1]} nhưng torch của env này dựng bằng CUDA {CUDA_TAG}.\n"
+            f"\nnvcc là CUDA {got[0]}.{got[1]} nhưng torch của env này dựng bằng CUDA {cuda_tag}.\n"
             "torch từ chối build op CUDA khi lệch major:\n\n"
             f"    RuntimeError: The detected CUDA version ({got[0]}.{got[1]}) mismatches the\n"
-            f"    version that was used to compile PyTorch ({CUDA_TAG}).\n\n"
-            f"Driver thì không sao — nó tương thích ngược, chạy binary cu{CUDA_TAG.replace('.', '')}\n"
+            f"    version that was used to compile PyTorch ({cuda_tag}).\n\n"
+            f"Driver thì không sao — nó tương thích ngược, chạy binary cu{cuda_tag.replace('.', '')}\n"
             "bình thường. Chỉ khâu biên dịch cần toolkit khớp. Cài vào CHÍNH env này,\n"
             "nó sẽ che nvcc của hệ thống:\n\n"
-            f"    conda install -y -c nvidia/label/cuda-{CUDA_FULL} cuda-toolkit\n"
+            f"    conda install -y -c nvidia/label/cuda-{cuda_full} cuda-toolkit\n"
             "    which nvcc && nvcc --version        # phải trỏ vào env và ra "
-            f"{CUDA_TAG}\n\n"
+            f"{cuda_tag}\n\n"
             "Cách nhanh nhất: bỏ hẳn phần biên dịch. Train vẫn dùng GPU, chỉ\n"
             "Mask2Former chậm hơn:\n\n"
             "    python scripts/setup_env.py --skip-cuda-build\n\n"
             "Muốn biên dịch thật thì cần cả toolkit ĐẦY ĐỦ lẫn g++ <= 12 —\n"
             "cuda-nvcc một mình không đủ (thiếu cusparse.h, cublas_v2.h):\n\n"
             f"Vì sao không nâng torch cho khớp CUDA {got[0]}: mmcv (SOLOv2) chỉ có wheel dựng\n"
-            f"sẵn cho torch 2.4 / cu{CUDA_TAG.replace('.', '')}; index cho CUDA mới hơn không tồn tại.")
+            f"sẵn cho torch 2.4 / cu{cuda_tag.replace('.', '')}; index cho CUDA mới hơn không tồn tại.")
     if got and got != want:
-        print(f"  (nvcc {got[0]}.{got[1]} vs torch cu{CUDA_TAG.replace('.', '')} — lệch minor, "
+        print(f"  (nvcc {got[0]}.{got[1]} vs torch cu{cuda_tag.replace('.', '')} — lệch minor, "
               "thường build được)")
     sh("nvidia-smi", "--query-gpu=name,memory.total,driver_version",
        "--format=csv,noheader", check=False)
 
 
 def step_torch() -> None:
-    """torch trước requirements: detectron2 và SAM 2 import torch lúc build."""
-    pip("install", *TORCH)
+    """torch trước requirements: detectron2 và SAM 2 import torch lúc build.
+
+    Phiên bản ghim ở benchmark/torch.txt, MỘT chỗ cho cả bốn model — torch
+    phụ thuộc GPU chứ không phụ thuộc model, nên nó không nằm trong file của
+    từng model.
+    """
+    pip("install", "-r", "benchmark/torch.txt")
     py("-c", "import torch; assert torch.cuda.is_available(), 'torch không thấy CUDA'; "
              "print('torch', torch.__version__, torch.cuda.get_device_name(0))")
 
 
-#: Mỗi thư mục benchmark khai gói riêng. Gộp chung một file là điều KHÔNG làm
-#: được nữa: mmcv (SOLOv2) khoá ở torch 2.4/cu121, mà GPU đời Blackwell lại
-#: đòi torch >= 2.7 — hai mốc không giao nhau. Xem đầu mỗi file để biết vì sao.
+#: Mỗi thư mục benchmark khai gói riêng của model đó. Cả bốn đều `-r
+#: ../base.txt` -> `../torch.txt`, nên cài bốn file vào MỘT env hay vào BỐN
+#: env riêng đều ra cùng một bản torch.
 BENCH_REQS = {
     "yolo11": "benchmark/yolo11/requirements.txt",
     "solov2": "benchmark/solov2/requirements.txt",
@@ -235,6 +261,82 @@ def step_detectron2() -> None:
     # requirements.txt, chỉ env cài từ trước mới thiếu).
     py("-c", "import detectron2; from detectron2 import model_zoo; "
              "print('detectron2', detectron2.__version__)")
+
+
+#: Chỉ mục wheel mmcv. Chỉ tồn tại cho cu118/cu121 tới torch 2.4 — dò trực
+#: tiếp thì mọi tổ hợp cu124/cu128/cu130 và torch2.5+ đều trả 404.
+MMCV_INDEX = "https://download.openmmlab.com/mmcv/dist/cu121/torch2.4/index.html"
+MMCV_REPO = "https://github.com/open-mmlab/mmcv.git"
+MMCV_TAG = "v2.2.0"
+
+
+def gpu_arch() -> tuple[int, int] | None:
+    """(major, minor) của GPU 0, hoặc None nếu không hỏi được."""
+    out = subprocess.run(
+        [sys.executable, "-c",
+         "import torch;print('%d %d' % torch.cuda.get_device_capability(0))"],
+        capture_output=True, text=True)
+    try:
+        a, b = out.stdout.split()
+        return int(a), int(b)
+    except ValueError:
+        return None
+
+
+def step_mmcv() -> None:
+    """Wheel dựng sẵn hay build từ nguồn — tuỳ MÁY, nên không để trong requirements.
+
+    Cùng lý do detectron2 không nằm trong file của Mask R-CNN: một dòng
+    requirements không rẽ nhánh theo GPU được.
+
+    Blackwell (sm_120) không có đường wheel: torch 2.4/cu121 là tổ hợp duy
+    nhất mmcv còn phát hành, mà nó ra đời TRƯỚC Blackwell nên không có kernel
+    cho kiến trúc đó. Bước này dừng và nói ra thay vì cài một thứ chắc chắn
+    chết ở lời gọi kernel đầu tiên.
+    """
+    arch = gpu_arch()
+    if arch is not None:
+        print(f"  GPU sm_{arch[0]}{arch[1]}")
+    blackwell = arch is not None and arch[0] >= 10
+    if blackwell and not BUILD_MMCV:
+        raise SystemExit(
+            f"\nGPU là sm_{arch[0]}{arch[1]} (Blackwell) — mmcv KHÔNG có wheel chạy được.\n\n"
+            "torch 2.4/cu121 là tổ hợp duy nhất OpenMMLab còn phát hành, và nó ra\n"
+            "trước Blackwell nên thiếu kernel sm_120. Cài vào thì chết ở lời gọi\n"
+            "kernel đầu tiên: 'no kernel image is available for execution'.\n\n"
+            "Hai lối đi:\n\n"
+            "  1. Đổi sang GPU đời trước Blackwell (A100, L40S, A6000, 4090...)\n"
+            "     — mmcv dùng wheel, không biên dịch gì.\n\n"
+            "  2. Dùng KHỐI B trong benchmark/torch.txt (CUDA 13) rồi build:\n"
+            "         python scripts/setup_env.py --only mmcv --build-mmcv\n"
+            "     Mất 20-120 phút. Có người báo làm được ở torch 2.7 + CUDA 12.8\n"
+            "     (mmcv#3327), nhưng upstream đứng yên từ 04/2024 nên không ai\n"
+            "     bảo đảm. Nhớ lấy mmengine từ git: torch >= 2.6 đổi mặc định\n"
+            "     torch.load(weights_only=True) và bản 0.10.7 trên PyPI chưa vá.")
+    if not BUILD_MMCV:
+        pip("install", "mmcv==2.2.0", "-f", MMCV_INDEX)
+    else:
+        import os
+
+        src = ROOT / "build" / "mmcv"
+        if not src.exists():
+            src.parent.mkdir(parents=True, exist_ok=True)
+            sh("git", "clone", "--branch", MMCV_TAG, "--depth", "1", MMCV_REPO, str(src))
+        # FORCE_CUDA: setup.py của mmcv bật op CUDA khi
+        # `torch.cuda.is_available() or os.getenv('FORCE_CUDA') == '1'`, nên
+        # cờ này cho phép biên dịch trên máy không có GPU — tách được câu hỏi
+        # "compile nổi không" khỏi việc phải thuê đúng card.
+        # TORCH_CUDA_ARCH_LIST: mặc định torch build cho 6-7 kiến trúc, mỗi
+        # file .cu compile lại từng ấy lần. Ghim đúng cái cần là nhanh hơn
+        # nhiều lần.
+        extra = {"FORCE_CUDA": "1", "MMCV_WITH_OPS": "1",
+                 "MAX_JOBS": os.environ.get("MAX_JOBS", "4")}
+        if "TORCH_CUDA_ARCH_LIST" not in os.environ and arch is not None:
+            extra["TORCH_CUDA_ARCH_LIST"] = f"{arch[0]}.{arch[1]}"
+        print("  build mmcv %s: %s" % (MMCV_TAG, extra))
+        pip("install", "--no-build-isolation", "-e", str(src),
+            env={**os.environ, **extra})
+    py("-c", "import mmcv; from mmcv.ops import nms; print('mmcv', mmcv.__version__)")
 
 
 def step_mmdet() -> None:
@@ -339,9 +441,10 @@ def step_weights() -> None:
 
 STEPS = [
     Step("check", "kiểm python, nvcc, GPU", step_check),
-    Step("torch", "torch 2.4.1+cu121", step_torch),
+    Step("torch", "torch theo benchmark/torch.txt", step_torch),
     Step("requirements", "app/ + canopyseg + gói của --models (thuần wheel)", step_requirements),
     Step("detectron2", "build detectron2 từ source (Mask R-CNN, Mask2Former)", step_detectron2),
+    Step("mmcv", "mmcv: wheel dựng sẵn, hoặc --build-mmcv để build từ nguồn", step_mmcv),
     Step("mmdet", "nới kiểm phiên bản mmcv, thử import", step_mmdet),
     Step("mask2former", "submodule + op MSDeformAttn", step_mask2former),
     Step("sam2", "SAM 2.1 cho annotator (bỏ qua mốc torch của nó)", step_sam2),
@@ -365,9 +468,14 @@ def main(argv=None) -> int:
                          + ". Rỗng = chỉ app/ + canopyseg. LƯU Ý: solov2 khoá ở "
                            "torch 2.4/cu121 nên KHÔNG cài chung env với ba model "
                            "kia được nếu GPU là đời Blackwell")
+    ap.add_argument("--build-mmcv", action="store_true",
+                    help="build mmcv từ nguồn thay vì lấy wheel. Bắt buộc trên GPU "
+                         "Blackwell (sm_120): wheel duy nhất của OpenMMLab là "
+                         "torch 2.4/cu121, ra đời trước kiến trúc đó. Mất 20-120 phút")
     a = ap.parse_args(argv)
 
-    global SKIP_CUDA_BUILD, MODELS
+    global SKIP_CUDA_BUILD, MODELS, BUILD_MMCV
+    BUILD_MMCV = a.build_mmcv
     SKIP_CUDA_BUILD = a.skip_cuda_build
     MODELS = [n.strip() for n in a.models.split(",") if n.strip()]
     bad = set(MODELS) - set(BENCH_REQS)
