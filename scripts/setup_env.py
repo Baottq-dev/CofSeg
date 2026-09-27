@@ -230,19 +230,48 @@ def step_mmdet() -> None:
              "'mmengine', mmengine.__version__)")
 
 
+def unguard_msdeformattn() -> None:
+    """Cho phép nạp MSDeformAttn khi op CUDA chưa biên dịch.
+
+    ms_deform_attn_func.py NÉM LỖI ngay lúc import nếu thiếu op:
+
+        raise ModuleNotFoundError("Please compile MultiScaleDeformableAttention…")
+
+    Trong khi ms_deform_attn.py lại đã bọc lời gọi op trong try/except và rơi
+    về ms_deform_attn_core_pytorch — đường lùi có sẵn nhưng không bao giờ tới
+    lượt, vì import chết trước. Đổi dòng raise thành `MSDA = None` là đường
+    lùi đó chạy.
+
+    Đã thử: forward và backward đều ra đúng hình, gradient hữu hạn và khác 0.
+    Chậm hơn vì không có nhân gộp sẵn, nhưng vẫn trên GPU và vẫn đúng kết quả.
+    """
+    f = ROOT / M2F_DIR / "mask2former/modeling/pixel_decoder/ops/functions/ms_deform_attn_func.py"
+    s = f.read_text(encoding="utf-8")
+    if "MSDA = None" in s:
+        print(f"  {f.name}: đã vá từ trước, bỏ qua")
+        return
+    old = "    raise ModuleNotFoundError(info_string)"
+    if old not in s:
+        raise SystemExit(
+            f"Không thấy dòng cần vá trong {f}.\n"
+            "Submodule Mask2Former có thể đã đổi. Hoặc build op thật:\n"
+            "    python scripts/setup_env.py --only mask2former   (bỏ --skip-cuda-build)")
+    f.write_text(s.replace(old, "    MSDA = None", 1), encoding="utf-8")
+    print(f"  {f.name}: raise -> MSDA = None, dùng đường PyTorch")
+    print("    (hoàn tác: git -C %s checkout .)" % M2F_DIR)
+
+
 def step_mask2former() -> None:
     """Submodule đi theo git; chỉ op CUDA là phải biên dịch tại chỗ.
 
     make.sh của repo gốc gọi `setup.py install` mà setuptools mới đã bỏ, nên
-    dùng pip build thẳng thư mục ops.
+    dùng pip build thẳng thư mục ops. Với --skip-cuda-build thì không build gì,
+    chỉ nới chốt chặn lúc import (xem unguard_msdeformattn).
     """
     sh("git", "submodule", "update", "--init", M2F_DIR)
     sh("git", "-C", M2F_DIR, "log", "-1", "--format=Mask2Former @ %h (%ad)", "--date=short")
     if SKIP_CUDA_BUILD:
-        # ms_deform_attn.py bọc lời gọi op trong try/except và rơi về
-        # ms_deform_attn_core_pytorch, nên không biên dịch vẫn ra ĐÚNG kết quả,
-        # chỉ chậm hơn. Bỏ hẳn bước build op.
-        print("  --skip-cuda-build: không build op MSDeformAttn, dùng đường PyTorch.")
+        unguard_msdeformattn()
     else:
         pip("install", "--no-build-isolation", "--no-deps",
             f"{M2F_DIR}/mask2former/modeling/pixel_decoder/ops")
