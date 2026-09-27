@@ -5,26 +5,16 @@
 #     pip install -r benchmark/mask2former/requirements.txt
 #     python scripts/setup_env.py --only detectron2,mask2former
 #
-# detectron2 không nằm trong file này — xem benchmark/maskrcnn/requirements.txt
-# để biết vì sao.
---extra-index-url https://download.pytorch.org/whl/cu121
+# torch nằm ở ../base.txt -> ../torch.txt, một chỗ cho cả bốn model.
+# detectron2 không nằm ở đây — xem ../maskrcnn/requirements.txt để biết vì sao.
+-r ../base.txt
 
-torch==2.4.1+cu121
-torchvision==0.19.1+cu121
-
-setuptools<82         # detectron2 0.6 cần pkg_resources; xem maskrcnn/requirements.txt
+setuptools<82         # detectron2 0.6 cần pkg_resources; xem ../maskrcnn/requirements.txt
 
 # ---- repo gốc Mask2Former (benchmark/mask2former/upstream) cần thêm
 scipy==1.18.0         # modeling/matcher.py: linear_sum_assignment (ghép Hungarian)
 shapely==2.1.2        # upstream/train_net.py
 timm==1.0.29          # backbone Swin của họ; import ở tầng module
-
-# ---- cofseg/ dùng chung
-numpy==2.4.4
-opencv-python==5.0.0.93
-pycocotools==2.0.11
-pyyaml==6.0.3
-tqdm==4.68.3
 
 # ============================================================================
 # MSDeformAttn — model DUY NHẤT mà `--skip-cuda-build` phải trả giá
@@ -40,7 +30,8 @@ tqdm==4.68.3
 #     imgsz 1024, batch  4  ->  0.98 GiB mỗi lớp  ->  5.9 GiB  (6 lớp encoder)
 #     imgsz 1024, batch 16  ->  3.94 GiB mỗi lớp  -> 23.6 GiB  -> OOM trên 24 GB
 #
-# Muốn có kernel thật thì cần BA thứ khớp nhau; thiếu một là gãy sau vài phút:
+# Muốn có kernel thật thì cần BA thứ khớp nhau; thiếu một là gãy sau vài phút.
+# Với KHỐI A của ../torch.txt (torch 2.4/cu121):
 #
 #     1. toolkit ĐẦY ĐỦ, không phải mỗi nvcc — header của torch còn
 #        #include <cusparse.h> và <cublas_v2.h>:
@@ -49,10 +40,10 @@ tqdm==4.68.3
 #            conda install -c conda-forge gxx_linux-64=12
 #     3. nvcc cùng major với torch — cả hai đều 12 sau bước 1
 #
+# Với KHỐI B (CUDA 13) thì dễ hơn: `conda install -c nvidia cuda-toolkit=13.0`
+# và CUDA 13 nhận tới GCC 15, nên điều kiện 2 tự biến mất.
+#
 # Rồi cài lại BỎ cờ --skip-cuda-build:
 #
 #     python scripts/setup_env.py --only detectron2,mask2former
-#
-# Không làm được thì vẫn chạy được, chỉ phải hạ batch. VRAM cần (ước, chưa đo
-# lại sau khi có kernel): batch 4 / imgsz 1024 khoảng 38–51 GB với đường lùi.
 # ============================================================================
