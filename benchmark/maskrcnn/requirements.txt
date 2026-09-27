@@ -1,10 +1,10 @@
 # Mask R-CNN (detectron2). Người phụ trách: VanNguyen. CHỈ LINUX.
 #
+# CÀI torch TRƯỚC — file này cố ý KHÔNG ghim torch, xem benchmark/README.md.
+#
+#     python scripts/setup_env.py --only torch
 #     pip install -r benchmark/maskrcnn/requirements.txt
 #     python scripts/setup_env.py --only detectron2
-#
-# torch nằm ở ../base.txt -> ../torch.txt, một chỗ cho cả bốn model.
--r ../base.txt
 
 # ---- setuptools: KHÔNG được bỏ ghim
 #
@@ -18,9 +18,16 @@
 #     ModuleNotFoundError: No module named 'pkg_resources'
 #
 # Bẫy phụ: `import detectron2` KHÔNG kéo model_zoo vào, nên bước cài báo thành
-# công rồi mới chết lúc train. Bước `detectron2` của setup_env.py giờ kiểm cả
+# công rồi mới chết lúc train. Bước `detectron2` của setup_env.py kiểm cả
 # `from detectron2 import model_zoo`.
 setuptools<82
+
+# ---- gói mà cofseg/ của thư mục này import
+numpy==2.4.4
+opencv-python==5.0.0.93
+pycocotools==2.0.11
+pyyaml==6.0.3
+tqdm==4.68.3
 
 # ---- detectron2 KHÔNG nằm ở đây
 #
