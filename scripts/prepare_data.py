@@ -46,7 +46,7 @@ def main(argv=None) -> int:
     ap.add_argument("--folds", nargs="*", default=None,
                     help="chỉ cắt các fold này; mặc định cắt hết")
     ap.add_argument("--val", default="configs/dataset/val_block.yaml",
-                    help="cách cắt val: val_block.yaml hoặc val_flight.yaml")
+                    help="cách cắt val: val_block.yaml, val_flight.yaml hoặc val_field.yaml")
     ap.add_argument("--out-root", default=None,
                     help="thư mục chứa fold; mặc định data/export/<tên cách chia>")
     ap.add_argument("--keep", action="store_true",

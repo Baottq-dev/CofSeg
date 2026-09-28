@@ -33,7 +33,8 @@ from canopyseg.datasets import flightlog, folds as foldmod, valsplit  # noqa: E4
 
 console.setup()
 
-SHIPPED = ["configs/dataset/val_block.yaml", "configs/dataset/val_flight.yaml"]
+SHIPPED = ["configs/dataset/val_block.yaml", "configs/dataset/val_flight.yaml",
+           "configs/dataset/val_field.yaml"]
 
 #: Khoảng cách khung hình ở hai chỗ nối mà val_flight.yaml chạm tới, đọc ra
 #: từ scripts/inspect_flights.py: field_2/10/1->10/2 là 2, field_1/10/3->10/4 là 4.

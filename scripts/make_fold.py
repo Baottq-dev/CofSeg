@@ -7,10 +7,13 @@
         --val configs/dataset/val_flight.yaml --all --out-root data/export/flight
 
     python scripts/make_fold.py --export data/export/dataset_v1 \
+        --val configs/dataset/val_field.yaml --all --out-root data/export/field
+
+    python scripts/make_fold.py --export data/export/dataset_v1 \
         --val configs/dataset/val_block.yaml --fold f4
 
 Sáu lượt khai trong configs/dataset/folds.yaml (chỉ nói ruộng nào làm test).
-Cách cắt val khai riêng trong --val, vì có hai cách và chúng cho hai bộ fold
+Cách cắt val khai riêng trong --val, vì có ba cách và chúng cho ba bộ fold
 khác nhau — nên để cạnh nhau mà so, đừng chồng lên nhau.
 
 Mỗi fold ra một thư mục đúng bố cục mà train.py / evaluate.py đọc:
@@ -63,7 +66,7 @@ def main(argv=None) -> int:
     ap.add_argument("--export", required=True, help="thư mục bản xuất split_by=none")
     ap.add_argument("--folds", default="configs/dataset/folds.yaml")
     ap.add_argument("--val", default="configs/dataset/val_block.yaml",
-                    help="cách cắt val: val_block.yaml hoặc val_flight.yaml")
+                    help="cách cắt val: val_block.yaml, val_flight.yaml hoặc val_field.yaml")
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--fold", help="tên fold trong folds.yaml, vd f4")
     g.add_argument("--all", action="store_true", help="cắt mọi fold trong folds.yaml")
