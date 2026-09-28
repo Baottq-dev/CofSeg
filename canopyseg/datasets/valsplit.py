@@ -14,7 +14,10 @@ Mọi cách ở đây trả về cùng một thứ:
 sạch, và `why` ghi lại đã trả bao nhiêu, ở đâu, vì sao — để `fold.json` và
 báo cáo nói cùng một con số.
 
-Hai cách đang dùng, xem `configs/dataset/val_block.yaml` và `val_flight.yaml`.
+Ba cách đang dùng, xem `configs/dataset/val_block.yaml`, `val_flight.yaml`
+và `val_field.yaml`. Chúng xếp thành một thang khoảng cách val<->train:
+cùng đường bay, khác đường bay, khác ruộng — và chỉ cách cuối mới đặt val
+vào đúng điều kiện mà test sẽ chấm.
 """
 
 from __future__ import annotations
@@ -29,7 +32,7 @@ import yaml
 from . import flightlog, overlap_graph
 from .overlap_graph import Graph
 
-METHODS = ("block", "flight")
+METHODS = ("block", "flight", "field")
 
 
 @dataclass
@@ -186,6 +189,56 @@ def by_flight(frames: Iterable[flightlog.Frame], graph: Graph, *,
     })
 
 
+# ------------------------------------------------------------ trọn một ruộng
+def by_field(frames: Iterable[flightlog.Frame], graph: Graph, *,
+             fields: Sequence[str] | None = None,
+             slot: int | None = None) -> Assignment:
+    """val = trọn một ruộng, xoay vòng nên mỗi ruộng làm val đúng một lượt.
+
+    Đây là cách duy nhất trong ba cách mà val chịu cùng loại dịch chuyển với
+    test: test là ruộng chưa thấy, và val ở đây cũng là ruộng chưa thấy. Hai
+    cách kia chọn checkpoint bằng ảnh cùng mảnh đất với train, tức bằng một
+    thước đo lạc quan hơn thước sẽ chấm mình.
+
+    Giá phải trả: lượt nào cũng chỉ còn 4 ruộng để học thay vì 5, và cỡ lẫn
+    mật độ của val nhảy theo ruộng được chọn (ở bộ này: 48..280 ảnh, 6.9..25.1
+    vùng/ảnh). Số ẢNH train thì gần như không đổi, vì cách này không tốn
+    khoảng đệm nào.
+
+    Cố định một ruộng làm val thì không chạy được: lượt lấy đúng ruộng đó làm
+    test sẽ không còn val. Nên `slot` xoay vòng — val là ruộng kế tiếp ruộng
+    test. Với sáu lượt của folds.yaml, mỗi ruộng test một lần, val một lần,
+    train bốn lần: không ruộng nào được ưu ái.
+
+    `fields` thu hẹp vòng xoay lại một nhóm (vd chỉ các ruộng nội suy); ruộng
+    đang làm test không có trong `frames` nên tự rơi khỏi vòng.
+
+    Khoảng đệm vẫn tra đồ thị dù hai ruộng là hai mảnh đất khác nhau. Ở bộ
+    này nó luôn trả về rỗng — 0/1073 cạnh bắc qua ranh giới ruộng — nhưng tra
+    thì con số đó là ĐO, còn bỏ qua thì nó chỉ là niềm tin.
+    """
+    present = sorted({f.field for f in frames})
+    ring = [x for x in fields if x in present] if fields else present
+    if not ring:
+        raise ValueError(
+            f"không còn ruộng nào làm val được: công thức khai {list(fields or [])}, "
+            f"mà lượt này chỉ có {present}. Khai thêm ruộng vào 'fields'.")
+    chosen = ring[0 if slot is None else slot % len(ring)]
+
+    val = {f.file_name for f in frames if f.field == chosen}
+    pool = {f.file_name for f in frames}
+    drop = _buffer(val, pool, graph)
+    return Assignment(val=val, drop=drop, why={
+        "method": "field",
+        "val_field": chosen,
+        "ring": ring,
+        "requested": list(fields) if fields else None,
+        "slot": slot,
+        "buffer": "graph", "threshold": graph.threshold, "graph_scope": graph.scope,
+        "edges_cut": graph.crossing(val, pool - val),
+    })
+
+
 # ------------------------------------------------------------------ chấm điểm
 def audit(a: Assignment, frames: Iterable[flightlog.Frame], graph: Graph,
           regions: dict[str, int] | None = None) -> dict:
@@ -222,7 +275,7 @@ def audit(a: Assignment, frames: Iterable[flightlog.Frame], graph: Graph,
 
 # --------------------------------------------------------------- công thức
 def load_recipe(path: str | Path) -> dict:
-    """Đọc val_block.yaml / val_flight.yaml và kiểm trước khi cắt gì.
+    """Đọc val_block.yaml / val_flight.yaml / val_field.yaml, kiểm trước khi cắt gì.
 
     Sai một tham số ở đây là sáu fold ra sai theo cùng một kiểu, mà nhìn thư
     mục thì không thấy gì lạ — nên kiểm ngay lúc đọc.
@@ -238,11 +291,20 @@ def load_recipe(path: str | Path) -> dict:
             raise ValueError(f"{p}: frac phải trong (0, 1), đang là {frac}")
         if float(doc.get("slack", 0.5)) < 0:
             raise ValueError(f"{p}: slack không được âm")
-    else:
+    elif method == "flight":
         if not doc.get("flights"):
             raise ValueError(f"{p}: method=flight thì phải khai 'flights'")
         if int(doc.get("buffer", 20)) < 0:
             raise ValueError(f"{p}: buffer không được âm")
+    else:
+        fs = doc.get("fields")
+        if fs is not None and not fs:
+            raise ValueError(f"{p}: khai 'fields' thì không được để rỗng")
+        if doc.get("rotate") is False and not fs:
+            raise ValueError(
+                f"{p}: rotate=false thì phải khai 'fields'. Không khai mà tắt xoay "
+                "vòng thì val luôn là ruộng đầu bảng chữ cái, và ruộng đó gần như "
+                "không bao giờ vào tập train.")
     doc["_path"] = p.as_posix()
     return doc
 
@@ -260,13 +322,21 @@ def load_graph(recipe: dict, base: str | Path = ".") -> Graph:
 def apply(recipe: dict, frames: Iterable[flightlog.Frame], graph: Graph, *,
           slot: int | None = None, n_slots: int = 6) -> Assignment:
     """Gọi đúng cách chia mà công thức khai. `slot` là thứ tự lượt (0..5),
-    chỉ dùng khi công thức bật `rotate`."""
+    chỉ dùng khi công thức bật `rotate`.
+
+    Mặc định `rotate` khác nhau theo cách, và đó là chủ ý: block mặc định KHÔNG
+    xoay (khối nằm cuối đường bay là hành vi gốc), còn field mặc định CÓ xoay
+    vì không xoay thì một ruộng bị loại khỏi train ở cả sáu lượt."""
     if recipe["method"] == "block":
         return by_block(frames, graph,
                         frac=float(recipe.get("frac", 0.15)),
                         slack=float(recipe.get("slack", 0.5)),
                         slot=slot if recipe.get("rotate") else None,
                         n_slots=n_slots)
-    return by_flight(frames, graph,
-                     flights=recipe["flights"],
-                     buffer=int(recipe.get("buffer", 20)))
+    if recipe["method"] == "flight":
+        return by_flight(frames, graph,
+                         flights=recipe["flights"],
+                         buffer=int(recipe.get("buffer", 20)))
+    return by_field(frames, graph,
+                    fields=recipe.get("fields"),
+                    slot=slot if recipe.get("rotate", True) else None)

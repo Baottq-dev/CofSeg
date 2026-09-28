@@ -49,9 +49,9 @@ def load_folds(path: str | Path) -> dict:
     hỏng trước khi cắt bất kỳ thứ gì.
 
     File này chỉ khai SÁU LƯỢT là gì — ruộng nào làm test ở lượt nào. Val
-    không còn ở đây: lấy trọn một ruộng làm val thì chỉ còn 4 ruộng để train,
-    trong khi yêu cầu là 5. Val cắt ở mức ảnh, khai trong file riêng
-    (configs/dataset/val_block.yaml, val_flight.yaml).
+    khai trong file riêng (configs/dataset/val_block.yaml, val_flight.yaml,
+    val_field.yaml), vì ba cách chia val cho ba bộ fold khác nhau trên cùng
+    sáu lượt này.
     """
     doc = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     fields = list(doc.get("fields") or [])
@@ -61,9 +61,11 @@ def load_folds(path: str | Path) -> dict:
     for name, spec in folds.items():
         if spec.get("val"):
             raise ValueError(
-                f"fold {name}: 'val' không còn nằm trong folds.yaml. Lấy trọn một ruộng "
-                "làm val thì chỉ còn 4 ruộng để train, mà yêu cầu là 5. Cách chia val "
-                "khai ở configs/dataset/val_block.yaml hoặc val_flight.yaml.")
+                f"fold {name}: 'val' không còn nằm trong folds.yaml — cách chia val khai "
+                "ở configs/dataset/val_block.yaml, val_flight.yaml hoặc val_field.yaml. "
+                "Muốn val là trọn một ruộng thì dùng val_field.yaml: nó xoay ruộng val "
+                "theo lượt, còn ghim cứng ở đây thì lượt lấy đúng ruộng đó làm test sẽ "
+                "không còn val.")
         test = list(spec.get("test") or [])
         unknown = [f for f in test if f not in fields]
         if unknown:
@@ -192,7 +194,7 @@ def make_fold(
         raise ValueError(
             f"fold {name}: không có ảnh val nào. Val được chọn ở mức ảnh, truyền qua "
             "`val_images=`; từ dòng lệnh là --val configs/dataset/val_block.yaml "
-            "(hoặc val_flight.yaml).")
+            "(hoặc val_flight.yaml, val_field.yaml).")
     if empty:
         raise ValueError(
             f"fold {name}: tập {empty} không có ảnh nào — ruộng "

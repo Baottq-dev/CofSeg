@@ -1,0 +1,72 @@
+# Cách chia val 3: trọn một ruộng làm val, xoay vòng theo lượt.
+#
+#     python scripts/make_fold.py --export data/export/dataset_v1 \
+#         --val configs/dataset/val_field.yaml --all --out-root data/export/field
+#
+# Val là TRỌN một ruộng, khác ruộng test, và đổi ruộng qua mỗi lượt:
+#
+#     lượt  test       val        train
+#     f1    field_1    field_2    4 ruộng còn lại
+#     f2    field_2    field_3
+#     f3    field_3    field_4
+#     f4    field_4    field_5
+#     f5    field_5    field_6
+#     f6    field_6    field_1
+#
+# Mỗi ruộng làm test đúng một lần, val đúng một lần, train bốn lần — hình
+# vuông Latin, không ruộng nào được ưu ái.
+#
+# Vì sao có cách này, khi hai cách kia đã đủ chạy: ba cách xếp thành một thang
+# khoảng cách giữa val và train.
+#
+#     block    val cùng đường bay với train
+#     flight   val khác đường bay, cùng ruộng
+#     field    val khác RUỘNG
+#
+# Chỉ cách thứ ba đặt val vào đúng điều kiện mà test sẽ chấm: test là ruộng
+# chưa thấy, val ở đây cũng là ruộng chưa thấy. Hai cách kia chọn checkpoint
+# bằng ảnh cùng mảnh đất với train, tức bằng thước đo lạc quan hơn thước sẽ
+# chấm mình. Nếu số của cách này thấp hơn hai cách kia thì chênh lệch đó CHÍNH
+# LÀ phần lạc quan của chúng, đo được chứ không phải đoán.
+#
+# Được:
+# - Rò rỉ bằng 0 vì lý do vật lý, không chỉ vì phạm vi đo. Hai ruộng là hai
+#   mảnh đất khác nhau; đếm thẳng trong overlap_edges.json thì 0/1073 cạnh bắc
+#   qua ranh giới ruộng. Cách block và flight cũng báo 0, nhưng 0 của chúng
+#   nằm trong phạm vi scope=flight.
+# - Không tốn khoảng đệm nào, nên số ẢNH train gần như không đổi so với block
+#   (567 so với 570 trung bình) — mất 34 ảnh đệm, được lại 37 ảnh không phải bỏ.
+# - Mọi ảnh đều vào tập train của ít nhất một lượt, như block, khác flight
+#   (flight để 20.2% bộ dữ liệu không bao giờ được học).
+#
+# Mất:
+# - Lượt nào cũng chỉ còn 4 ruộng để học thay vì 5. Không mất ảnh, mất một
+#   giọng nói: model không thấy điều kiện của ruộng val trong lúc train.
+# - Cỡ val nhảy 6 lần: field_6 có 48 ảnh (chọn checkpoint bằng 48 ảnh là nhiễu),
+#   field_1 có 280 ảnh tức 33% cả bộ.
+# - Mật độ val nhảy 6.9..25.1 vùng/ảnh trong khi cả bộ là 14.3. Lượt f2 chọn
+#   checkpoint bằng ruộng thưa nhất, lượt f3 bằng ruộng dày nhất. Đây đúng là
+#   chỗ block mạnh (block giữ val trong khoảng 12.7..15.9).
+#
+# Chạy scripts/compare_val_splits.py để xem cả ba bảng cạnh nhau.
+
+method: field
+
+# rotate: val xoay sang ruộng khác qua mỗi lượt. Tắt thì phải khai 'fields',
+#   vì không xoay mà không khai thì val luôn là ruộng đầu bảng chữ cái và ruộng
+#   đó không bao giờ vào tập train của lượt nào.
+rotate: true
+
+# fields: thu hẹp vòng xoay lại một nhóm, vd chỉ bốn ruộng nội suy:
+#
+#     fields: [field_1, field_2, field_4, field_6]
+#
+#   Bỏ trống là cả sáu ruộng đều có lượt làm val. Để trống làm mặc định vì thu
+#   hẹp lại thì ruộng ngoài nhóm không bao giờ được dùng để chọn checkpoint,
+#   mà field_3 và field_5 (hai ruộng ngoại suy) chính là chỗ cần biết model
+#   xoay xở ra sao.
+
+# Bảng cạnh dùng để ĐO lại rò rỉ sau khi chia, không phải để tin. Ở cách này
+# nó luôn trả 0 ảnh phải bỏ; giữ lại vì 0 đã đo khác 0 vì không nhìn.
+# Sinh ra bằng: python scripts/export_overlap_edges.py
+edges: configs/dataset/overlap_edges.json

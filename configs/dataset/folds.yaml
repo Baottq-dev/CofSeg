@@ -9,13 +9,17 @@
 # Gộp 6 fold lại thì mọi ảnh trong bộ đều có dự đoán từ một model chưa thấy
 # ruộng của nó -> bảng metric theo từng ruộng cho toàn bộ dữ liệu.
 #
-# File này KHÔNG khai val. Trước đây val là trọn một ruộng (field_2 hoặc
-# field_4), nhưng như vậy chỉ còn 4 ruộng để train trong khi yêu cầu của đồ án
-# là train 5 ruộng, test 1 ruộng. Val nay được cắt ở mức ẢNH bên trong chính
-# 5 ruộng train, theo một trong hai cách khai ở file riêng:
+# File này KHÔNG khai val. Cách chia val khai ở file riêng, vì có ba cách và
+# chúng cho ba bộ fold khác nhau — để cạnh nhau mà so, đừng chồng lên nhau:
 #
 #     configs/dataset/val_block.yaml    khối ảnh cuối mỗi đường bay, trượt theo lượt
 #     configs/dataset/val_flight.yaml   trọn hai đường bay cuối, cố định
+#     configs/dataset/val_field.yaml    trọn một ruộng, xoay vòng theo lượt
+#
+# Hai cách đầu cắt val ở mức ẢNH bên trong 5 ruộng train, nên vẫn train đủ 5
+# ruộng như yêu cầu của đồ án. Cách thứ ba cố ý trả lại một ruộng để đổi lấy
+# val nằm đúng điều kiện của test — train còn 4 ruộng, nhưng số ẢNH train gần
+# như không đổi vì nó không tốn khoảng đệm nào.
 #
 # Dùng:
 #     python scripts/make_fold.py --export data/export/dataset_v1 \
