@@ -285,3 +285,40 @@ def test_solov2_khong_ghim_mmengine_tu_pypi():
     doc = _req("solov2").read_text(encoding="utf-8")
     assert "mmengine" not in _pins(_lines(_req("solov2")))
     assert "github.com/open-mmlab/mmengine" in doc, "phải chỉ đường lấy từ git"
+
+
+# ------------------------------- nvcc của máy phải khớp major với torch
+def test_readme_bao_kiem_nvcc_truoc_khi_cai_torch():
+    """Bước xem nvcc phải đứng TRƯỚC lệnh cài torch đầu tiên.
+
+    Bỏ thứ tự này thì lỗi không rơi ở bước cài torch mà rơi tận lúc build
+    detectron2/mmcv, với một câu báo không nhắc gì tới torch:
+
+        RuntimeError: The detected CUDA version (12.8) mismatches the
+        version that was used to compile PyTorch (13.0)
+
+    Gặp thật trên máy Vast RTX 5090, 28/09/2026.
+    """
+    doc = (BENCH / "README.md").read_text(encoding="utf-8")
+    assert doc.index("nvcc --version") < doc.index("pip install torch=="), \
+        "lệnh cài torch đứng trước bước kiểm nvcc"
+    assert "mismatches the version" in doc, "thiếu câu báo lỗi để người ta tra ra"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [BENCH / m / "requirements.txt" for m in MODELS] + [BENCH / "requirements.txt"],
+    ids=lambda p: str(p.relative_to(ROOT)))
+def test_header_chi_duong_cho_may_nvcc_12(path):
+    """Header nêu lệnh cu130 làm mẫu, nhưng phần lớn ảnh máy thuê cho 5090 có
+    nvcc 12.8 — phải nói rõ đổi sang cu128, không thì lệnh mẫu là cái bẫy."""
+    doc = path.read_text(encoding="utf-8")
+    assert "cu128" in doc, f"{path.name}: lệnh mẫu không nhắc nhánh nvcc 12.x"
+
+
+def test_readme_neu_ca_hai_nhanh_torch_deu_cung_phien_ban():
+    """Đổi nhánh CUDA không được đổi phiên bản torch, không thì hai người cùng
+    nhóm chạy hai bản torch khác nhau mà tưởng là cùng."""
+    doc = (BENCH / "README.md").read_text(encoding="utf-8")
+    for pin in ("torch==2.11.0+cu130", "torch==2.11.0+cu128"):
+        assert pin in doc, f"thiếu {pin}"

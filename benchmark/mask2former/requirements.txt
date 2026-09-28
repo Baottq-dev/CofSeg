@@ -6,6 +6,10 @@
 #     git submodule update --init benchmark/mask2former/upstream
 #     pip install torch==2.11.0+cu130 torchvision==0.26.0+cu130 \
 #       --index-url https://download.pytorch.org/whl/cu130
+#
+# Máy có nvcc 12.8/12.9 (phần lớn ảnh máy thuê) thì đổi cu130 -> cu128 ở cả
+# hai chỗ: cùng phiên bản torch, chỉ khác bản dựng. Lệch major giữa nvcc và
+# torch.version.cuda là detectron2/mmcv gãy lúc build_ext. Xem Bước 0.
 #     pip install -r benchmark/mask2former/requirements.txt
 #     # rồi detectron2 + MSDeformAttn — xem benchmark/README.md
 #

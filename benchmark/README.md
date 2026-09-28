@@ -41,42 +41,89 @@ Sửa gì trong thư mục mình cũng được — kể cả `cofseg/`. Không 
 
 ## Dựng môi trường
 
-Ba bước, luôn theo thứ tự: **torch → gói của model → gói phải build từ nguồn**.
-Thứ tự bắt buộc vì `setup.py` của detectron2 và Mask2Former `import torch` ngay
-lúc build.
+Bốn bước, luôn theo thứ tự: **xem nvcc → torch → gói của model → gói phải build
+từ nguồn**. Thứ tự bắt buộc vì `setup.py` của detectron2 và Mask2Former
+`import torch` ngay lúc build, và vì torch phải khớp major với nvcc sẵn có.
 
 ```bash
 conda create -y -n cofseg python=3.12 && conda activate cofseg
 ```
 
+### Bước 0 — hỏi máy đang có nvcc bản nào
+
+```bash
+nvcc --version | tail -2
+nvidia-smi --query-gpu=name,compute_cap --format=csv
+```
+
+Bước này không bỏ được, và bỏ nó là hỏng ở Bước 3 chứ không phải ở đây. Ba gói
+ở Bước 3 đều biên dịch CUDA, mà `torch/utils/cpp_extension.py` so **major** của
+nvcc với major của `torch.version.cuda`: lệch major thì `raise`, lệch minor chỉ
+`warn`.
+
+```
+RuntimeError: The detected CUDA version (12.8) mismatches the version
+that was used to compile PyTorch (13.0)
+```
+
+Đúng lỗi này gặp trên máy Vast RTX 5090 ngày 28/09/2026: ảnh máy có nvcc 12.8,
+torch cài là `cu130`, detectron2 gãy ngay trong `build_ext`. mmcv và op
+MSDeformAttn của Mask2Former sẽ chết ở đúng chỗ đó.
+
+Hai đường cho khớp, chọn theo việc ai làm chủ cái toolkit:
+
+| máy | làm gì |
+|---|---|
+| máy thuê, ảnh đã có sẵn nvcc (Vast, Colab) | **đổi torch theo nvcc** — không phải tải lại toolkit ~3 GB tính tiền theo giờ |
+| máy mình, conda tự dựng | cài toolkit theo torch, xem mục *Cài mmcv* |
+
 ### Bước 1 — torch
 
-Bản torch phụ thuộc **kiến trúc GPU**, không phụ thuộc model. Vì vậy nó không
-nằm trong file requirements nào: ghim ở đó thì bốn file sẽ trôi ra xa nhau rồi
-không cài chung một env được nữa.
+Bản torch phụ thuộc **kiến trúc GPU và nvcc của máy**, không phụ thuộc model.
+Vì vậy nó không nằm trong file requirements nào: ghim ở đó thì bốn file sẽ trôi
+ra xa nhau rồi không cài chung một env được nữa.
+
+Hai nhánh dưới đây là **cùng một phiên bản torch**, chỉ khác bản dựng CUDA, nên
+đổi nhánh không làm lệch benchmark.
+
+nvcc **13.x**, hoặc máy chưa có nvcc (mục *Cài mmcv* sẽ dựng toolkit 13):
 
 ```bash
 pip install torch==2.11.0+cu130 torchvision==0.26.0+cu130 \
   --index-url https://download.pytorch.org/whl/cu130
 ```
 
-Kiểm ngay, đừng đợi:
+nvcc **12.8 hoặc 12.9** — phần lớn ảnh máy thuê cho 5090 nằm ở đây:
 
 ```bash
-python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 \
+  --index-url https://download.pytorch.org/whl/cu128
 ```
 
-CUDA 13 phủ `sm_75`–`sm_120`, tức từ Turing tới **Blackwell**: T4, RTX 20/30/40,
-L4, L40S, A40, A6000, A100, H100, **RTX 5090**, RTX PRO 6000, B200. Nó chỉ bỏ
-`sm_50`–`sm_70` (Maxwell, Pascal, Volta) — không card nào trong kế hoạch chạy.
+Kiểm ngay, đừng đợi — và kiểm cả hai con số phải khớp major:
 
-Cặp torch/torchvision hợp lệ khác trên `cu130`, nếu muốn đi cao hơn:
-`2.9.0/0.24.0`, `2.9.1/0.24.1`, `2.10.0/0.25.0`, `2.12.0/0.27.0`,
-`2.12.1/0.27.1`, `2.13.0/0.28.0`, `2.14.0/0.29.0`.
+```bash
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+CUDA 12.8 là bản **đầu tiên** có `sm_120`, nên nhánh `cu128` vẫn chạy Blackwell
+đầy đủ; nó còn giữ cả `sm_50`–`sm_70` mà CUDA 13 đã bỏ. CUDA 13 phủ `sm_75`–
+`sm_120`, tức từ Turing tới Blackwell: T4, RTX 20/30/40, L4, L40S, A40, A6000,
+A100, H100, **RTX 5090**, RTX PRO 6000, B200 — không card nào trong kế hoạch
+rơi ra ngoài. Nói cách khác, giữa hai nhánh không có card nào phải bỏ; chọn
+nhánh nào là do nvcc trên máy, không phải do GPU.
+
+Cặp torch/torchvision hợp lệ khác, nếu muốn đi cao hơn:
+
+| chỉ mục | torch/torchvision |
+|---|---|
+| `cu128` | `2.7.0/0.22.0`, `2.7.1/0.22.1`, `2.8.0/0.23.0`, `2.9.0/0.24.0`, `2.9.1/0.24.1`, `2.10.0/0.25.0` |
+| `cu130` | `2.9.0/0.24.0`, `2.9.1/0.24.1`, `2.10.0/0.25.0`, `2.12.0/0.27.0`, `2.12.1/0.27.1`, `2.13.0/0.28.0`, `2.14.0/0.29.0` |
 
 Chọn **2.11** làm mặc định vì đó là bản duy nhất ta có bằng chứng của chính
 mình — detectron2 0.6 (phát hành 2021) build và import được với torch 2.11 +
-Python 3.13. Lên 2.14 thì cả detectron2 lẫn mmcv đều chưa ai thử.
+Python 3.13. Lên 2.14 thì cả detectron2 lẫn mmcv đều chưa ai thử. 2.11 có mặt
+trên cả hai chỉ mục, nên nó không ràng buộc lựa chọn ở Bước 0.
 
 ### Vì sao không dùng cu121
 
@@ -171,10 +218,23 @@ chết, sau khi đã nạp xong dữ liệu.
 
 ## Cài mmcv
 
-Trên `cu130` mmcv **không có wheel** — phải build từ nguồn. Mất 20–120 phút,
-làm một lần cho mỗi env.
+Trên `cu128` lẫn `cu130` mmcv **không có wheel** — OpenMMLab dừng ở `cu118` và
+`cu121`, tới torch 2.4. Phải build từ nguồn. Mất 20–120 phút, làm một lần cho
+mỗi env.
 
 ### 1. Toolkit và biến môi trường
+
+**Máy đã có nvcc** (máy thuê, ảnh CUDA dựng sẵn) thì bỏ qua phần cài, chỉ trỏ
+`CUDA_HOME` vào toolkit sẵn có — với điều kiện Bước 1 đã chọn nhánh torch khớp
+major với nó:
+
+```bash
+export CUDA_HOME=$(dirname $(dirname $(which nvcc)))
+python -c "import torch; print(torch.version.cuda)" && nvcc --version | tail -2
+```
+
+**Máy tự dựng bằng conda** thì cài toolkit khớp với nhánh torch đã chọn —
+`13.0.3` cho `cu130`, `12.8.1` cho `cu128`:
 
 ```bash
 conda install -y -c nvidia cuda-toolkit=13.0.3
