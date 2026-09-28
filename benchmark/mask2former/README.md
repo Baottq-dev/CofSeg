@@ -80,7 +80,7 @@ không còn so được với ba model kia. Sửa thì báo nhóm.
 | Nguồn | https://github.com/facebookresearch/Mask2Former |
 | Commit ghim | `9b0651c` (20/05/2022, bản cuối của repo) |
 | License | MIT |
-| Dùng làm gì | `cofseg/models/detectron2.py` nạp `train_net.py` và gói `mask2former` làm module; op `MSDeformAttn` biên dịch tại chỗ bằng `scripts/setup_env.py` |
+| Dùng làm gì | `cofseg/models/detectron2.py` nạp `train_net.py` và gói `mask2former` làm module; op `MSDeformAttn` biên dịch tại chỗ — xem `benchmark/README.md` mục *Biên dịch op CUDA cho Mask2Former* |
 
 Repo con đi theo git: `git clone --recurse-submodules`, hoặc
 `git submodule update --init benchmark/mask2former/upstream` nếu đã clone rồi.

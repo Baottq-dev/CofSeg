@@ -4,9 +4,9 @@
 # CÀI torch TRƯỚC — file này cố ý KHÔNG ghim torch, xem benchmark/README.md.
 #
 #     git submodule update --init benchmark/mask2former/upstream
-#     python scripts/setup_env.py --only torch
+#     pip install torch==2.4.1+cu121 torchvision==0.19.1+cu121 --index-url https://download.pytorch.org/whl/cu121
 #     pip install -r benchmark/mask2former/requirements.txt
-#     python scripts/setup_env.py --only detectron2,mask2former
+#     # rồi detectron2 + MSDeformAttn — xem benchmark/README.md
 #
 # detectron2 không nằm ở đây — xem ../maskrcnn/requirements.txt để biết vì sao.
 
