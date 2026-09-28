@@ -69,9 +69,16 @@ từ nguồn. Hướng dẫn đầy đủ, kể cả cách build `mmcv` cho GPU 
 [`benchmark/README.md`](benchmark/README.md) mục *Dựng môi trường*.
 
 ```
-# 1. torch — CUDA 13, phủ Turing tới Blackwell (gồm RTX 5090)
+# 0. hỏi máy đang có nvcc bản nào — torch phải khớp MAJOR với nó
+nvcc --version | tail -2
+
+# 1. torch. nvcc 13.x:
 pip install torch==2.11.0+cu130 torchvision==0.26.0+cu130 \
   --index-url https://download.pytorch.org/whl/cu130
+
+#    nvcc 12.8/12.9 (phần lớn ảnh máy thuê cho 5090):
+pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 \
+  --index-url https://download.pytorch.org/whl/cu128
 
 # 2. gói của model — cả bốn vào một env
 pip install -r benchmark/requirements.txt
@@ -79,19 +86,34 @@ pip install -r benchmark/requirements.txt
 # 3. ba gói build từ nguồn: detectron2, mmcv, MSDeformAttn
 ```
 
+**Bước 0 không bỏ được.** Ba gói ở bước 3 đều biên dịch CUDA, và torch từ
+chối build khi major của nvcc lệch major của `torch.version.cuda` — báo lỗi
+ở `build_ext`, bằng một câu không hề nhắc tới torch:
+
+```
+RuntimeError: The detected CUDA version (12.8) mismatches the version
+that was used to compile PyTorch (13.0)
+```
+
+Hai nhánh là **cùng một phiên bản torch**, chỉ khác bản dựng CUDA, nên đổi
+nhánh không làm lệch benchmark.
+
 Không file requirements nào ghim torch: bản torch phụ thuộc **kiến trúc GPU**
 chứ không phụ thuộc model. Ghim trong từng file là cách chắc chắn để bốn file
 trôi ra xa nhau rồi không cài chung một env được nữa.
 
-| torch | GPU | mmcv |
-|---|---|---|
-| **2.11.0+cu130** (mặc định) | `sm_75`–`sm_120`: T4, RTX 20/30/40, L4, L40S, A40, A6000, A100, H100, **RTX 5090**, RTX PRO 6000, B200 | **build từ nguồn**, 20–120 phút |
-| 2.4.1+cu121 | `sm_50`–`sm_90` — **không có Blackwell** | wheel dựng sẵn, vài giây |
+| torch | chọn khi | GPU | mmcv |
+|---|---|---|---|
+| **2.11.0+cu130** | máy có nvcc 13.x, hoặc tự dựng toolkit | `sm_75`–`sm_120`: T4, RTX 20/30/40, L4, L40S, A40, A6000, A100, H100, **RTX 5090**, RTX PRO 6000, B200 | **build từ nguồn**, 20–120 phút |
+| **2.11.0+cu128** | máy có sẵn nvcc 12.8/12.9 | `sm_50`–`sm_120`, cũng gồm **RTX 5090** | **build từ nguồn**, 20–120 phút |
+| 2.4.1+cu121 | không bao giờ đụng Blackwell | `sm_50`–`sm_90` — **không có Blackwell** | wheel dựng sẵn, vài giây |
 
-`cu121` cài nhanh hơn vì mmcv có wheel ở đó, nhưng torch 2.4/cu121 ra đời
-**trước** Blackwell nên không có kernel `sm_120`: trên RTX 5090 nó chết ngay
-lời gọi kernel đầu tiên. Mặc định đi `cu130` và chấp nhận một lần biên dịch
-mmcv — OpenMMLab chỉ phát hành cu118/cu121 tới torch 2.4, không có gì mới hơn.
+CUDA 12.8 là bản **đầu tiên** có `sm_120`, nên cả hai nhánh trên đều chạy
+5090; chọn nhánh nào là do nvcc trên máy, không phải do GPU. `cu121` cài
+nhanh hơn vì mmcv có wheel ở đó, nhưng torch 2.4/cu121 ra đời **trước**
+Blackwell nên không có kernel `sm_120`: trên RTX 5090 nó chết ngay lời gọi
+kernel đầu tiên. Hai nhánh còn lại đều phải biên dịch mmcv một lần —
+OpenMMLab chỉ phát hành cu118/cu121 tới torch 2.4, không có gì mới hơn.
 
 Chạy benchmark **không cần** `pip install -e .`: mỗi thư mục tự chứa bản
 `cofseg/` riêng và `train.py` tự thêm thư mục của nó vào `sys.path`.

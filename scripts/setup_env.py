@@ -60,9 +60,14 @@ TORCH = {
     #   2.12.1/0.27.1 2.13.0/0.28.0 2.14.0/0.29.0
     # ĐỔI SANG ĐÂY LÀ mmcv MẤT WHEEL: phải --build-mmcv.
     "130": ["torch==2.11.0+cu130", "torchvision==0.26.0+cu130"],
+    # Cùng torch 2.11, khác bản dựng CUDA. Dành cho máy ĐÃ CÓ nvcc 12.8/12.9
+    # (phần lớn ảnh máy thuê cho 5090): torch phải khớp major với nvcc sẵn có,
+    # và đổi torch rẻ hơn tải một toolkit thứ hai về máy tính tiền theo giờ.
+    # CUDA 12.8 là bản đầu tiên có sm_120, nên vẫn đủ cho Blackwell.
+    "128": ["torch==2.11.0+cu128", "torchvision==0.26.0+cu128"],
 }
 #: cuXXX -> nhãn kênh conda nvidia, để thông báo lỗi đưa đúng lệnh cài.
-CONDA_LABEL = {"12.1": "12.1.1", "13.0": "13.0.3"}
+CONDA_LABEL = {"12.1": "12.1.1", "12.8": "12.8.1", "13.0": "13.0.3"}
 
 #: Bản CUDA đang chọn, đặt bởi --cuda. Mặc định CUDA 13: nó phủ Turing tới
 #: Blackwell, còn cu121 không chạy được trên RTX 50xx.
@@ -184,13 +189,14 @@ def step_check() -> None:
             f"    conda install -y -c nvidia/label/cuda-{cuda_full} cuda-toolkit\n"
             "    which nvcc && nvcc --version        # phải trỏ vào env và ra "
             f"{cuda_tag}\n\n"
-            "Cách nhanh nhất: bỏ hẳn phần biên dịch. Train vẫn dùng GPU, chỉ\n"
-            "Mask2Former chậm hơn:\n\n"
-            "    python scripts/setup_env.py --skip-cuda-build\n\n"
-            "Muốn biên dịch thật thì cần cả toolkit ĐẦY ĐỦ lẫn g++ <= 12 —\n"
-            "cuda-nvcc một mình không đủ (thiếu cusparse.h, cublas_v2.h):\n\n"
-            f"Vì sao không nâng torch cho khớp CUDA {got[0]}: mmcv (SOLOv2) chỉ có wheel dựng\n"
-            f"sẵn cho torch 2.4 / cu{cuda_tag.replace('.', '')}; index cho CUDA mới hơn không tồn tại.")
+            "(cuda-nvcc một mình KHÔNG đủ: thiếu cusparse.h, cublas_v2.h.)\n\n"
+            "Hoặc ĐỔI CHIỀU — đưa torch về khớp nvcc sẵn có. Trên máy thuê đây là\n"
+            "đường rẻ hơn: cùng phiên bản torch, chỉ khác bản dựng CUDA, nên\n"
+            "benchmark không lệch:\n\n"
+            f"    python scripts/setup_env.py --cuda {got[0]}{got[1]} --only torch\n\n"
+            "Cách nhanh nhất nếu không cần tốc độ Mask2Former: bỏ hẳn biên dịch.\n"
+            "Train vẫn dùng GPU:\n\n"
+            "    python scripts/setup_env.py --skip-cuda-build")
     if got and got != want:
         print(f"  (nvcc {got[0]}.{got[1]} vs torch cu{cuda_tag.replace('.', '')} — lệch minor, "
               "thường build được)")
@@ -479,8 +485,10 @@ def main(argv=None) -> int:
                          "Blackwell (sm_120): wheel duy nhất của OpenMMLab là "
                          "torch 2.4/cu121, ra đời trước kiến trúc đó. Mất 20-120 phút")
     ap.add_argument("--cuda", default="130", choices=sorted(TORCH),
-                    help="chỉ mục CUDA của torch. 130 (mặc định) = CUDA 13, phủ "
-                         "Turing tới Blackwell, mmcv phải --build-mmcv. "
+                    help="chỉ mục CUDA của torch, chọn theo nvcc SẴN CÓ trên máy. "
+                         "130 (mặc định) = CUDA 13, phủ Turing tới Blackwell. "
+                         "128 = cùng torch nhưng dựng bằng CUDA 12.8, cho máy đã có "
+                         "nvcc 12.x. Cả hai đều phải --build-mmcv. "
                          "121 = chỉ GPU đời trước Blackwell, nhưng mmcv có wheel")
     a = ap.parse_args(argv)
 

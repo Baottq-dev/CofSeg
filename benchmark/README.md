@@ -137,7 +137,8 @@ RuntimeError: CUDA error: no kernel image is available for execution on the devi
 
 Và đường cứu PTX JIT cũng hỏng trên Blackwell (thiếu `libnvptxcompiler.so`).
 
-Đổi lại, `cu130` nghĩa là **mmcv phải build từ nguồn** — OpenMMLab chỉ phát
+Đổi lại, cả `cu128` lẫn `cu130` đều nghĩa là **mmcv phải build từ nguồn** —
+OpenMMLab chỉ phát
 hành `cu118` và `cu121`, tới torch 2.4; dò trực tiếp thì mọi tổ hợp
 `cu124`/`cu128`/`cu130` và `torch2.5+` đều trả 404. Mục *Cài mmcv* nói đủ.
 
@@ -237,7 +238,8 @@ python -c "import torch; print(torch.version.cuda)" && nvcc --version | tail -2
 `13.0.3` cho `cu130`, `12.8.1` cho `cu128`:
 
 ```bash
-conda install -y -c nvidia cuda-toolkit=13.0.3
+conda install -y -c nvidia cuda-toolkit=13.0.3    # nhánh cu130
+# conda install -y -c nvidia cuda-toolkit=12.8.1  # nhánh cu128
 export CUDA_HOME=$CONDA_PREFIX
 export CPATH=$CONDA_PREFIX/targets/x86_64-linux/include:$CPATH
 export LIBRARY_PATH=$CONDA_PREFIX/targets/x86_64-linux/lib:$LIBRARY_PATH
@@ -246,8 +248,10 @@ export LIBRARY_PATH=$CONDA_PREFIX/targets/x86_64-linux/lib:$LIBRARY_PATH
 `CPATH` và `LIBRARY_PATH` **không bỏ được**: gói conda để header ở
 `targets/x86_64-linux/`, chỉ đặt `CUDA_HOME` thì nvcc không thấy `cusparse.h`.
 
-CUDA 13 nhận host compiler tới **GCC 15**, nên không phải ghim `g++` như CUDA
-12.1 (nvcc 12.1 từ chối g++ mới hơn 12).
+Trần host compiler khác nhau theo nhánh: nvcc 13.x nhận tới **GCC 15**, nvcc
+12.8 tới **GCC 14**. Cả hai đều cao hơn `g++` mà Ubuntu 22.04 mang sẵn (11)
+nên không nhánh nào phải ghim `g++` — chỉ đường *(cu121)* mới phải, vì nvcc
+12.1 từ chối g++ mới hơn 12.
 
 ### 2. Build
 
@@ -315,8 +319,13 @@ Nhờ `FORCE_CUDA=1`, câu hỏi *"mmcv có compile nổi với torch mới khô
 được trên **bất kỳ máy Linux nào có nvcc** — không phải thuê 5090 trước:
 
 ```bash
+# nhánh cu130
 docker run --rm -it nvidia/cuda:13.0.1-cudnn-devel-ubuntu22.04 bash
 pip install torch==2.11.0+cu130 --index-url https://download.pytorch.org/whl/cu130
+
+# nhánh cu128 — đổi cả ảnh docker lẫn chỉ mục, giữ nguyên phần dưới
+# docker run --rm -it nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04 bash
+# pip install torch==2.11.0+cu128 --index-url https://download.pytorch.org/whl/cu128
 git clone --branch v2.2.0 --depth 1 https://github.com/open-mmlab/mmcv.git
 cd mmcv && FORCE_CUDA=1 MMCV_WITH_OPS=1 TORCH_CUDA_ARCH_LIST="12.0" MAX_JOBS=4 \
   pip install --no-build-isolation -e .
@@ -370,8 +379,9 @@ imgsz 1024, batch 16  ->  3.94 GiB mỗi lớp  -> 23.6 GiB  -> OOM trên card 2
 
 ### Biên dịch
 
-`cuda-toolkit=13.0.3` đã cài ở mục *Cài mmcv*, và các biến môi trường ở đó vẫn
-đang có hiệu lực. Không có gì thêm phải chuẩn bị:
+Toolkit và các biến môi trường đã xong ở mục *Cài mmcv*, đi nhánh nào cũng vậy
+— kể cả nhánh trỏ `CUDA_HOME` vào nvcc sẵn có của máy thuê. Không có gì thêm
+phải chuẩn bị:
 
 ```bash
 pip install --no-build-isolation --no-deps \
@@ -389,7 +399,8 @@ conda install -y -c nvidia/label/cuda-12.1.1 cuda-toolkit
 conda install -y -c conda-forge gxx_linux-64=12
 ```
 
-Đây là một lý do nữa để đi `cu130`: CUDA 13 nhận host compiler tới GCC 15.
+Đây là một lý do nữa để đi CUDA 12.8 trở lên: nvcc 12.8 nhận host compiler
+tới GCC 14, nvcc 13.x tới GCC 15 — không nhánh nào phải hạ cấp `g++`.
 
 ### Không biên dịch được
 

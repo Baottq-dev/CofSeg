@@ -319,6 +319,30 @@ def test_header_chi_duong_cho_may_nvcc_12(path):
 def test_readme_neu_ca_hai_nhanh_torch_deu_cung_phien_ban():
     """Đổi nhánh CUDA không được đổi phiên bản torch, không thì hai người cùng
     nhóm chạy hai bản torch khác nhau mà tưởng là cùng."""
+    for path in (ROOT / "README.md", BENCH / "README.md"):
+        doc = path.read_text(encoding="utf-8")
+        for pin in ("torch==2.11.0+cu130", "torch==2.11.0+cu128"):
+            assert pin in doc, f"{path.name}: thiếu {pin}"
+
+
+def test_huong_dan_toolkit_khong_ghim_cung_mot_ban():
+    """Lệnh cài toolkit phải nêu cả hai bản. Chỉ ghi 13.0.3 thì người đi nhánh
+    cu128 làm theo là dựng ra đúng cái lệch major đã làm gãy detectron2."""
     doc = (BENCH / "README.md").read_text(encoding="utf-8")
-    for pin in ("torch==2.11.0+cu130", "torch==2.11.0+cu128"):
-        assert pin in doc, f"thiếu {pin}"
+    if "cuda-toolkit=13.0.3" in doc:
+        assert "cuda-toolkit=12.8.1" in doc, "chỉ nêu toolkit 13, thiếu nhánh 12.8"
+
+
+def test_setup_env_co_nhanh_cho_nvcc_12(setup_env):
+    """Script phải làm được đúng thứ README bảo: đổi torch theo nvcc sẵn có.
+
+    Thiếu nhánh này thì trên máy thuê nvcc 12.8 chỉ còn hai lựa chọn tồi —
+    tải toolkit 13 về máy tính tiền theo giờ, hoặc tụt về cu121 và mất sm_120.
+    """
+    assert "128" in setup_env.TORCH
+    assert setup_env.TORCH["128"] == ["torch==2.11.0+cu128", "torchvision==0.26.0+cu128"]
+    # Cùng phiên bản torch ở cả hai nhánh, chỉ khác bản dựng: đổi nhánh không
+    # được làm lệch benchmark.
+    ver = {v[0].split("+")[0] for k, v in setup_env.TORCH.items() if k != "121"}
+    assert ver == {"torch==2.11.0"}, f"hai nhánh lệch phiên bản torch: {ver}"
+    assert "12.8" in setup_env.CONDA_LABEL, "thiếu nhãn toolkit cho nhánh cu128"
