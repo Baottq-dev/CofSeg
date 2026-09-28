@@ -152,19 +152,21 @@ python -m uvicorn app.server:app --host 0.0.0.0 --port 1801
 python scripts/inspect_flights.py --export data/export/dataset_v1
 python scripts/export_overlap_edges.py
 
-# 2. cắt fold. Sáu lượt như nhau (mỗi ruộng làm test một lần, train năm ruộng
-#    còn lại), khác nhau ở cách cắt val. Nhóm chạy CẢ HAI cách nên cắt cả hai bộ.
+# 2. cắt fold. Sáu lượt như nhau (mỗi ruộng làm test một lần), khác nhau ở
+#    cách cắt val. Nhóm chạy CẢ BA cách nên cắt cả ba bộ: val cùng đường bay
+#    với train, val khác đường bay, val khác hẳn ruộng.
 python scripts/make_fold.py --export data/export/dataset_v1 --val configs/dataset/val_block.yaml --all --out-root data/export/block
 python scripts/make_fold.py --export data/export/dataset_v1 --val configs/dataset/val_flight.yaml --all --out-root data/export/flight
+python scripts/make_fold.py --export data/export/dataset_v1 --val configs/dataset/val_field.yaml --all --out-root data/export/field
 
-# 3. bảng so hai cách chia trên cả sáu lượt (số liệu cho báo cáo)
+# 3. bảng so ba cách chia trên cả sáu lượt (số liệu cho báo cáo)
 python scripts/compare_val_splits.py
 
 # trên máy Linux, gộp bước giải nén và cắt fold làm một
 python scripts/prepare_data.py all_v2.tar --val configs/dataset/val_block.yaml
 
 # 4. mỗi người chạy model của mình: lệnh trong benchmark/<model>/README.md
-#    12 lượt mỗi model (6 fold x 2 bộ), cả nhóm 48 lượt
+#    18 lượt mỗi model (6 fold x 3 bộ), cả nhóm 72 lượt
 
 # 5. bảng model x ruộng từ kết quả của cả bốn thư mục
 python scripts/summarize_folds.py --eval benchmark/*/runs/eval

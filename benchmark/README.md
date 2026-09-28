@@ -362,8 +362,8 @@ torchvision.
 ## Chạy
 
 Cắt fold một lần cho cả nhóm, từ gốc repo. Sáu lượt luôn giống nhau (mỗi ruộng
-làm test một lần, train năm ruộng còn lại); khác nhau ở chỗ cắt val ra sao.
-Nhóm chạy **cả hai cách**, nên cắt cả hai bộ fold:
+làm test một lần, các ruộng còn lại train); khác nhau ở chỗ cắt val ra sao.
+Nhóm chạy **cả ba cách**, nên cắt cả ba bộ fold:
 
 ```bash
 # bộ 1: khối ảnh cuối mỗi đường bay, trượt theo lượt, đệm theo đồ thị chồng lấn
@@ -372,16 +372,40 @@ python scripts/make_fold.py --export data/export/dataset_v1 --val configs/datase
 # bộ 2: trọn hai đường bay cuối (field_1/10/4 + field_2/10/2), cố định
 python scripts/make_fold.py --export data/export/dataset_v1 --val configs/dataset/val_flight.yaml --all --out-root data/export/flight
 
-# bảng so hai cách trên cả sáu lượt (để viết báo cáo, không phải để chọn một)
+# bộ 3: trọn một ruộng làm val, xoay vòng — val là ruộng kế tiếp ruộng test
+python scripts/make_fold.py --export data/export/dataset_v1 --val configs/dataset/val_field.yaml --all --out-root data/export/field
+
+# bảng so ba cách trên cả sáu lượt (để viết báo cáo, không phải để chọn một)
 python scripts/compare_val_splits.py
 ```
 
-Ra 12 thư mục fold. Ảnh được hardlink nên gần như không tốn thêm đĩa.
+Ra 18 thư mục fold. Ảnh được hardlink nên gần như không tốn thêm đĩa.
 
-**Mỗi model chạy 12 lượt**: 6 fold x 2 bộ. Cả nhóm là 48 lượt. Lệnh trong
+Ba bộ khác nhau ở **khoảng cách giữa val và train**, và đó là điều đáng viết
+trong báo cáo:
+
+| bộ | val nằm ở đâu | train | val TB | đệm TB |
+|---|---|---|---|---|
+| `block` | cùng đường bay với train | 5 ruộng | 105 ảnh | 34 ảnh |
+| `flight` | khác đường bay, cùng ruộng | 5 ruộng | 110 ảnh | 33 ảnh |
+| `field` | **khác ruộng** — đúng điều kiện của test | 4 ruộng | 142 ảnh | 0 ảnh |
+
+Chỉ bộ `field` chọn checkpoint bằng thước đo giống thước sẽ chấm nó. Hai bộ
+kia chọn bằng ảnh cùng mảnh đất với train, tức lạc quan hơn test; nếu `field`
+cho số thấp hơn thì chênh lệch đó chính là phần lạc quan, đo được.
+
+Bộ `field` mất một ruộng trong train nhưng **gần như không mất ảnh** (567 so
+với 570 của `block`): nó không phải trả khoảng đệm nào, vì hai ruộng là hai
+mảnh đất không dính nhau. Chỗ nó yếu là val nhảy 48..280 ảnh và 6.9..25.1
+vùng/ảnh tuỳ lượt, trong khi `block` giữ val quanh 12.7..15.9.
+
+**Mỗi model chạy 18 lượt**: 6 fold x 3 bộ. Cả nhóm là 72 lượt. Lệnh trong
 README của từng model viết sẵn cho `data/export/block/f1`; đổi `block` thành
-`flight` hoặc `f1` thành `f2`..`f6` là ra các lượt còn lại. Số của hai bộ là
-hai thí nghiệm khác nhau — so trong cùng một bộ, đừng so chéo.
+`flight` hoặc `field`, hoặc `f1` thành `f2`..`f6`, là ra các lượt còn lại. Số
+của ba bộ là ba thí nghiệm khác nhau — so trong cùng một bộ, đừng so chéo.
+
+Thiếu giờ máy thì cắt đủ 18 thư mục nhưng chạy bộ thứ ba trên hai lượt sàng
+`f4` và `f2` (khai sẵn ở `screening` trong `folds.yaml`) trước, rồi quyết.
 
 Sau đó **mỗi người chạy model của mình** — lệnh cụ thể nằm trong README của
 từng thư mục. Không có script chạy cả bốn: mỗi model một framework, một lịch,
@@ -409,13 +433,13 @@ runs/train/2026-09-25_091500_maskrcnn_block-f4_i1024b4e50/
 ```
 
 **Tên file trong `preds/` và `results/` thì PHẢI có bộ fold**, vì đó là file
-thường do người gõ đặt tên: hai bộ cùng đánh số f1..f6 nên
+thường do người gõ đặt tên: ba bộ cùng đánh số f1..f6 nên
 `preds/maskrcnn_f4.json` của bộ này sẽ đè của bộ kia.
 
 Gộp kết quả bốn người thành bảng model × ruộng:
 
 ```bash
-# cả hai bộ trong một bảng, có cột "bộ fold"
+# cả ba bộ trong một bảng, có cột "bộ fold"
 python scripts/summarize_folds.py --eval benchmark/*/runs/eval
 
 # chỉ một bộ
