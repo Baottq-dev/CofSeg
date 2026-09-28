@@ -226,11 +226,41 @@ def test_shipped_val_recipes_are_valid():
     from canopyseg.datasets import valsplit
     block = valsplit.load_recipe("configs/dataset/val_block.yaml")
     flight = valsplit.load_recipe("configs/dataset/val_flight.yaml")
+    field = valsplit.load_recipe("configs/dataset/val_field.yaml")
     assert block["method"] == "block" and block["rotate"] is True
     assert flight["method"] == "flight" and flight["buffer"] >= 0
-    # Cả hai phải trỏ tới bảng cạnh có thật, không thì rò rỉ báo 0 vì không biết.
-    for r in (block, flight):
+    assert field["method"] == "field" and field["rotate"] is True
+    # Cả ba phải trỏ tới bảng cạnh có thật, không thì rò rỉ báo 0 vì không biết.
+    for r in (block, flight, field):
         assert (pathlib.Path(r["edges"])).exists(), r["_path"]
+
+
+def test_shipped_field_recipe_rotates_every_field_through_val(flight_run):
+    """Công thức val_field trên chính folds.yaml đang dùng: mỗi ruộng làm val
+    đúng một lượt, và không lượt nào lấy ruộng test của mình làm val.
+
+    Test này khoá hình vuông Latin vào cấu hình THẬT. Đổi thứ tự fold trong
+    folds.yaml, hay tắt rotate, là mất tính chất đó mà nhìn file không thấy.
+    """
+    from canopyseg.datasets import flightlog, valsplit
+    from canopyseg.datasets.overlap_graph import empty
+
+    doc = foldmod.load_folds("configs/dataset/folds.yaml")
+    recipe = valsplit.load_recipe("configs/dataset/val_field.yaml")
+    order = sorted(doc["folds"])
+    names = [n for k, f in enumerate(doc["fields"])
+             for n in flight_run(f, "10", "20260301", 70000 + 100 * (k + 1), 1, 4)]
+
+    chosen = {}
+    for k, name in enumerate(order):
+        fields = foldmod.fold_fields(doc, name)
+        keep = set(fields["train"])
+        pool = flightlog.frames([n for n in names if foldmod.field_of(n) in keep])
+        a = valsplit.apply(recipe, pool, empty(), slot=k, n_slots=len(order))
+        chosen[name] = a.why["val_field"]
+        assert a.why["val_field"] not in fields["test"], name
+
+    assert sorted(chosen.values()) == sorted(doc["fields"])
 
 
 # ------------------------------------------------- val chọn ở mức ẢNH
@@ -292,3 +322,18 @@ def test_an_image_cannot_be_val_and_buffer_at_once(export, tmp_path):
         foldmod.make_fold(export, "f3", FIVE, tmp_path / "f3",
                           val_images=["field_2__10__1__b.jpg"],
                           drop_images=["field_2__10__1__b.jpg"])
+
+
+def test_a_whole_field_can_be_val(export, tmp_path):
+    """Cách thứ ba đi qua đúng cửa val_images= như hai cách kia: không có
+    nhánh riêng nào trong make_fold, chỉ là tập ảnh val to bằng cả một ruộng."""
+    out = tmp_path / "f3"
+    whole = ["field_2__10__1__a.jpg", "field_2__10__1__b.jpg"]
+    s = foldmod.make_fold(export, "f3", FIVE, out, val_images=whole)
+    assert s["splits"]["val"]["fields"] == ["field_2"]
+    assert s["splits"]["val"]["images"] == 2
+    # field_2 rời hẳn khỏi train; train còn đúng ruộng còn lại.
+    assert s["splits"]["train"]["fields"] == ["field_1"]
+    assert s["dropped"]["count"] == 0
+    for n in whole:
+        assert (out / "images" / "val" / n).exists()

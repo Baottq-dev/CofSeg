@@ -7,6 +7,11 @@ val nào còn cạnh chồng lấn sang train. Mọi thứ khác (khối to bao 
 
 from __future__ import annotations
 
+from collections import Counter
+
+import pytest
+import yaml
+
 from canopyseg.datasets import flightlog, valsplit
 from canopyseg.datasets.overlap_graph import Graph
 
@@ -247,3 +252,152 @@ def test_buffer_zero_drops_nothing_at_the_seam(flight_run):
     a = valsplit.by_flight(fs, g, flights=["field_1/10/2"], buffer=0)
     assert a.drop == set()
     assert a.why["junctions"][0]["buffered"] == 0
+
+
+# ------------------------------------------------------- trọn một ruộng
+def six_fields(flight_run, n=12):
+    """Sáu ruộng, mỗi ruộng một đường bay — đủ để thử vòng xoay."""
+    return frames(*[flight_run(f"field_{i}", "10", "20260301", 70000 + 100 * i, 1, n)
+                    for i in range(1, 7)])
+
+
+def leave_out(fs, field):
+    """Pool của một lượt: mọi ruộng trừ ruộng test."""
+    return [f for f in fs if f.field != field]
+
+
+def test_field_split_takes_one_whole_field(flight_run):
+    fs = leave_out(six_fields(flight_run), "field_1")
+    g = sequential_graph(fs)
+    a = valsplit.by_field(fs, g, slot=0)
+    assert a.why["val_field"] == "field_2"
+    assert a.val == {f.file_name for f in fs if f.field == "field_2"}
+    assert {f.field for f in fs if f.file_name not in a.val} == {
+        "field_3", "field_4", "field_5", "field_6"}
+
+
+def test_a_whole_field_val_costs_no_buffer(flight_run):
+    """Hai ruộng là hai mảnh đất: không cạnh nào bắc qua, nên không phải bỏ
+    ảnh nào. Đây là chỗ cách này rẻ hơn cắt khối."""
+    fs = leave_out(six_fields(flight_run), "field_1")
+    g = sequential_graph(fs, reach=3)
+    a = valsplit.by_field(fs, g, slot=0)
+    assert a.drop == set()
+    assert a.why["edges_cut"] == 0
+    assert leak(a, fs, g) == []
+
+
+def test_every_field_is_val_exactly_once_across_the_six_folds(flight_run):
+    """Hình vuông Latin: mỗi ruộng test một lần, val một lần, train bốn lần.
+    Ghim cứng một ruộng thì lượt test đúng ruộng đó không còn val, mà xoay
+    lệch nhịp thì có ruộng làm val hai lần còn ruộng khác không lần nào."""
+    fs = six_fields(flight_run)
+    g = sequential_graph(fs)
+    all_fields = sorted({f.field for f in fs})
+
+    as_val, as_train = Counter(), Counter()
+    for slot, test in enumerate(all_fields):
+        pool = leave_out(fs, test)
+        a = valsplit.by_field(pool, g, slot=slot)
+        as_val[a.why["val_field"]] += 1
+        for f in pool:
+            if f.file_name not in a.val and f.file_name not in a.drop:
+                as_train[f.field] += 1
+
+    assert dict(as_val) == {f: 1 for f in all_fields}
+    assert sorted(as_train) == all_fields
+    assert {n // 12 for n in as_train.values()} == {4}      # mỗi ruộng train 4 lượt
+
+
+def test_the_ring_moves_one_step_past_the_test_field(flight_run):
+    fs = six_fields(flight_run)
+    g = sequential_graph(fs)
+    got = {}
+    for slot, test in enumerate(sorted({f.field for f in fs})):
+        a = valsplit.by_field(leave_out(fs, test), g, slot=slot)
+        got[test] = a.why["val_field"]
+    assert got == {"field_1": "field_2", "field_2": "field_3", "field_3": "field_4",
+                   "field_4": "field_5", "field_5": "field_6", "field_6": "field_1"}
+
+
+def test_the_ring_can_be_narrowed_to_a_few_fields(flight_run):
+    """Thu hẹp vòng xoay: chỉ vài ruộng được làm val, các ruộng khác luôn train."""
+    fs = leave_out(six_fields(flight_run), "field_1")
+    g = sequential_graph(fs)
+    seen = {valsplit.by_field(fs, g, fields=["field_3", "field_5"], slot=s).why["val_field"]
+            for s in range(4)}
+    assert seen == {"field_3", "field_5"}
+
+
+def test_a_field_that_is_out_on_test_duty_drops_out_of_the_ring(flight_run):
+    """Ruộng test không có trong frames, nên nó tự rơi khỏi vòng — không phải
+    khai riêng cho từng lượt."""
+    fs = leave_out(six_fields(flight_run), "field_3")
+    g = sequential_graph(fs)
+    a = valsplit.by_field(fs, g, fields=["field_3", "field_5"], slot=0)
+    assert a.why["val_field"] == "field_5"
+    assert a.why["ring"] == ["field_5"]
+    assert a.why["requested"] == ["field_3", "field_5"]
+
+
+def test_an_empty_ring_says_what_was_available(flight_run):
+    fs = leave_out(six_fields(flight_run), "field_2")
+    g = sequential_graph(fs)
+    with pytest.raises(ValueError, match="field_2"):
+        valsplit.by_field(fs, g, fields=["field_2"], slot=0)
+
+
+def test_why_records_the_chosen_field_for_fold_json(flight_run):
+    fs = leave_out(six_fields(flight_run), "field_1")
+    g = sequential_graph(fs)
+    a = valsplit.by_field(fs, g, slot=3)
+    assert a.why["method"] == "field"
+    assert a.why["val_field"] == "field_5" and a.why["slot"] == 3
+    assert a.why["ring"] == ["field_2", "field_3", "field_4", "field_5", "field_6"]
+    assert a.why["graph_scope"] == "flight" and a.why["buffer"] == "graph"
+
+
+def test_audit_sees_one_field_in_val_and_four_in_train(flight_run):
+    fs = leave_out(six_fields(flight_run), "field_1")
+    g = sequential_graph(fs)
+    a = valsplit.by_field(fs, g, slot=0)
+    rep = valsplit.audit(a, fs, g, {f.file_name: 5 for f in fs})
+    assert rep["val_fields"] == {"field_2": 12}
+    assert rep["val"]["images"] == 12 and rep["train"]["images"] == 48
+    assert rep["dropped"]["images"] == 0
+    assert rep["leak"]["val_images_touching_train"] == 0
+
+
+# ------------------------------------------------------------- công thức
+def recipe(tmp_path, **doc):
+    p = tmp_path / "val.yaml"
+    p.write_text(yaml.safe_dump(doc), encoding="utf-8")
+    return p
+
+
+def test_apply_routes_the_field_method_and_rotates_by_default(tmp_path, flight_run):
+    fs = leave_out(six_fields(flight_run), "field_1")
+    g = sequential_graph(fs)
+    r = valsplit.load_recipe(recipe(tmp_path, method="field"))
+    assert valsplit.apply(r, fs, g, slot=2).why["val_field"] == "field_4"
+
+
+def test_rotate_off_pins_the_first_field_of_the_ring(tmp_path, flight_run):
+    fs = leave_out(six_fields(flight_run), "field_1")
+    g = sequential_graph(fs)
+    r = valsplit.load_recipe(recipe(tmp_path, method="field", rotate=False,
+                                    fields=["field_4", "field_6"]))
+    assert {valsplit.apply(r, fs, g, slot=s).why["val_field"] for s in range(3)} \
+        == {"field_4"}
+
+
+def test_rotate_off_without_a_field_list_is_refused(tmp_path):
+    """Không xoay mà không khai ruộng thì val luôn là ruộng đầu bảng chữ cái,
+    và ruộng đó không vào tập train của lượt nào — im lặng mất một ruộng."""
+    with pytest.raises(ValueError, match="rotate=false"):
+        valsplit.load_recipe(recipe(tmp_path, method="field", rotate=False))
+
+
+def test_an_empty_field_list_is_refused(tmp_path):
+    with pytest.raises(ValueError, match="rỗng"):
+        valsplit.load_recipe(recipe(tmp_path, method="field", fields=[]))
