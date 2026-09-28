@@ -64,8 +64,9 @@ TORCH = {
 #: cuXXX -> nhãn kênh conda nvidia, để thông báo lỗi đưa đúng lệnh cài.
 CONDA_LABEL = {"12.1": "12.1.1", "13.0": "13.0.3"}
 
-#: Bản CUDA đang chọn, đặt bởi --cuda.
-CUDA = "121"
+#: Bản CUDA đang chọn, đặt bởi --cuda. Mặc định CUDA 13: nó phủ Turing tới
+#: Blackwell, còn cu121 không chạy được trên RTX 50xx.
+CUDA = "130"
 
 
 def torch_cuda_tag() -> str:
@@ -81,8 +82,9 @@ SKIP_CUDA_BUILD = False
 #: Model được cài trong lượt này. Mặc định rỗng = chỉ app/ + canopyseg.
 MODELS: list[str] = []
 
-#: True = build mmcv từ nguồn thay vì lấy wheel. Xem step_mmcv.
-BUILD_MMCV = False
+#: True = build mmcv từ nguồn thay vì lấy wheel. Bật mặc định vì --cuda mặc
+#: định là 130, mà ở đó không có wheel nào. Xem step_mmcv.
+BUILD_MMCV = True
 
 
 class Step:
@@ -476,15 +478,15 @@ def main(argv=None) -> int:
                     help="build mmcv từ nguồn thay vì lấy wheel. Bắt buộc trên GPU "
                          "Blackwell (sm_120): wheel duy nhất của OpenMMLab là "
                          "torch 2.4/cu121, ra đời trước kiến trúc đó. Mất 20-120 phút")
-    ap.add_argument("--cuda", default="121", choices=sorted(TORCH),
-                    help="chỉ mục CUDA của torch. 121 = GPU đời trước Blackwell "
-                         "(mmcv có wheel). 130 = CUDA 13, cần cho RTX 50xx / "
-                         "RTX PRO 6000 / B200, và khi đó mmcv phải --build-mmcv")
+    ap.add_argument("--cuda", default="130", choices=sorted(TORCH),
+                    help="chỉ mục CUDA của torch. 130 (mặc định) = CUDA 13, phủ "
+                         "Turing tới Blackwell, mmcv phải --build-mmcv. "
+                         "121 = chỉ GPU đời trước Blackwell, nhưng mmcv có wheel")
     a = ap.parse_args(argv)
 
     global SKIP_CUDA_BUILD, MODELS, BUILD_MMCV, CUDA
     CUDA = a.cuda
-    BUILD_MMCV = a.build_mmcv
+    BUILD_MMCV = a.build_mmcv or a.cuda != "121"
     SKIP_CUDA_BUILD = a.skip_cuda_build
     MODELS = [n.strip() for n in a.models.split(",") if n.strip()]
     bad = set(MODELS) - set(BENCH_REQS)

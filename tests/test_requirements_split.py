@@ -171,12 +171,15 @@ def test_moi_lua_chon_cuda_deu_co_nhan_conda(setup_env):
 
     Thêm một lựa chọn --cuda mà quên nhãn là người dùng nhận lệnh sai.
     """
-    for cuda in setup_env.TORCH:
-        setup_env.CUDA = cuda
-        tag = setup_env.torch_cuda_tag()
-        assert re.fullmatch(r"\d+\.\d", tag), tag
-        assert tag in setup_env.CONDA_LABEL, f"thiếu nhãn conda cho CUDA {tag}"
-    setup_env.CUDA = "121"
+    goc = setup_env.CUDA
+    try:
+        for cuda in setup_env.TORCH:
+            setup_env.CUDA = cuda
+            tag = setup_env.torch_cuda_tag()
+            assert re.fullmatch(r"\d+\.\d", tag), tag
+            assert tag in setup_env.CONDA_LABEL, f"thiếu nhãn conda cho CUDA {tag}"
+    finally:
+        setup_env.CUDA = goc        # fixture dùng chung cả module, đừng để rò
 
 
 def test_torch_va_torchvision_cung_mot_chi_muc_cuda(setup_env):
@@ -237,3 +240,48 @@ def test_lenh_va_dong_ma_trong_readme_con_dung():
         assert "raise ModuleNotFoundError(info_string)" in src.read_text(encoding="utf-8"), \
             "upstream đã đổi dòng raise; lệnh sed trong README thành vô hiệu"
     assert "raise ModuleNotFoundError(info_string)" in doc
+
+
+# ------------------------------------------- mặc định phải chạy được trên 5090
+def test_mac_dinh_la_cuda_13(setup_env):
+    """cu121 không có kernel sm_120, nên nó không thể là mặc định.
+
+    Kế hoạch chạy là thuê RTX 5090. Mặc định cu121 nghĩa là ai làm theo tài
+    liệu cũng dựng ra một env mà SOLOv2 chết ở lời gọi kernel đầu tiên.
+    """
+    assert setup_env.CUDA == "130"
+    assert int(setup_env.CUDA) >= 128, "phải >= 12.8 mới có sm_120"
+
+
+def test_mac_dinh_build_mmcv_tu_nguon(setup_env):
+    """Trên cu130 không có wheel mmcv nào; lấy wheel là cài nhầm bản cu121."""
+    assert setup_env.BUILD_MMCV is True
+
+
+@pytest.mark.parametrize(
+    "path",
+    [BENCH / m / "requirements.txt" for m in MODELS] + [BENCH / "requirements.txt"],
+    ids=lambda p: str(p.relative_to(ROOT)))
+def test_lenh_mau_trong_header_dung_cu130(path):
+    """Header mỗi file có lệnh cài torch làm mẫu; nó phải là lệnh chạy được."""
+    doc = path.read_text(encoding="utf-8")
+    assert "whl/cu130" in doc, f"{path.name}: lệnh mẫu còn trỏ CUDA cũ"
+
+
+def test_readme_dat_cu130_len_truoc():
+    """Đọc từ trên xuống phải gặp cu130 trước cu121."""
+    for path in (ROOT / "README.md", BENCH / "README.md"):
+        doc = path.read_text(encoding="utf-8")
+        assert doc.index("cu130") < doc.index("cu121"), \
+            f"{path.name}: cu121 xuất hiện trước cu130"
+
+
+def test_solov2_khong_ghim_mmengine_tu_pypi():
+    """Trên torch >= 2.6 bản PyPI ném UnpicklingError lúc nạp checkpoint COCO.
+
+    mmengine 0.10.7 ra 04/03/2025, bản vá weights_only merge 25/10/2025, và
+    không có bản phát hành nào sau đó. Phải lấy từ git.
+    """
+    doc = _req("solov2").read_text(encoding="utf-8")
+    assert "mmengine" not in _pins(_lines(_req("solov2")))
+    assert "github.com/open-mmlab/mmengine" in doc, "phải chỉ đường lấy từ git"

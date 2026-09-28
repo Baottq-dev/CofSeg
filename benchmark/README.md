@@ -53,14 +53,9 @@ conda create -y -n cofseg python=3.12 && conda activate cofseg
 
 Bản torch phụ thuộc **kiến trúc GPU**, không phụ thuộc model. Vì vậy nó không
 nằm trong file requirements nào: ghim ở đó thì bốn file sẽ trôi ra xa nhau rồi
-không cài chung một env được nữa. Chọn một dòng:
+không cài chung một env được nữa.
 
 ```bash
-# GPU sm_50..sm_90 — T4, V100, RTX 20/30/40, L4, L40S, A40, A6000, A100, H100
-pip install torch==2.4.1+cu121 torchvision==0.19.1+cu121 \
-  --index-url https://download.pytorch.org/whl/cu121
-
-# GPU sm_75..sm_120 — thêm RTX 50xx, RTX PRO 6000, B200. CUDA 13 bỏ sm_50..sm_70.
 pip install torch==2.11.0+cu130 torchvision==0.26.0+cu130 \
   --index-url https://download.pytorch.org/whl/cu130
 ```
@@ -71,28 +66,43 @@ Kiểm ngay, đừng đợi:
 python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
 
-Chọn dòng nào thì quyết định luôn mmcv cài kiểu gì:
+CUDA 13 phủ `sm_75`–`sm_120`, tức từ Turing tới **Blackwell**: T4, RTX 20/30/40,
+L4, L40S, A40, A6000, A100, H100, **RTX 5090**, RTX PRO 6000, B200. Nó chỉ bỏ
+`sm_50`–`sm_70` (Maxwell, Pascal, Volta) — không card nào trong kế hoạch chạy.
 
-| torch | GPU | mmcv |
-|---|---|---|
-| 2.4.1+cu121 | `sm_50`–`sm_90` | **wheel dựng sẵn**, vài giây |
-| 2.11.0+cu130 | `sm_75`–`sm_120`, gồm **RTX 5090** | **build từ nguồn**, 20–120 phút |
+Cặp torch/torchvision hợp lệ khác trên `cu130`, nếu muốn đi cao hơn:
+`2.9.0/0.24.0`, `2.9.1/0.24.1`, `2.10.0/0.25.0`, `2.12.0/0.27.0`,
+`2.12.1/0.27.1`, `2.13.0/0.28.0`, `2.14.0/0.29.0`.
 
-Ranh giới không phải "Blackwell hay không" mà là **mmcv có wheel hay không**.
-OpenMMLab chỉ phát hành `cu118` và `cu121`, tới torch 2.4 — dò trực tiếp thì
-mọi tổ hợp `cu124`/`cu128`/`cu130` và `torch2.5+` đều trả 404. Mà torch
-2.4/cu121 ra đời **trước** Blackwell nên không có kernel `sm_120`: trên RTX
-5090 nó chết ngay lời gọi kernel đầu tiên.
+Chọn **2.11** làm mặc định vì đó là bản duy nhất ta có bằng chứng của chính
+mình — detectron2 0.6 (phát hành 2021) build và import được với torch 2.11 +
+Python 3.13. Lên 2.14 thì cả detectron2 lẫn mmcv đều chưa ai thử.
+
+### Vì sao không dùng cu121
+
+`cu121` là chỉ mục duy nhất mmcv còn có wheel dựng sẵn, nên nó cài nhanh hơn.
+Nhưng torch 2.4/cu121 ra đời **trước** Blackwell và không có kernel `sm_120`.
+Trên RTX 5090 nó chết ngay lời gọi kernel đầu tiên:
 
 ```
 RuntimeError: CUDA error: no kernel image is available for execution on the device
 ```
 
-Cặp torch/torchvision hợp lệ khác trên `cu130`, nếu muốn đi cao hơn 2.11:
-`2.9.0/0.24.0`, `2.9.1/0.24.1`, `2.10.0/0.25.0`, `2.12.0/0.27.0`,
-`2.12.1/0.27.1`, `2.13.0/0.28.0`, `2.14.0/0.29.0`. Chọn 2.11 vì đó là bản duy
-nhất ta có bằng chứng của chính mình: detectron2 0.6 build và import được với
-torch 2.11 + Python 3.13.
+Và đường cứu PTX JIT cũng hỏng trên Blackwell (thiếu `libnvptxcompiler.so`).
+
+Đổi lại, `cu130` nghĩa là **mmcv phải build từ nguồn** — OpenMMLab chỉ phát
+hành `cu118` và `cu121`, tới torch 2.4; dò trực tiếp thì mọi tổ hợp
+`cu124`/`cu128`/`cu130` và `torch2.5+` đều trả 404. Mục *Cài mmcv* nói đủ.
+
+Nếu chắc chắn **không bao giờ** đụng tới card Blackwell thì `cu121` vẫn dùng
+được và đỡ được một lần biên dịch:
+
+```bash
+pip install torch==2.4.1+cu121 torchvision==0.19.1+cu121 \
+  --index-url https://download.pytorch.org/whl/cu121
+```
+
+Chọn cách này thì mọi bước dưới đây có nhánh riêng, đánh dấu *(cu121)*.
 
 ### Bước 2 — gói của model
 
@@ -161,16 +171,69 @@ chết, sau khi đã nạp xong dữ liệu.
 
 ## Cài mmcv
 
-### Có wheel (torch 2.4/cu121)
+Trên `cu130` mmcv **không có wheel** — phải build từ nguồn. Mất 20–120 phút,
+làm một lần cho mỗi env.
+
+### 1. Toolkit và biến môi trường
 
 ```bash
-pip install mmcv==2.2.0 \
-  -f https://download.openmmlab.com/mmcv/dist/cu121/torch2.4/index.html
-python -c "import mmcv; from mmcv.ops import nms; print(mmcv.__version__)"
+conda install -y -c nvidia cuda-toolkit=13.0.3
+export CUDA_HOME=$CONDA_PREFIX
+export CPATH=$CONDA_PREFIX/targets/x86_64-linux/include:$CPATH
+export LIBRARY_PATH=$CONDA_PREFIX/targets/x86_64-linux/lib:$LIBRARY_PATH
 ```
 
-Rồi nới một dòng kiểm phiên bản trong mmdet. mmdet 3.3.0 khai `mmcv < 2.2.0`,
-nhưng 2.2.0 lại đúng là bản duy nhất có wheel cho torch 2.4:
+`CPATH` và `LIBRARY_PATH` **không bỏ được**: gói conda để header ở
+`targets/x86_64-linux/`, chỉ đặt `CUDA_HOME` thì nvcc không thấy `cusparse.h`.
+
+CUDA 13 nhận host compiler tới **GCC 15**, nên không phải ghim `g++` như CUDA
+12.1 (nvcc 12.1 từ chối g++ mới hơn 12).
+
+### 2. Build
+
+```bash
+git clone --branch v2.2.0 --depth 1 https://github.com/open-mmlab/mmcv.git
+cd mmcv
+FORCE_CUDA=1 MMCV_WITH_OPS=1 TORCH_CUDA_ARCH_LIST="12.0" MAX_JOBS=4 \
+  pip install --no-build-isolation -e .
+python .dev_scripts/check_installation.py
+cd ..
+```
+
+Ba biến, mỗi cái một việc:
+
+| biến | vì sao |
+|---|---|
+| `FORCE_CUDA=1` | `setup.py` của mmcv bật op CUDA khi `torch.cuda.is_available() or FORCE_CUDA == '1'`. Cờ này cho phép **biên dịch trên máy không có GPU** |
+| `MMCV_WITH_OPS=1` | không có thì nó dựng bản không op, `from mmcv.ops import nms` sẽ gãy |
+| `TORCH_CUDA_ARCH_LIST` | mặc định torch build cho 6–7 kiến trúc, mỗi file `.cu` compile lại từng ấy lần. Ghim đúng cái cần là nhanh hơn nhiều lần |
+
+`TORCH_CUDA_ARCH_LIST` đặt theo card: `12.0` cho RTX 5090 / RTX PRO 6000,
+`9.0` cho H100, `8.9` cho L40S / RTX 4090, `8.0` cho A100. Nhiều card thì ngăn
+bằng dấu chấm phẩy: `"8.9;12.0"`.
+
+`MAX_JOBS` đổi số luồng — nvcc ngốn RAM, máy ít RAM thì hạ xuống 1–2.
+
+### 3. mmengine phải lấy từ git
+
+Trên torch ≥ 2.6 thì bản trên PyPI **hỏng**. torch 2.6 đổi mặc định
+`torch.load(weights_only=True)`, còn checkpoint mmdet chứa dict `meta` với
+object tuỳ ý → `UnpicklingError` ngay lúc nạp trọng số COCO của SOLOv2.
+
+| | ngày |
+|---|---|
+| mmengine 0.10.7 (bản mới nhất trên PyPI) | 2025-03-04 |
+| PR *Load checkpoint with weights_only=False* | 2025-10-25 |
+
+Bản phát hành ra trước bản vá bảy tháng, và không có bản nào sau nó.
+
+```bash
+pip install "git+https://github.com/open-mmlab/mmengine"
+```
+
+### 4. Nới chốt phiên bản trong mmdet
+
+mmdet 3.3.0 khai `mmcv < 2.2.0`, nhưng 2.2.0 là bản mới nhất tồn tại:
 
 ```
 AssertionError: MMCV==2.2.0 is used but incompatible.
@@ -186,43 +249,14 @@ python -c "import mmdet, mmcv, mmengine; print(mmdet.__version__, mmcv.__version
 Dùng `find_spec` chứ đừng `import mmdet` để tìm file — chính dòng assert cần
 sửa nằm trong `__init__.py`, import vào là chết trước khi kịp sửa.
 
-### Không có wheel (CUDA 12.8 / 13.x, RTX 5090)
-
-```bash
-conda install -y -c nvidia cuda-toolkit=13.0.3
-export CUDA_HOME=$CONDA_PREFIX
-export CPATH=$CONDA_PREFIX/targets/x86_64-linux/include:$CPATH
-export LIBRARY_PATH=$CONDA_PREFIX/targets/x86_64-linux/lib:$LIBRARY_PATH
-
-git clone --branch v2.2.0 --depth 1 https://github.com/open-mmlab/mmcv.git
-cd mmcv
-FORCE_CUDA=1 MMCV_WITH_OPS=1 TORCH_CUDA_ARCH_LIST="12.0" MAX_JOBS=4 \
-  pip install --no-build-isolation -e .
-python .dev_scripts/check_installation.py
-```
-
-Ba biến, mỗi cái một việc:
-
-| biến | vì sao |
-|---|---|
-| `FORCE_CUDA=1` | `setup.py` của mmcv bật op CUDA khi `torch.cuda.is_available() or FORCE_CUDA == '1'`. Cờ này cho phép **biên dịch trên máy không có GPU** |
-| `MMCV_WITH_OPS=1` | không có thì nó dựng bản không op, `from mmcv.ops import nms` sẽ gãy |
-| `TORCH_CUDA_ARCH_LIST` | mặc định torch build cho 6–7 kiến trúc, mỗi file `.cu` compile lại từng ấy lần. Ghim đúng cái cần là nhanh hơn nhiều lần |
-
-`MAX_JOBS` đổi số luồng (nvcc ngốn RAM, máy ít RAM thì hạ xuống 1–2). Tổng
-20–120 phút.
-
-`export CPATH`/`LIBRARY_PATH` **không bỏ được**: gói conda để header ở
-`targets/x86_64-linux/`, chỉ đặt `CUDA_HOME` thì nvcc không thấy `cusparse.h`.
-
 ### Thử compile mà không cần đúng card
 
 Nhờ `FORCE_CUDA=1`, câu hỏi *"mmcv có compile nổi với torch mới không"* trả lời
 được trên **bất kỳ máy Linux nào có nvcc** — không phải thuê 5090 trước:
 
 ```bash
-docker run --rm -it nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04 bash
-pip install torch --index-url https://download.pytorch.org/whl/cu128
+docker run --rm -it nvidia/cuda:13.0.1-cudnn-devel-ubuntu22.04 bash
+pip install torch==2.11.0+cu130 --index-url https://download.pytorch.org/whl/cu130
 git clone --branch v2.2.0 --depth 1 https://github.com/open-mmlab/mmcv.git
 cd mmcv && FORCE_CUDA=1 MMCV_WITH_OPS=1 TORCH_CUDA_ARCH_LIST="12.0" MAX_JOBS=4 \
   pip install --no-build-isolation -e .
@@ -236,22 +270,26 @@ cd mmcv && FORCE_CUDA=1 MMCV_WITH_OPS=1 TORCH_CUDA_ARCH_LIST="12.0" MAX_JOBS=4 \
 `.dev_scripts/check_installation.py` gọi op thật nên cần đúng card. Muốn chạy
 được cả trên máy test thì build hai kiến trúc: `TORCH_CUDA_ARCH_LIST="8.9;12.0"`.
 
-### Hai cái bẫy còn lại
+### Không có ai bảo trì
 
-1. **mmengine trên PyPI hỏng với torch ≥ 2.6.** torch 2.6 đổi mặc định
-   `torch.load(weights_only=True)`, còn checkpoint mmdet chứa dict `meta` với
-   object tuỳ ý → `UnpicklingError` lúc nạp trọng số COCO. mmengine 0.10.7 ra
-   **04/03/2025**, bản vá merge **25/10/2025** — bản phát hành ra trước bản vá
-   bảy tháng:
+mmcv 2.2.0 ra 24/04/2024, mmdet 3.3.0 ra 05/01/2024, commit gần đây trên `main`
+chỉ là NPU (Ascend) với MUSA — không đụng CUDA. Gãy thì tự sửa. Có người báo
+build được ở torch 2.7 + CUDA 12.8 và ghi lại công thức:
+[mmcv#3327](https://github.com/open-mmlab/mmcv/issues/3327).
 
-   ```bash
-   pip install "git+https://github.com/open-mmlab/mmengine"
-   ```
+### *(cu121)* Đường wheel
 
-2. **Không có ai bảo trì.** mmcv 2.2.0 ra 24/04/2024, mmdet 3.3.0 ra
-   05/01/2024, commit gần đây trên `main` chỉ là NPU (Ascend) với MUSA — không
-   đụng CUDA. Gãy thì tự sửa. Có người báo build được ở torch 2.7 + CUDA 12.8
-   và ghi lại công thức: [mmcv#3327](https://github.com/open-mmlab/mmcv/issues/3327).
+Chỉ dùng được với torch 2.4.1+cu121, và khi đó SOLOv2 **không chạy trên
+Blackwell**:
+
+```bash
+pip install mmengine==0.10.7 mmcv==2.2.0 \
+  -f https://download.openmmlab.com/mmcv/dist/cu121/torch2.4/index.html
+python -c "import mmcv; from mmcv.ops import nms; print(mmcv.__version__)"
+```
+
+Rồi vẫn phải nới chốt phiên bản ở bước 4 trên. `mmengine` bản PyPI dùng được
+vì torch 2.4 chưa đổi mặc định `weights_only`.
 
 ## Biên dịch op CUDA cho Mask2Former
 
@@ -270,15 +308,10 @@ imgsz 1024, batch  4  ->  0.98 GiB mỗi lớp  ->  5.9 GiB  (6 lớp encoder)
 imgsz 1024, batch 16  ->  3.94 GiB mỗi lớp  -> 23.6 GiB  -> OOM trên card 24 GB
 ```
 
-### Có biên dịch (nên làm)
+### Biên dịch
 
-Cần **ba** thứ khớp nhau; thiếu một là gãy sau vài phút:
-
-| | torch cu121 | torch cu130 |
-|---|---|---|
-| toolkit đầy đủ, không phải mỗi nvcc | `conda install -c nvidia/label/cuda-12.1.1 cuda-toolkit` | `conda install -c nvidia cuda-toolkit=13.0.3` |
-| host compiler | **`conda install -c conda-forge gxx_linux-64=12`** — nvcc 12.1 từ chối g++ mới hơn 12 | không cần: CUDA 13 nhận tới GCC 15 |
-| nvcc cùng major với torch | tự khớp sau dòng trên | tự khớp sau dòng trên |
+`cuda-toolkit=13.0.3` đã cài ở mục *Cài mmcv*, và các biến môi trường ở đó vẫn
+đang có hiệu lực. Không có gì thêm phải chuẩn bị:
 
 ```bash
 pip install --no-build-isolation --no-deps \
@@ -287,6 +320,16 @@ pip install --no-build-isolation --no-deps \
 
 Dùng pip build thẳng thư mục `ops` chứ đừng chạy `make.sh` của repo gốc: nó gọi
 `setup.py install`, thứ setuptools mới đã bỏ.
+
+*(cu121)* Đường đó cần thêm một thứ mà CUDA 13 không cần — **nvcc 12.1 từ chối
+host compiler mới hơn g++ 12**:
+
+```bash
+conda install -y -c nvidia/label/cuda-12.1.1 cuda-toolkit
+conda install -y -c conda-forge gxx_linux-64=12
+```
+
+Đây là một lý do nữa để đi `cu130`: CUDA 13 nhận host compiler tới GCC 15.
 
 ### Không biên dịch được
 

@@ -56,7 +56,8 @@ SAM 2.1 cài riêng với `--no-deps`, vì `setup.py` của nó khai `torch>=2.5
 để nguyên mốc đó thì pip từ chối cài chung với torch 2.4.1 mà mmcv bắt buộc:
 
 ```
-pip install --no-deps --no-build-isolation   "SAM-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4"
+pip install --no-deps --no-build-isolation \
+  "SAM-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4"
 ```
 
 Bỏ qua mốc đó an toàn: nó xuất hiện ở commit 11/12/2024 để `torch.compile` toàn
@@ -68,8 +69,9 @@ từ nguồn. Hướng dẫn đầy đủ, kể cả cách build `mmcv` cho GPU 
 [`benchmark/README.md`](benchmark/README.md) mục *Dựng môi trường*.
 
 ```
-# 1. torch (chọn theo GPU)
-pip install torch==2.4.1+cu121 torchvision==0.19.1+cu121   --index-url https://download.pytorch.org/whl/cu121
+# 1. torch — CUDA 13, phủ Turing tới Blackwell (gồm RTX 5090)
+pip install torch==2.11.0+cu130 torchvision==0.26.0+cu130 \
+  --index-url https://download.pytorch.org/whl/cu130
 
 # 2. gói của model — cả bốn vào một env
 pip install -r benchmark/requirements.txt
@@ -83,12 +85,13 @@ trôi ra xa nhau rồi không cài chung một env được nữa.
 
 | torch | GPU | mmcv |
 |---|---|---|
-| 2.4.1+cu121 | `sm_50`–`sm_90`: 4090, L4, L40S, A40, A6000, A100, H100 | **wheel dựng sẵn** |
-| 2.11.0+cu130 | `sm_75`–`sm_120`, gồm RTX 50xx, RTX PRO 6000, B200 | **phải build từ nguồn** |
+| **2.11.0+cu130** (mặc định) | `sm_75`–`sm_120`: T4, RTX 20/30/40, L4, L40S, A40, A6000, A100, H100, **RTX 5090**, RTX PRO 6000, B200 | **build từ nguồn**, 20–120 phút |
+| 2.4.1+cu121 | `sm_50`–`sm_90` — **không có Blackwell** | wheel dựng sẵn, vài giây |
 
-Ranh giới không phải "Blackwell hay không" mà là **mmcv có wheel hay không**:
-OpenMMLab chỉ phát hành cu118/cu121 tới torch 2.4, mà tổ hợp đó ra đời trước
-Blackwell nên thiếu kernel `sm_120`.
+`cu121` cài nhanh hơn vì mmcv có wheel ở đó, nhưng torch 2.4/cu121 ra đời
+**trước** Blackwell nên không có kernel `sm_120`: trên RTX 5090 nó chết ngay
+lời gọi kernel đầu tiên. Mặc định đi `cu130` và chấp nhận một lần biên dịch
+mmcv — OpenMMLab chỉ phát hành cu118/cu121 tới torch 2.4, không có gì mới hơn.
 
 Chạy benchmark **không cần** `pip install -e .`: mỗi thư mục tự chứa bản
 `cofseg/` riêng và `train.py` tự thêm thư mục của nó vào `sys.path`.
