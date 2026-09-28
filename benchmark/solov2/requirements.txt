@@ -2,9 +2,9 @@
 #
 # CÀI torch TRƯỚC — file này cố ý KHÔNG ghim torch, xem benchmark/README.md.
 #
-#     python scripts/setup_env.py --only torch
+#     pip install torch==2.4.1+cu121 torchvision==0.19.1+cu121 --index-url https://download.pytorch.org/whl/cu121
 #     pip install -r benchmark/solov2/requirements.txt
-#     python scripts/setup_env.py --only mmcv,mmdet
+#     # rồi mmcv — xem benchmark/README.md mục "Cài mmcv"
 #
 # ĐỌC KỸ: model này kén phiên bản nhất trong bốn. mmcv chỉ có wheel dựng sẵn
 # cho torch 2.4/cu121, mà tổ hợp đó ra đời TRƯỚC Blackwell nên SOLOv2 không
@@ -30,8 +30,7 @@ tqdm==4.68.3
 #     torch 2.4/cu121  -> wheel dựng sẵn, vài giây
 #     CUDA 12.8 / 13.x -> build từ nguồn, 20-120 phút
 #
-#     python scripts/setup_env.py --only mmcv                 # wheel
-#     python scripts/setup_env.py --only mmcv --build-mmcv    # từ nguồn
+# Cả hai đường đều ở benchmark/README.md mục "Cài mmcv".
 #
 # ---- mmengine: với torch >= 2.6 phải lấy từ git, không dùng dòng ghim trên
 #

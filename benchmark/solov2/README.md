@@ -82,4 +82,4 @@ không còn so được với ba model kia. Sửa thì báo nhóm.
   (mmdet không có transform sẵn cho mask + box), chỉ lật ngang/dọc/chéo. Nhớ
   ghi chú khi đọc bảng.
 - mmdet 3.3.0 khai `mmcv < 2.2` nhưng wheel dựng sẵn cho torch 2.4 là 2.2.0;
-  `scripts/setup_env.py` nới dòng kiểm đó.
+  Nới dòng kiểm đó bằng `sed`; xem `benchmark/README.md` mục *Cài mmcv*.
