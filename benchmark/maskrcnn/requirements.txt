@@ -2,9 +2,9 @@
 #
 # CÀI torch TRƯỚC — file này cố ý KHÔNG ghim torch, xem benchmark/README.md.
 #
-#     python scripts/setup_env.py --only torch
+#     pip install torch==2.4.1+cu121 torchvision==0.19.1+cu121 --index-url https://download.pytorch.org/whl/cu121
 #     pip install -r benchmark/maskrcnn/requirements.txt
-#     python scripts/setup_env.py --only detectron2
+#     # rồi detectron2 — xem benchmark/README.md
 
 # ---- setuptools: KHÔNG được bỏ ghim
 #
@@ -18,8 +18,8 @@
 #     ModuleNotFoundError: No module named 'pkg_resources'
 #
 # Bẫy phụ: `import detectron2` KHÔNG kéo model_zoo vào, nên bước cài báo thành
-# công rồi mới chết lúc train. Bước `detectron2` của setup_env.py kiểm cả
-# `from detectron2 import model_zoo`.
+# công rồi mới chết lúc train. Nên sau khi cài detectron2 phải kiểm cả
+# `from detectron2 import model_zoo`, không chỉ `import detectron2`.
 setuptools<82
 
 # ---- gói mà cofseg/ của thư mục này import
