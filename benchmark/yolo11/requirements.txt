@@ -4,7 +4,8 @@
 # GPU chứ không phụ thuộc model. Ghim ở đây thì bốn file model sẽ trôi ra xa
 # nhau rồi không cài chung một env được nữa.
 #
-#     pip install torch==2.4.1+cu121 torchvision==0.19.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+#     pip install torch==2.11.0+cu130 torchvision==0.26.0+cu130 \
+#       --index-url https://download.pytorch.org/whl/cu130
 #     pip install -r benchmark/yolo11/requirements.txt
 #
 # Xem benchmark/README.md mục "Dựng môi trường" cho bảng chọn phiên bản.
