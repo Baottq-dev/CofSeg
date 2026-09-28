@@ -67,15 +67,16 @@ that was used to compile PyTorch (13.0)
 ```
 
 Đúng lỗi này gặp trên máy Vast RTX 5090 ngày 28/09/2026: ảnh máy có nvcc 12.8,
-torch cài là `cu130`, detectron2 gãy ngay trong `build_ext`. mmcv và op
+torch cài khi đó là `cu130`, detectron2 gãy ngay trong `build_ext`. mmcv và op
 MSDeformAttn của Mask2Former sẽ chết ở đúng chỗ đó.
 
-Hai đường cho khớp, chọn theo việc ai làm chủ cái toolkit:
+Toàn dự án đi **một bản torch duy nhất**, dựng bằng **CUDA 12.8**. Nvcc mới là
+thứ điều chỉnh cho khớp, không phải torch:
 
-| máy | làm gì |
+| nvcc trên máy | làm gì |
 |---|---|
-| máy thuê, ảnh đã có sẵn nvcc (Vast, Colab) | **đổi torch theo nvcc** — không phải tải lại toolkit ~3 GB tính tiền theo giờ |
-| máy mình, conda tự dựng | cài toolkit theo torch, xem mục *Cài mmcv* |
+| **12.x** (phần lớn ảnh máy thuê cho 5090) | không phải làm gì, đi thẳng Bước 1 |
+| 13.x, hoặc chưa có nvcc | cài `cuda-toolkit=12.8.1` vào env ở mục *Cài mmcv* — nó che nvcc của hệ thống |
 
 ### Bước 1 — torch
 
@@ -83,47 +84,45 @@ Bản torch phụ thuộc **kiến trúc GPU và nvcc của máy**, không phụ
 Vì vậy nó không nằm trong file requirements nào: ghim ở đó thì bốn file sẽ trôi
 ra xa nhau rồi không cài chung một env được nữa.
 
-Hai nhánh dưới đây là **cùng một phiên bản torch**, chỉ khác bản dựng CUDA, nên
-đổi nhánh không làm lệch benchmark.
-
-nvcc **13.x**, hoặc máy chưa có nvcc (mục *Cài mmcv* sẽ dựng toolkit 13):
-
-```bash
-pip install torch==2.11.0+cu130 torchvision==0.26.0+cu130 \
-  --index-url https://download.pytorch.org/whl/cu130
-```
-
-nvcc **12.8 hoặc 12.9** — phần lớn ảnh máy thuê cho 5090 nằm ở đây:
-
 ```bash
 pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 \
   --index-url https://download.pytorch.org/whl/cu128
 ```
 
-Kiểm ngay, đừng đợi — và kiểm cả hai con số phải khớp major:
+Kiểm ngay, đừng đợi — và kiểm cả con số CUDA, không chỉ số phiên bản:
 
 ```bash
 python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
 
-CUDA 12.8 là bản **đầu tiên** có `sm_120`, nên nhánh `cu128` vẫn chạy Blackwell
-đầy đủ; nó còn giữ cả `sm_50`–`sm_70` mà CUDA 13 đã bỏ. CUDA 13 phủ `sm_75`–
-`sm_120`, tức từ Turing tới Blackwell: T4, RTX 20/30/40, L4, L40S, A40, A6000,
-A100, H100, **RTX 5090**, RTX PRO 6000, B200 — không card nào trong kế hoạch
-rơi ra ngoài. Nói cách khác, giữa hai nhánh không có card nào phải bỏ; chọn
-nhánh nào là do nvcc trên máy, không phải do GPU.
+#### Vì sao CUDA 12.8
 
-Cặp torch/torchvision hợp lệ khác, nếu muốn đi cao hơn:
+12.8 là bản **đầu tiên** có `sm_120`, tức bản đầu tiên chạy được Blackwell. Nó
+phủ `sm_50`–`sm_120`: T4, V100, RTX 20/30/40, L4, L40S, A40, A6000, A100,
+H100, **RTX 5090**, RTX PRO 6000, B200 — không card nào trong kế hoạch rơi ra
+ngoài, kể cả máy lab đời cũ.
 
-| chỉ mục | torch/torchvision |
-|---|---|
-| `cu128` | `2.7.0/0.22.0`, `2.7.1/0.22.1`, `2.8.0/0.23.0`, `2.9.0/0.24.0`, `2.9.1/0.24.1`, `2.10.0/0.25.0` |
-| `cu130` | `2.9.0/0.24.0`, `2.9.1/0.24.1`, `2.10.0/0.25.0`, `2.12.0/0.27.0`, `2.12.1/0.27.1`, `2.13.0/0.28.0`, `2.14.0/0.29.0` |
+Từng đặt mặc định là `cu130`, nay bỏ. CUDA 13 **không mua được gì** cho dự án
+này mà lại đắt hơn:
 
-Chọn **2.11** làm mặc định vì đó là bản duy nhất ta có bằng chứng của chính
-mình — detectron2 0.6 (phát hành 2021) build và import được với torch 2.11 +
-Python 3.13. Lên 2.14 thì cả detectron2 lẫn mmcv đều chưa ai thử. 2.11 có mặt
-trên cả hai chỉ mục, nên nó không ràng buộc lựa chọn ở Bước 0.
+| | cu128 | cu130 |
+|---|---|---|
+| kiến trúc | `sm_50`–`sm_120` | `sm_75`–`sm_120`, **bỏ** Maxwell/Pascal/Volta |
+| nvcc của ảnh máy thuê | khớp sẵn | lệch major, phải tải toolkit ~3 GB |
+| trần host compiler | GCC 14 | GCC 15 — thừa, Ubuntu 22.04 chỉ có GCC 11 |
+| torch bản cao hơn | tới 2.10 | tới 2.14 — thừa, ta ghim 2.11 |
+| mmcv | không có wheel, build từ nguồn | không có wheel, build từ nguồn |
+
+Ô cuối là chỗ đáng nhớ: đi `cu130` **không** đỡ được lần biên dịch mmcv nào,
+nên nó không có ưu thế nào để bù cho việc lệch nvcc.
+
+Cặp torch/torchvision hợp lệ khác trên `cu128`, nếu muốn đi thấp hơn:
+`2.7.0/0.22.0`, `2.7.1/0.22.1`, `2.8.0/0.23.0`, `2.9.0/0.24.0`, `2.9.1/0.24.1`,
+`2.10.0/0.25.0`.
+
+Chọn **2.11** vì đó là bản duy nhất ta có bằng chứng của chính mình —
+detectron2 0.6 (phát hành 2021) build và import được với torch 2.11 + Python
+3.13. Xuống 2.7 thì chưa ai trong nhóm thử.
 
 ### Vì sao không dùng cu121
 
@@ -137,8 +136,7 @@ RuntimeError: CUDA error: no kernel image is available for execution on the devi
 
 Và đường cứu PTX JIT cũng hỏng trên Blackwell (thiếu `libnvptxcompiler.so`).
 
-Đổi lại, cả `cu128` lẫn `cu130` đều nghĩa là **mmcv phải build từ nguồn** —
-OpenMMLab chỉ phát
+Đổi lại, `cu128` nghĩa là **mmcv phải build từ nguồn** — OpenMMLab chỉ phát
 hành `cu118` và `cu121`, tới torch 2.4; dò trực tiếp thì mọi tổ hợp
 `cu124`/`cu128`/`cu130` và `torch2.5+` đều trả 404. Mục *Cài mmcv* nói đủ.
 
@@ -219,27 +217,24 @@ chết, sau khi đã nạp xong dữ liệu.
 
 ## Cài mmcv
 
-Trên `cu128` lẫn `cu130` mmcv **không có wheel** — OpenMMLab dừng ở `cu118` và
-`cu121`, tới torch 2.4. Phải build từ nguồn. Mất 20–120 phút, làm một lần cho
-mỗi env.
+Trên `cu128` mmcv **không có wheel** — OpenMMLab dừng ở `cu118` và `cu121`, tới
+torch 2.4. Phải build từ nguồn. Mất 20–120 phút, làm một lần cho mỗi env.
 
 ### 1. Toolkit và biến môi trường
 
-**Máy đã có nvcc** (máy thuê, ảnh CUDA dựng sẵn) thì bỏ qua phần cài, chỉ trỏ
-`CUDA_HOME` vào toolkit sẵn có — với điều kiện Bước 1 đã chọn nhánh torch khớp
-major với nó:
+**Máy đã có nvcc 12.x** (phần lớn ảnh máy thuê) thì bỏ qua phần cài, chỉ trỏ
+`CUDA_HOME` vào toolkit sẵn có:
 
 ```bash
 export CUDA_HOME=$(dirname $(dirname $(which nvcc)))
 python -c "import torch; print(torch.version.cuda)" && nvcc --version | tail -2
 ```
 
-**Máy tự dựng bằng conda** thì cài toolkit khớp với nhánh torch đã chọn —
-`13.0.3` cho `cu130`, `12.8.1` cho `cu128`:
+**Máy có nvcc 13.x, hoặc chưa có nvcc** thì cài toolkit 12.8 vào chính env —
+nó che nvcc của hệ thống, không đụng gì tới phần còn lại của máy:
 
 ```bash
-conda install -y -c nvidia cuda-toolkit=13.0.3    # nhánh cu130
-# conda install -y -c nvidia cuda-toolkit=12.8.1  # nhánh cu128
+conda install -y -c nvidia cuda-toolkit=12.8.1
 export CUDA_HOME=$CONDA_PREFIX
 export CPATH=$CONDA_PREFIX/targets/x86_64-linux/include:$CPATH
 export LIBRARY_PATH=$CONDA_PREFIX/targets/x86_64-linux/lib:$LIBRARY_PATH
@@ -248,10 +243,9 @@ export LIBRARY_PATH=$CONDA_PREFIX/targets/x86_64-linux/lib:$LIBRARY_PATH
 `CPATH` và `LIBRARY_PATH` **không bỏ được**: gói conda để header ở
 `targets/x86_64-linux/`, chỉ đặt `CUDA_HOME` thì nvcc không thấy `cusparse.h`.
 
-Trần host compiler khác nhau theo nhánh: nvcc 13.x nhận tới **GCC 15**, nvcc
-12.8 tới **GCC 14**. Cả hai đều cao hơn `g++` mà Ubuntu 22.04 mang sẵn (11)
-nên không nhánh nào phải ghim `g++` — chỉ đường *(cu121)* mới phải, vì nvcc
-12.1 từ chối g++ mới hơn 12.
+nvcc 12.8 nhận host compiler tới **GCC 14**, cao hơn `g++` mà Ubuntu 22.04 mang
+sẵn (11), nên không phải ghim `g++`. Chỉ đường *(cu121)* mới phải, vì nvcc 12.1
+từ chối g++ mới hơn 12.
 
 ### 2. Build
 
@@ -319,13 +313,8 @@ Nhờ `FORCE_CUDA=1`, câu hỏi *"mmcv có compile nổi với torch mới khô
 được trên **bất kỳ máy Linux nào có nvcc** — không phải thuê 5090 trước:
 
 ```bash
-# nhánh cu130
-docker run --rm -it nvidia/cuda:13.0.1-cudnn-devel-ubuntu22.04 bash
-pip install torch==2.11.0+cu130 --index-url https://download.pytorch.org/whl/cu130
-
-# nhánh cu128 — đổi cả ảnh docker lẫn chỉ mục, giữ nguyên phần dưới
-# docker run --rm -it nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04 bash
-# pip install torch==2.11.0+cu128 --index-url https://download.pytorch.org/whl/cu128
+docker run --rm -it nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04 bash
+pip install torch==2.11.0+cu128 --index-url https://download.pytorch.org/whl/cu128
 git clone --branch v2.2.0 --depth 1 https://github.com/open-mmlab/mmcv.git
 cd mmcv && FORCE_CUDA=1 MMCV_WITH_OPS=1 TORCH_CUDA_ARCH_LIST="12.0" MAX_JOBS=4 \
   pip install --no-build-isolation -e .
@@ -399,8 +388,8 @@ conda install -y -c nvidia/label/cuda-12.1.1 cuda-toolkit
 conda install -y -c conda-forge gxx_linux-64=12
 ```
 
-Đây là một lý do nữa để đi CUDA 12.8 trở lên: nvcc 12.8 nhận host compiler
-tới GCC 14, nvcc 13.x tới GCC 15 — không nhánh nào phải hạ cấp `g++`.
+Đây là một lý do nữa để đi CUDA 12.8: nvcc 12.8 nhận host compiler tới GCC 14,
+không phải hạ cấp `g++` như đường cu121.
 
 ### Không biên dịch được
 

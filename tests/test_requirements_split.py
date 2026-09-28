@@ -243,18 +243,28 @@ def test_lenh_va_dong_ma_trong_readme_con_dung():
 
 
 # ------------------------------------------- mặc định phải chạy được trên 5090
-def test_mac_dinh_la_cuda_13(setup_env):
+def test_mac_dinh_la_cuda_128(setup_env):
     """cu121 không có kernel sm_120, nên nó không thể là mặc định.
 
     Kế hoạch chạy là thuê RTX 5090. Mặc định cu121 nghĩa là ai làm theo tài
     liệu cũng dựng ra một env mà SOLOv2 chết ở lời gọi kernel đầu tiên.
+
+    12.8 là bản ĐẦU TIÊN có sm_120, nên nó là mốc thấp nhất còn chạy được
+    Blackwell — và nó giữ cả các đời card cũ mà CUDA 13 đã bỏ.
     """
-    assert setup_env.CUDA == "130"
+    assert setup_env.CUDA == "128"
     assert int(setup_env.CUDA) >= 128, "phải >= 12.8 mới có sm_120"
 
 
+def test_khong_con_nhanh_cu130(setup_env):
+    """cu130 bỏ 28/09/2026: phủ ít kiến trúc hơn, lệch major với nvcc của ảnh
+    máy thuê, và VẪN phải build mmcv — không đổi lại được gì."""
+    assert "130" not in setup_env.TORCH
+    assert "13.0" not in setup_env.CONDA_LABEL
+
+
 def test_mac_dinh_build_mmcv_tu_nguon(setup_env):
-    """Trên cu130 không có wheel mmcv nào; lấy wheel là cài nhầm bản cu121."""
+    """Trên cu128 không có wheel mmcv nào; lấy wheel là cài nhầm bản cu121."""
     assert setup_env.BUILD_MMCV is True
 
 
@@ -262,18 +272,20 @@ def test_mac_dinh_build_mmcv_tu_nguon(setup_env):
     "path",
     [BENCH / m / "requirements.txt" for m in MODELS] + [BENCH / "requirements.txt"],
     ids=lambda p: str(p.relative_to(ROOT)))
-def test_lenh_mau_trong_header_dung_cu130(path):
-    """Header mỗi file có lệnh cài torch làm mẫu; nó phải là lệnh chạy được."""
+def test_lenh_mau_trong_header_dung_cu128(path):
+    """Header mỗi file có lệnh cài torch làm mẫu; nó phải là lệnh chạy được,
+    và phải là lệnh DUY NHẤT — hai lệnh mẫu là hai người cài hai kiểu."""
     doc = path.read_text(encoding="utf-8")
-    assert "whl/cu130" in doc, f"{path.name}: lệnh mẫu còn trỏ CUDA cũ"
+    assert "whl/cu128" in doc, f"{path.name}: lệnh mẫu còn trỏ CUDA cũ"
+    assert "whl/cu130" not in doc, f"{path.name}: còn lệnh cu130 đã bỏ"
 
 
-def test_readme_dat_cu130_len_truoc():
-    """Đọc từ trên xuống phải gặp cu130 trước cu121."""
+def test_readme_dat_cu128_len_truoc():
+    """Đọc từ trên xuống phải gặp cu128 trước cu121."""
     for path in (ROOT / "README.md", BENCH / "README.md"):
         doc = path.read_text(encoding="utf-8")
-        assert doc.index("cu130") < doc.index("cu121"), \
-            f"{path.name}: cu121 xuất hiện trước cu130"
+        assert doc.index("cu128") < doc.index("cu121"), \
+            f"{path.name}: cu121 xuất hiện trước cu128"
 
 
 def test_solov2_khong_ghim_mmengine_tu_pypi():
@@ -309,40 +321,35 @@ def test_readme_bao_kiem_nvcc_truoc_khi_cai_torch():
     "path",
     [BENCH / m / "requirements.txt" for m in MODELS] + [BENCH / "requirements.txt"],
     ids=lambda p: str(p.relative_to(ROOT)))
-def test_header_chi_duong_cho_may_nvcc_12(path):
-    """Header nêu lệnh cu130 làm mẫu, nhưng phần lớn ảnh máy thuê cho 5090 có
-    nvcc 12.8 — phải nói rõ đổi sang cu128, không thì lệnh mẫu là cái bẫy."""
+def test_header_khong_con_nhac_cu130(path):
+    """Một lệnh mẫu, một chỉ mục. Còn dấu vết cu130 trong header là còn chỗ để
+    hai người trong nhóm cài ra hai env khác nhau."""
     doc = path.read_text(encoding="utf-8")
-    assert "cu128" in doc, f"{path.name}: lệnh mẫu không nhắc nhánh nvcc 12.x"
+    assert "cu130" not in doc, f"{path.name}: header còn nhắc cu130 đã bỏ"
 
 
-def test_readme_neu_ca_hai_nhanh_torch_deu_cung_phien_ban():
-    """Đổi nhánh CUDA không được đổi phiên bản torch, không thì hai người cùng
-    nhóm chạy hai bản torch khác nhau mà tưởng là cùng."""
+def test_ca_hai_readme_ghim_cung_mot_lenh_torch():
+    """Hai README phải nêu đúng cùng một lệnh cài torch. Lệch nhau là hai
+    người trong nhóm chạy hai bản mà tưởng là cùng."""
     for path in (ROOT / "README.md", BENCH / "README.md"):
         doc = path.read_text(encoding="utf-8")
-        for pin in ("torch==2.11.0+cu130", "torch==2.11.0+cu128"):
-            assert pin in doc, f"{path.name}: thiếu {pin}"
+        assert "torch==2.11.0+cu128" in doc, f"{path.name}: thiếu lệnh cài torch"
+        assert "torch==2.11.0+cu130" not in doc, f"{path.name}: còn lệnh cu130 đã bỏ"
 
 
-def test_huong_dan_toolkit_khong_ghim_cung_mot_ban():
-    """Lệnh cài toolkit phải nêu cả hai bản. Chỉ ghi 13.0.3 thì người đi nhánh
-    cu128 làm theo là dựng ra đúng cái lệch major đã làm gãy detectron2."""
+def test_huong_dan_toolkit_dung_ban_12_8():
+    """Toolkit phải khớp major với torch. Còn lệnh cài 13.0.3 là còn đường
+    dựng ra đúng cái lệch major đã làm gãy detectron2 trên Vast."""
     doc = (BENCH / "README.md").read_text(encoding="utf-8")
-    if "cuda-toolkit=13.0.3" in doc:
-        assert "cuda-toolkit=12.8.1" in doc, "chỉ nêu toolkit 13, thiếu nhánh 12.8"
+    assert "cuda-toolkit=12.8.1" in doc, "thiếu lệnh cài toolkit 12.8"
+    assert "cuda-toolkit=13.0.3" not in doc, "còn lệnh cài toolkit 13 đã bỏ"
 
 
-def test_setup_env_co_nhanh_cho_nvcc_12(setup_env):
-    """Script phải làm được đúng thứ README bảo: đổi torch theo nvcc sẵn có.
-
-    Thiếu nhánh này thì trên máy thuê nvcc 12.8 chỉ còn hai lựa chọn tồi —
-    tải toolkit 13 về máy tính tiền theo giờ, hoặc tụt về cu121 và mất sm_120.
-    """
-    assert "128" in setup_env.TORCH
+def test_setup_env_khop_voi_readme(setup_env):
+    """Script và README phải nêu đúng một lệnh. Script không làm được thứ
+    README bảo thì người dùng gõ tay, rồi gõ khác nhau."""
     assert setup_env.TORCH["128"] == ["torch==2.11.0+cu128", "torchvision==0.26.0+cu128"]
-    # Cùng phiên bản torch ở cả hai nhánh, chỉ khác bản dựng: đổi nhánh không
-    # được làm lệch benchmark.
-    ver = {v[0].split("+")[0] for k, v in setup_env.TORCH.items() if k != "121"}
-    assert ver == {"torch==2.11.0"}, f"hai nhánh lệch phiên bản torch: {ver}"
-    assert "12.8" in setup_env.CONDA_LABEL, "thiếu nhãn toolkit cho nhánh cu128"
+    assert "12.8" in setup_env.CONDA_LABEL
+    doc = (BENCH / "README.md").read_text(encoding="utf-8")
+    for pin in setup_env.TORCH["128"]:
+        assert pin in doc, f"README không có {pin} mà setup_env lại cài"

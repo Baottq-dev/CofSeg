@@ -52,26 +52,28 @@ TORCH = {
     # sm_50..sm_90: T4, V100, RTX 20/30/40, L4, L40S, A40, A6000, A100, H100.
     # Tổ hợp DUY NHẤT mmcv còn phát hành wheel, nên SOLOv2 không phải build gì.
     "121": ["torch==2.4.1+cu121", "torchvision==0.19.1+cu121"],
-    # sm_75..sm_120, gồm RTX 50xx / RTX PRO 6000 / B200. CUDA 13 bỏ sm_50-sm_70.
+    # MẶC ĐỊNH. sm_50..sm_120: CUDA 12.8 là bản ĐẦU TIÊN có sm_120 (Blackwell)
+    # mà vẫn giữ Maxwell/Pascal/Volta, nên nó phủ mọi card trong kế hoạch, và
+    # nó khớp sẵn nvcc của phần lớn ảnh máy thuê cho 5090.
     # 2.11 vì đó là bản DUY NHẤT ta có bằng chứng của chính mình: detectron2
     # 0.6 build và import được với torch 2.11 + Python 3.13 trên molab. Cặp
-    # hợp lệ khác trên cu130, nếu muốn đi cao hơn:
-    #   2.9.0/0.24.0  2.9.1/0.24.1  2.10.0/0.25.0  2.12.0/0.27.0
-    #   2.12.1/0.27.1 2.13.0/0.28.0 2.14.0/0.29.0
+    # hợp lệ khác trên cu128, nếu muốn đi thấp hơn:
+    #   2.7.0/0.22.0  2.7.1/0.22.1 2.8.0/0.23.0
+    #   2.9.0/0.24.0  2.9.1/0.24.1 2.10.0/0.25.0
     # ĐỔI SANG ĐÂY LÀ mmcv MẤT WHEEL: phải --build-mmcv.
-    "130": ["torch==2.11.0+cu130", "torchvision==0.26.0+cu130"],
-    # Cùng torch 2.11, khác bản dựng CUDA. Dành cho máy ĐÃ CÓ nvcc 12.8/12.9
-    # (phần lớn ảnh máy thuê cho 5090): torch phải khớp major với nvcc sẵn có,
-    # và đổi torch rẻ hơn tải một toolkit thứ hai về máy tính tiền theo giờ.
-    # CUDA 12.8 là bản đầu tiên có sm_120, nên vẫn đủ cho Blackwell.
+    #
+    # Từng có nhánh "130" (torch 2.11.0+cu130), đã bỏ 28/09/2026: CUDA 13 phủ
+    # ÍT kiến trúc hơn (bỏ sm_50-sm_70), lệch major với nvcc 12.8 của ảnh máy
+    # thuê, và VẪN phải build mmcv y như cu128 — không đổi lại được gì.
     "128": ["torch==2.11.0+cu128", "torchvision==0.26.0+cu128"],
 }
 #: cuXXX -> nhãn kênh conda nvidia, để thông báo lỗi đưa đúng lệnh cài.
-CONDA_LABEL = {"12.1": "12.1.1", "12.8": "12.8.1", "13.0": "13.0.3"}
+CONDA_LABEL = {"12.1": "12.1.1", "12.8": "12.8.1"}
 
-#: Bản CUDA đang chọn, đặt bởi --cuda. Mặc định CUDA 13: nó phủ Turing tới
-#: Blackwell, còn cu121 không chạy được trên RTX 50xx.
-CUDA = "130"
+#: Bản CUDA đang chọn, đặt bởi --cuda. Mặc định CUDA 12.8: bản đầu tiên có
+#: sm_120 nên chạy được RTX 50xx, mà vẫn giữ các đời card cũ; còn cu121 không
+#: chạy được trên RTX 50xx.
+CUDA = "128"
 
 
 def torch_cuda_tag() -> str:
@@ -88,7 +90,7 @@ SKIP_CUDA_BUILD = False
 MODELS: list[str] = []
 
 #: True = build mmcv từ nguồn thay vì lấy wheel. Bật mặc định vì --cuda mặc
-#: định là 130, mà ở đó không có wheel nào. Xem step_mmcv.
+#: định là 128, mà ở đó không có wheel nào. Xem step_mmcv.
 BUILD_MMCV = True
 
 
@@ -190,10 +192,9 @@ def step_check() -> None:
             "    which nvcc && nvcc --version        # phải trỏ vào env và ra "
             f"{cuda_tag}\n\n"
             "(cuda-nvcc một mình KHÔNG đủ: thiếu cusparse.h, cublas_v2.h.)\n\n"
-            "Hoặc ĐỔI CHIỀU — đưa torch về khớp nvcc sẵn có. Trên máy thuê đây là\n"
-            "đường rẻ hơn: cùng phiên bản torch, chỉ khác bản dựng CUDA, nên\n"
-            "benchmark không lệch:\n\n"
-            f"    python scripts/setup_env.py --cuda {got[0]}{got[1]} --only torch\n\n"
+            "Cài toolkit 12.8 vào CHÍNH env này — nó che nvcc của hệ thống và\n"
+            "không đụng gì tới phần còn lại của máy:\n\n"
+            f"    conda install -y -c nvidia/label/cuda-{cuda_full} cuda-toolkit\n\n"
             "Cách nhanh nhất nếu không cần tốc độ Mask2Former: bỏ hẳn biên dịch.\n"
             "Train vẫn dùng GPU:\n\n"
             "    python scripts/setup_env.py --skip-cuda-build")
@@ -209,7 +210,7 @@ def step_torch() -> None:
 
     Phiên bản ghim ở TORCH đầu file, MỘT chỗ cho cả bốn model — torch phụ
     thuộc GPU chứ không phụ thuộc model, nên nó không nằm trong file
-    requirements của từng model. Chọn bằng --cuda 121 (mặc định) hoặc 130.
+    requirements của từng model. Chọn bằng --cuda 128 (mặc định) hoặc 121.
     """
     pip("install", *TORCH[CUDA], "--index-url",
         f"https://download.pytorch.org/whl/cu{CUDA}")
@@ -319,7 +320,8 @@ def step_mmcv() -> None:
             "Hai lối đi:\n\n"
             "  1. Đổi sang GPU đời trước Blackwell (A100, L40S, A6000, 4090...)\n"
             "     — mmcv dùng wheel, không biên dịch gì.\n\n"
-            "  2. Cài lại torch với --cuda 130 (CUDA 13) rồi build:\n"
+            "  2. Cài lại torch với --cuda 128 (CUDA 12.8, bản đầu tiên có sm_120)\n"
+            "     rồi build:\n"
             "         python scripts/setup_env.py --only mmcv --build-mmcv\n"
             "     Mất 20-120 phút. Có người báo làm được ở torch 2.7 + CUDA 12.8\n"
             "     (mmcv#3327), nhưng upstream đứng yên từ 04/2024 nên không ai\n"
@@ -484,11 +486,9 @@ def main(argv=None) -> int:
                     help="build mmcv từ nguồn thay vì lấy wheel. Bắt buộc trên GPU "
                          "Blackwell (sm_120): wheel duy nhất của OpenMMLab là "
                          "torch 2.4/cu121, ra đời trước kiến trúc đó. Mất 20-120 phút")
-    ap.add_argument("--cuda", default="130", choices=sorted(TORCH),
-                    help="chỉ mục CUDA của torch, chọn theo nvcc SẴN CÓ trên máy. "
-                         "130 (mặc định) = CUDA 13, phủ Turing tới Blackwell. "
-                         "128 = cùng torch nhưng dựng bằng CUDA 12.8, cho máy đã có "
-                         "nvcc 12.x. Cả hai đều phải --build-mmcv. "
+    ap.add_argument("--cuda", default="128", choices=sorted(TORCH),
+                    help="chỉ mục CUDA của torch. 128 (mặc định) = CUDA 12.8, phủ "
+                         "Maxwell tới Blackwell, cần nvcc 12.x và phải --build-mmcv. "
                          "121 = chỉ GPU đời trước Blackwell, nhưng mmcv có wheel")
     a = ap.parse_args(argv)
 

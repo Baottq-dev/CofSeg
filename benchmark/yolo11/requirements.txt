@@ -4,12 +4,12 @@
 # GPU chứ không phụ thuộc model. Ghim ở đây thì bốn file model sẽ trôi ra xa
 # nhau rồi không cài chung một env được nữa.
 #
-#     pip install torch==2.11.0+cu130 torchvision==0.26.0+cu130 \
-#       --index-url https://download.pytorch.org/whl/cu130
+#     pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 \
+#       --index-url https://download.pytorch.org/whl/cu128
 #
-# Máy có nvcc 12.8/12.9 (phần lớn ảnh máy thuê) thì đổi cu130 -> cu128 ở cả
-# hai chỗ: cùng phiên bản torch, chỉ khác bản dựng. Lệch major giữa nvcc và
-# torch.version.cuda là detectron2/mmcv gãy lúc build_ext. Xem Bước 0.
+# CUDA 12.8 là bản đầu tiên có sm_120 (Blackwell) và vẫn giữ các đời cũ.
+# Máy phải có nvcc 12.x: lệch major giữa nvcc và torch.version.cuda là
+# detectron2/mmcv gãy lúc build_ext. Xem Bước 0 trong benchmark/README.md.
 #     pip install -r benchmark/yolo11/requirements.txt
 #
 # Xem benchmark/README.md mục "Dựng môi trường" cho bảng chọn phiên bản.
