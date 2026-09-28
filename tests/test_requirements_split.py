@@ -189,3 +189,51 @@ def test_co_lua_chon_cho_blackwell(setup_env):
     """cu121 không có kernel sm_120; thiếu lựa chọn CUDA 13 là RTX 50xx bó tay."""
     assert any(int(c) >= 128 for c in setup_env.TORCH), \
         "cần ít nhất một lựa chọn CUDA >= 12.8 cho Blackwell"
+
+
+# ------------------------------------------------- tài liệu phải là lệnh thật
+READMES = [ROOT / "README.md", BENCH / "README.md"] + [
+    BENCH / m / "README.md" for m in MODELS]
+
+
+@pytest.mark.parametrize("path", READMES, ids=lambda p: str(p.relative_to(ROOT)))
+def test_readme_khong_day_nguoi_doc_sang_setup_env(path):
+    """README phải ghi LỆNH THẬT, không trỏ sang script bao.
+
+    setup_env.py chỉ để chạy nhanh. Ai dựng môi trường lần đầu cần thấy đúng
+    lệnh pip/conda sẽ chạy, để còn sửa được khi máy mình khác.
+    """
+    if not path.exists():
+        pytest.skip(f"{path.name} chưa có")
+    assert "setup_env" not in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("path", [BENCH / m / "requirements.txt" for m in MODELS]
+                                 + [BENCH / "requirements.txt"],
+                         ids=lambda p: str(p.relative_to(ROOT)))
+def test_requirements_cung_ghi_lenh_that(path):
+    assert "setup_env" not in path.read_text(encoding="utf-8")
+
+
+def test_commit_detectron2_trong_readme_khop_voi_script(setup_env):
+    """Hai chỗ ghi cùng một commit; lệch là người đọc cài nhầm bản."""
+    commit = setup_env.D2.split("@")[-1]
+    assert len(commit) == 40, commit
+    assert commit in (BENCH / "README.md").read_text(encoding="utf-8"), \
+        "benchmark/README.md ghim commit detectron2 khác với scripts/setup_env.py"
+
+
+def test_lenh_va_dong_ma_trong_readme_con_dung():
+    """Ba chuỗi README bảo người ta sed/ghim; kiểm chúng vẫn khớp nguồn thật."""
+    doc = (BENCH / "README.md").read_text(encoding="utf-8")
+
+    # chỉ mục wheel mmcv
+    assert "download.openmmlab.com/mmcv/dist/cu121/torch2.4/index.html" in doc
+
+    # dòng raise mà lệnh sed nhắm vào, trong submodule Mask2Former
+    src = (BENCH / "mask2former" / "upstream" / "mask2former" / "modeling"
+           / "pixel_decoder" / "ops" / "functions" / "ms_deform_attn_func.py")
+    if src.exists():
+        assert "raise ModuleNotFoundError(info_string)" in src.read_text(encoding="utf-8"), \
+            "upstream đã đổi dòng raise; lệnh sed trong README thành vô hiệu"
+    assert "raise ModuleNotFoundError(info_string)" in doc

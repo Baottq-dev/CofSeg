@@ -37,78 +37,61 @@ cd CoffeeSeg
 git submodule update --init
 ```
 
-`benchmark/mask2former/upstream` là submodule (repo gốc của Mask2Former), `requirements.txt` ghim mọi thư viện — dòng chỉ-Linux có marker `sys_platform`, pip tự bỏ qua trên Windows.
+`benchmark/mask2former/upstream` là submodule (repo gốc của Mask2Former). `requirements.txt` ở gốc lo `app/` và `canopyseg/`; mỗi model benchmark khai gói riêng trong thư mục của nó.
 
 ## 2. Cài môi trường
 
-**Một env** cho cả annotator (`app/`) lẫn benchmark, chạy được cả bốn model.
-
 ```
 conda create -y -n cofseg python=3.12 && conda activate cofseg
-python scripts/setup_env.py --skip-cuda-build
 ```
 
-Tám bước, dừng đúng chỗ lỗi và in cách chạy tiếp. `--list` xem các bước,
-`--from <tên bước>` chạy tiếp từ một bước, `--only <tên bước>` chạy đúng một.
-
-### `--skip-cuda-build` là gì
-
-Lúc **cài** thì không biên dịch nhân CUDA tự viết nào, nên không cần `nvcc`
-khớp phiên bản với torch, không cần CUDA toolkit, không cần g++ đúng đời. Lúc
-**train** vẫn dùng GPU đầy đủ — cờ này chỉ đi vào các lệnh pip.
-
-| | |
-|---|---|
-| Mask R-CNN, SOLOv2, YOLOv11-Seg | không đổi gì |
-| Mask2Former | chậm hơn, **đúng kết quả** — MSDeformAttn chạy bằng op PyTorch thường, vẫn trên GPU |
-
-Bỏ cờ này đi thì Mask2Former đủ tốc độ, nhưng máy phải có **cả ba**: CUDA
-toolkit đầy đủ trong env, `g++ ≤ 12`, và `nvcc` cùng major với torch. Máy lab
-hiện không thoả (nvcc 13.2, g++ > 12). Chi tiết và cách đổi ý sau:
-`docs/reports/cai_moi_truong_may_lab_2026-09-27.md`.
-
-### Một file cho app/, một file cho mỗi model
-
-`requirements.txt` ở gốc chỉ lo **annotator (`app/`) và `canopyseg/`**. Bốn
-model benchmark khai gói riêng trong thư mục của mình, và **torch cài trước,
-riêng** — hướng dẫn đầy đủ ở [`benchmark/README.md`](benchmark/README.md) mục
-*Dựng môi trường*.
+**Annotator (`app/`) và `canopyseg/`:**
 
 ```
-pip install -r requirements.txt            # app/ + canopyseg
+pip install -r requirements.txt
 pip install -e .
-
-python scripts/setup_env.py --only torch   # torch, tuỳ GPU (--cuda 121 | 130)
-pip install -r benchmark/requirements.txt  # cả bốn model, MỘT env
 ```
 
-Muốn bốn env riêng thì cài từng file `benchmark/<model>/requirements.txt`.
+SAM 2.1 cài riêng với `--no-deps`, vì `setup.py` của nó khai `torch>=2.5.1` —
+để nguyên mốc đó thì pip từ chối cài chung với torch 2.4.1 mà mmcv bắt buộc:
+
+```
+pip install --no-deps --no-build-isolation   "SAM-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4"
+```
+
+Bỏ qua mốc đó an toàn: nó xuất hiện ở commit 11/12/2024 để `torch.compile` toàn
+model cho nhánh video. `app/annotator.py` chỉ dùng nhánh ảnh và không gọi
+`torch.compile` ở đâu.
+
+**Bốn model benchmark** — torch cài trước, rồi gói của model, rồi ba gói build
+từ nguồn. Hướng dẫn đầy đủ, kể cả cách build `mmcv` cho GPU Blackwell:
+[`benchmark/README.md`](benchmark/README.md) mục *Dựng môi trường*.
+
+```
+# 1. torch (chọn theo GPU)
+pip install torch==2.4.1+cu121 torchvision==0.19.1+cu121   --index-url https://download.pytorch.org/whl/cu121
+
+# 2. gói của model — cả bốn vào một env
+pip install -r benchmark/requirements.txt
+
+# 3. ba gói build từ nguồn: detectron2, mmcv, MSDeformAttn
+```
 
 Không file requirements nào ghim torch: bản torch phụ thuộc **kiến trúc GPU**
-chứ không phụ thuộc model. Nó nằm ở hằng `TORCH` trong `scripts/setup_env.py`,
-chọn bằng `--cuda`:
+chứ không phụ thuộc model. Ghim trong từng file là cách chắc chắn để bốn file
+trôi ra xa nhau rồi không cài chung một env được nữa.
 
-| `--cuda` | torch | GPU | mmcv |
-|---|---|---|---|
-| `121` (mặc định) | 2.4.1+cu121 | `sm_50`–`sm_90`: 4090, L4, L40S, A40, A6000, A100, H100 | **wheel dựng sẵn** |
-| `130` | 2.11.0+cu130 | `sm_75`–`sm_120`, gồm RTX 50xx, RTX PRO 6000, B200 | **phải build từ nguồn** |
+| torch | GPU | mmcv |
+|---|---|---|
+| 2.4.1+cu121 | `sm_50`–`sm_90`: 4090, L4, L40S, A40, A6000, A100, H100 | **wheel dựng sẵn** |
+| 2.11.0+cu130 | `sm_75`–`sm_120`, gồm RTX 50xx, RTX PRO 6000, B200 | **phải build từ nguồn** |
 
-Ranh giới không phải "Blackwell hay không" mà là **mmcv có wheel hay phải
-build**: OpenMMLab chỉ phát hành cu118/cu121 tới torch 2.4, mà tổ hợp đó ra đời
-trước Blackwell nên thiếu kernel `sm_120`.
+Ranh giới không phải "Blackwell hay không" mà là **mmcv có wheel hay không**:
+OpenMMLab chỉ phát hành cu118/cu121 tới torch 2.4, mà tổ hợp đó ra đời trước
+Blackwell nên thiếu kernel `sm_120`.
 
 Chạy benchmark **không cần** `pip install -e .`: mỗi thư mục tự chứa bản
 `cofseg/` riêng và `train.py` tự thêm thư mục của nó vào `sys.path`.
-
-Mọi gói trong các file trên là **wheel dựng sẵn** — không gói nào biên dịch.
-Ba gói build từ source nằm ngoài, vì chúng phụ thuộc vào môi trường lúc cài
-chứ không chỉ vào phiên bản:
-
-| Gói | Cho | Cài bằng |
-|---|---|---|
-| `detectron2` | Mask R-CNN, Mask2Former | `setup_env.py --only detectron2` |
-| `mmcv` | SOLOv2 | `setup_env.py --only mmcv` (wheel), `--build-mmcv` (từ nguồn) |
-| `SAM 2.1` | annotator (`app/`) | `setup_env.py --only sam2` |
 
 ### Kiểm lại sau khi cài
 
