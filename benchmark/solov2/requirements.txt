@@ -2,7 +2,8 @@
 #
 # CÀI torch TRƯỚC — file này cố ý KHÔNG ghim torch, xem benchmark/README.md.
 #
-#     pip install torch==2.4.1+cu121 torchvision==0.19.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+#     pip install torch==2.11.0+cu130 torchvision==0.26.0+cu130 \
+#       --index-url https://download.pytorch.org/whl/cu130
 #     pip install -r benchmark/solov2/requirements.txt
 #     # rồi mmcv — xem benchmark/README.md mục "Cài mmcv"
 #
@@ -11,8 +12,15 @@
 # chạy được trên RTX 50xx / RTX PRO 6000 / B200 nếu không build lại mmcv.
 # benchmark/README.md mục "Build mmcv" nói đủ.
 
-mmengine==0.10.7
 mmdet==3.3.0
+
+# mmengine KHÔNG ghim ở đây: trên torch >= 2.6 bản PyPI hỏng. torch 2.6 đổi mặc
+# định `torch.load(weights_only=True)`, còn checkpoint mmdet chứa dict `meta`
+# với object tuỳ ý nên ném UnpicklingError lúc nạp trọng số COCO. mmengine
+# 0.10.7 ra 04/03/2025, bản vá merge 25/10/2025 — không có bản phát hành nào
+# sau bản vá. Lấy từ git; bản git chạy được với cả torch 2.4 lẫn 2.11:
+#
+#     pip install "git+https://github.com/open-mmlab/mmengine"
 
 # ---- gói mà cofseg/ của thư mục này import
 numpy==2.4.4
