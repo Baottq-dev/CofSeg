@@ -79,6 +79,9 @@ dmypy.json
 runs/
 # Mỗi thư mục benchmark ghi kết quả vào runs/ của chính nó; chỉ results/ vào git.
 benchmark/*/runs/
+# Gốc kết quả thay thế, dùng khi chấm lại cả bảng trên một env khác:
+#     RUNS=runs_cu130 bash scripts/run_all_field.sh
+runs_*/
 
 # Datasets (usually large; track with DVC or similar).
 # Anchored to the repo root: unanchored, these matched every directory at
