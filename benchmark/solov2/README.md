@@ -19,6 +19,77 @@ toàn ảnh. Không RPN, không ROI, không cắt mask theo box.
   chạm nhau mà tâm rơi vào cùng ô thì mất một cây.
 - Cùng backbone R50 với Mask R-CNN và Mask2Former.
 
+## Dựng môi trường riêng
+
+Phần này dành cho trường hợp chạy **một mình model này**, env riêng, không dùng
+env chung của `benchmark/requirements.txt`. Lệnh ở đây đủ để chép chạy từ đầu
+đến cuối; phần *vì sao* (vì sao CUDA 12.8, vì sao mmcv không có wheel, vì sao
+mmcv dựng bản rỗng mà không báo lỗi) nằm ở `benchmark/README.md` mục
+*Dựng môi trường*.
+
+Model **lâu cài nhất**: `mmcv` không có wheel cho CUDA 12.8 nên phải build từ
+nguồn, mất 20–120 phút.
+
+```bash
+conda create -y -n cofseg-solov2 python=3.12 && conda activate cofseg-solov2
+nvcc --version | tail -2
+pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 --index-url https://download.pytorch.org/whl/cu128
+pip install -r benchmark/solov2/requirements.txt
+
+# mmcv từ nguồn. torch PHẢI có mặt trước bước này.
+python -c "import torch; print(torch.__version__, torch.version.cuda)"
+export CUDA_HOME=$(dirname $(dirname $(which nvcc)))
+git clone --branch v2.2.0 --depth 1 https://github.com/open-mmlab/mmcv.git
+cd mmcv && FORCE_CUDA=1 MMCV_WITH_OPS=1 TORCH_CUDA_ARCH_LIST="12.0" MAX_JOBS=4 pip install --no-build-isolation -e . && cd ..
+python -c "from mmcv.ops import nms; print('op CUDA co that')"
+
+# mmengine bản PyPI hỏng trên torch >= 2.6; đè bằng bản git, SAU khi cài mmcv
+pip install "git+https://github.com/open-mmlab/mmengine"
+
+# mmdet 3.3.0 khai mmcv < 2.2.0, mà 2.2.0 là bản mới nhất tồn tại
+MMDET=$(python -c "import importlib.util as u; print(u.find_spec('mmdet').origin)")
+sed -i "s/mmcv_maximum_version = '2.2.0'/mmcv_maximum_version = '2.3.0'/" "$MMDET"
+```
+
+`nvcc --version` phải ra **12.x**. Lệch major với `torch.version.cuda` là gói
+biên dịch từ nguồn gãy ở `build_ext`, bằng một câu không hề nhắc tới torch.
+Máy có nvcc 13.x thì cài `cuda-toolkit=12.8.1` vào chính env — xem
+`benchmark/README.md` mục *Cài mmcv*.
+
+`TORCH_CUDA_ARCH_LIST` đặt theo card: `12.0` cho RTX 5090, `8.9` cho RTX 4090 /
+L40S, `8.0` cho A100, `9.0` cho H100. Nhiều card thì ngăn bằng dấu chấm phẩy.
+
+**Ba cái bẫy của model này, cả ba đều báo xanh:**
+
+| | dấu hiệu | hậu quả |
+|---|---|---|
+| mmcv build lúc chưa có torch | xong trong vài giây, không dòng `nvcc` nào | gói mmcv không có `_ext`, SOLOv2 chết ở forward đầu tiên |
+| mmengine lấy từ PyPI | dòng `Successfully installed ... mmengine-0.10.7` lúc cài mmcv | `UnpicklingError` lúc nạp trọng số COCO |
+| quên nới chốt mmdet | — | `AssertionError: MMCV==2.2.0 is used but incompatible` |
+
+`setup.py` của mmcv bắt luôn `ModuleNotFoundError` của torch rồi đi tiếp, nên
+`MMCV_WITH_OPS=1` và `FORCE_CUDA=1` thành vô hiệu mà pip vẫn in `Successfully
+installed mmcv-2.2.0`. Build thật phải chạy hàng chục phút.
+
+Số phiên bản **không** phân biệt được hai bản mmengine — nhánh `main` chưa tăng
+số sau lần phát hành cuối. Kiểm bằng bản vá:
+
+```bash
+python -c "import inspect, mmengine.runner.checkpoint as c; print('weights_only' in inspect.getsource(c))"
+python -c "import mmdet, mmcv, mmengine; print(mmdet.__version__, mmcv.__version__)"
+python -c "
+import torch, torchvision
+from torchvision.ops import nms
+b = torch.tensor([[0., 0., 1., 1.], [0., 0., 1., 1.]]); s = torch.tensor([0.9, 0.8])
+print(torch.__version__, torch.version.cuda, '| tv', torchvision.__version__, nms(b, s, 0.5).tolist())"
+```
+
+`True` là đúng bản git; `False` là bản PyPI hỏng vẫn còn đó.
+
+Torchvision có phần mở rộng C++ link vào `libtorch`: bản dựng cho CUDA khác sẽ
+`import` trót lọt rồi gãy lúc gọi op. Vì vậy cài torch và torchvision **trong
+cùng một lệnh**, đừng cài rời.
+
 ## Cách chạy
 
 Từ **gốc repo** (để `data/` và `weights/` dùng chung). Đặt `--runs` vào thư mục
