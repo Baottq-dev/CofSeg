@@ -250,13 +250,63 @@ từ chối g++ mới hơn 12.
 ### 2. Build
 
 ```bash
+# torch PHẢI có mặt trước. Không có là mmcv lặng lẽ dựng bản rỗng.
+python -c "import torch; print(torch.__version__, torch.version.cuda)"
+
 git clone --branch v2.2.0 --depth 1 https://github.com/open-mmlab/mmcv.git
 cd mmcv
 FORCE_CUDA=1 MMCV_WITH_OPS=1 TORCH_CUDA_ARCH_LIST="12.0" MAX_JOBS=4 \
   pip install --no-build-isolation -e .
-python .dev_scripts/check_installation.py
+
+# KIỂM BẮT BUỘC: op có thật hay không. Không cần GPU.
+python -c "from mmcv.ops import nms; print('op CUDA có thật')"
 cd ..
 ```
+
+#### Nếu thiếu torch, mmcv **không báo lỗi**
+
+Đây là cái bẫy nguy hiểm nhất của cả mục này. `setup.py` của mmcv bắt luôn
+`ModuleNotFoundError` của torch rồi đi tiếp:
+
+```python
+EXT_TYPE = ''
+try:
+    import torch
+    ...
+    EXT_TYPE = 'pytorch'
+except ModuleNotFoundError:
+    cmd_class = {}
+    print('Skip building ext ops due to the absence of torch.')
+```
+
+`EXT_TYPE` rỗng thì `get_extensions()` trả về danh sách rỗng, và **cả
+`MMCV_WITH_OPS=1` lẫn `FORCE_CUDA=1` đều vô hiệu** — hai biến đó chỉ được
+đọc sau khi `EXT_TYPE` đã được đặt. Kết quả: pip in `Successfully installed
+mmcv-2.2.0`, build xong trong vài giây thay vì 20–120 phút, và trong env có
+một gói mmcv **không có file `_ext`**. Lần train SOLOv2 đầu tiên mới chết,
+sau khi đã nạp xong dữ liệu.
+
+Hai dấu hiệu nhận ra ngay, không cần chờ:
+
+| | build thật | build rỗng |
+|---|---|---|
+| thời gian | 20–120 phút | vài giây |
+| màn hình | hàng trăm dòng `nvcc ... -c ... .cu` | không dòng nvcc nào |
+
+Dính rồi thì gỡ ra làm lại, đừng build đè:
+
+```bash
+pip uninstall -y mmcv
+pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 \
+  --index-url https://download.pytorch.org/whl/cu128
+rm -rf mmcv/build
+```
+
+rồi chạy lại khối lệnh trên.
+
+Dùng `.dev_scripts/check_installation.py` để kiểm thì **cần đúng GPU**, vì
+nó gọi op thật. Dòng `from mmcv.ops import nms` ở trên chỉ nạp file `_ext`
+nên chạy được cả trên máy không có card — và nó bắt đúng lỗi hay gặp.
 
 Ba biến, mỗi cái một việc:
 
@@ -285,8 +335,27 @@ object tuỳ ý → `UnpicklingError` ngay lúc nạp trọng số COCO của SO
 
 Bản phát hành ra trước bản vá bảy tháng, và không có bản nào sau nó.
 
+**Bước này phải chạy SAU bước 2, và không bỏ được.** mmcv khai
+`mmengine>=0.3.0`, nên lúc cài mmcv pip tự kéo đúng bản 0.10.7 hỏng từ PyPI về:
+
+```
+Successfully installed addict-2.4.0 ... mmcv-2.2.0 mmengine-0.10.7 ...
+```
+
+Thấy dòng đó là biết bản hỏng đã nằm trong env. Đè lên bằng bản git:
+
 ```bash
 pip install "git+https://github.com/open-mmlab/mmengine"
+python -c "import mmengine; print(mmengine.__version__, mmengine.__file__)"
+```
+
+Cài đúng thì `__file__` trỏ vào `site-packages/mmengine/`, còn số phiên bản in
+ra vẫn có thể là `0.10.7` — bản trên `main` chưa tăng số sau lần phát hành
+cuối. Số phiên bản KHÔNG phân biệt được hai bản; muốn chắc thì xem có bản vá
+chưa:
+
+```bash
+python -c "import inspect, mmengine.runner.checkpoint as c; print('weights_only' in inspect.getsource(c))"
 ```
 
 ### 4. Nới chốt phiên bản trong mmdet

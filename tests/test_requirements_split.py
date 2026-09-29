@@ -353,3 +353,35 @@ def test_setup_env_khop_voi_readme(setup_env):
     doc = (BENCH / "README.md").read_text(encoding="utf-8")
     for pin in setup_env.TORCH["128"]:
         assert pin in doc, f"README không có {pin} mà setup_env lại cài"
+
+
+# --------------------------------- mmcv dựng bản rỗng mà không báo lỗi
+def test_readme_canh_bao_mmcv_build_rong_khi_thieu_torch():
+    """setup.py của mmcv bắt ModuleNotFoundError của torch rồi ĐI TIẾP:
+
+        except ModuleNotFoundError:
+            cmd_class = {}
+            print('Skip building ext ops due to the absence of torch.')
+
+    EXT_TYPE rỗng thì get_extensions() trả rỗng, và cả MMCV_WITH_OPS lẫn
+    FORCE_CUDA đều vô hiệu vì chúng chỉ được đọc sau đó. pip vẫn in
+    'Successfully installed mmcv-2.2.0'. Gặp thật trên Vast 28/09/2026.
+    """
+    doc = (BENCH / "README.md").read_text(encoding="utf-8")
+    assert "Skip building ext ops due to the absence of torch" in doc, \
+        "thiếu câu in ra của mmcv để người ta nhận mặt"
+    assert "from mmcv.ops import nms" in doc, \
+        "thiếu phép kiểm op có thật; check_installation.py cần GPU nên không thay được"
+    i_build = doc.index("pip install --no-build-isolation -e .")
+    i_check = doc.index("from mmcv.ops import nms")
+    assert i_check > i_build, "phép kiểm op phải đứng sau lệnh build"
+
+
+def test_readme_noi_mmcv_keo_ve_mmengine_hong():
+    """mmcv khai mmengine>=0.3.0 nên pip kéo bản 0.10.7 của PyPI về, đúng bản
+    ném UnpicklingError trên torch >= 2.6. Bước lấy từ git phải đứng SAU."""
+    doc = (BENCH / "README.md").read_text(encoding="utf-8")
+    assert "mmengine>=0.3.0" in doc, "không nói mmcv tự kéo mmengine về"
+    i_mmcv = doc.index("pip install --no-build-isolation -e .")
+    i_git = doc.index("git+https://github.com/open-mmlab/mmengine")
+    assert i_git > i_mmcv, "bước mmengine-từ-git đứng trước bước cài mmcv thì bị đè"
