@@ -40,7 +40,7 @@ train:
   imgsz: 1024
   # 16 đo thật trên chính model này: 12.7 GB ở imgsz 1024, RTX 5090.
   batch: 16
-  epochs: 50
+  epochs: 100
   # lr trống = recipe gốc tỉ lệ theo batch: 0.01 x batch/16 (SGD, momentum
   # 0.9, weight decay 1e-4, clip grad 35). Lịch: giảm 10x ở 70% và 90% epoch.
   lr: null
@@ -53,6 +53,15 @@ train:
   # mask + box — ghi nhận là chênh lệch có chủ đích khi đọc bảng.
   fliplr: 0.5
   flipud: 0.5
+
+  # Màu: cùng biên độ với YOLO, vốn nhận ba con số này từ mặc định của
+  # ultralytics. Trước đây chỉ YOLO có, nên độ bền với ánh sáng rơi vào cột
+  # kiến trúc của bảng thay vì vào cột augmentation. Đo trên 850 ảnh (3 ngày
+  # bay, 07h-16h): V trải 99-175, S trải 78-180, và ruộng tối nhất lại chính
+  # là test của fold f1.
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
 
   # Chấm mask AP trên val mỗi epoch (CocoMetric), giữ best.pth theo coco/segm_mAP.
   val_every: 1

@@ -77,7 +77,18 @@ def test_imgsz_means_long_side_and_flips_are_independent():
     assert flip["direction"] == ["horizontal", "vertical", "diagonal"]
     assert flip["prob"] == [0.25, 0.25, 0.25]                     # p=q=0.5 độc lập
     assert [t["type"] for t in pipe] == ["LoadImageFromFile", "LoadAnnotations", "Resize",
-                                         "RandomFlip", "PackDetInputs"]
+                                         "RandomFlip", "PhotoMetricDistortion",
+                                         "PackDetInputs"]
+    # Màu quy đổi từ ba khoá hsv_* của ultralytics; xem color_transform().
+    mau = next(t for t in pipe if t["type"] == "PhotoMetricDistortion")
+    assert mau["saturation_range"] == (0.3, 1.7)      # 1 +- hsv_s 0.7, khớp thẳng
+    assert mau["brightness_delta"] == 51              # hsv_v 0.4 quy qua mức xám 128
+    assert mau["hue_delta"] == 3                      # hsv_h 0.015 x thang 180
+    # Tương phản PHẢI bị khoá: ultralytics không đụng tới nó, để mặc định
+    # (0.5, 1.5) là cho SOLOv2 thêm một phép mà ba model kia không có.
+    assert mau["contrast_range"] == (1.0, 1.0)
+    assert "PhotoMetricDistortion" not in [
+        t["type"] for t in _over(hsv_h=0, hsv_s=0, hsv_v=0)["train_dataloader"]["dataset"]["pipeline"]]
     assert flip_transform(0.5, 0.0) == {"type": "RandomFlip", "prob": [0.5], "direction": ["horizontal"]}
     assert flip_transform(0, 0) is None
     assert "RandomFlip" not in [t["type"] for t in _over(fliplr=0, flipud=0)["train_dataloader"]["dataset"]["pipeline"]]
@@ -111,8 +122,8 @@ def test_trainer_contract_and_run_tag():
     names = MMDetTrainer.param_names()
     assert {"imgsz", "batch", "epochs", "lr", "workers", "val_conf"} <= names
     assert MMDetTrainer.locked_params() == frozenset()
-    assert MMDetTrainer.run_tag({"train": {"imgsz": 2048, "batch": 1}}) == "i2048b1e50"
-    assert MMDetTrainer.run_tag({}) == "i1024b16e50"
+    assert MMDetTrainer.run_tag({"train": {"imgsz": 2048, "batch": 1}}) == "i2048b1e100"
+    assert MMDetTrainer.run_tag({}) == "i1024b16e100"
 
 
 def test_prepare_counts_train_images_and_checks_class_names(three_splits, tmp_path):

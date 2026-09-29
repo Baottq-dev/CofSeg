@@ -58,7 +58,7 @@ MM_DEFAULTS: dict = {
     # Đo thật trên RTX 5090: batch 16 ở imgsz 1024 dùng 12.7 GB. Mặc định cũ
     # là 4 — con số của card 8 GB ở nhà, không phải của máy sẽ chạy thật.
     "batch": 16,
-    "epochs": 50,
+    "epochs": 100,
     "lr": None,
     "weight_decay": 1e-4,
     "momentum": 0.9,
@@ -71,6 +71,13 @@ MM_DEFAULTS: dict = {
     "amp": True,
     "fliplr": 0.5,
     "flipud": 0.5,
+    # Cùng tên và cùng biên độ với ba khoá của ultralytics, để bốn model nói
+    # một thứ tiếng. mmdet chỉ có PhotoMetricDistortion, và nó CỘNG delta cho
+    # độ sáng chứ không NHÂN như ultralytics; quy đổi ở dưới, xem hàm dựng
+    # pipeline. Độ tương phản thì ultralytics không đụng nên ta khoá ở 1.0.
+    "hsv_h": 0.015,
+    "hsv_s": 0.7,
+    "hsv_v": 0.4,
     "val_every": 1,
     "val_conf": 0.05,
     # Batch lúc chấm val. None = theo batch train. mmdet để mặc định 1, và ở
@@ -186,6 +193,37 @@ def flip_transform(fliplr: float, flipud: float) -> dict | None:
                 direction=[d for _, d in keep])
 
 
+def color_transform(args: dict) -> dict | None:
+    """`PhotoMetricDistortion` quy đổi từ ba khoá hsv_* của ultralytics.
+
+    Ba model kia nhận màu qua cùng ba con số, nhưng mmdet không có transform
+    nào khớp một-một với ultralytics, nên phải quy đổi và nói rõ chỗ lệch:
+
+    * bão hoà: cả hai đều NHÂN, nên `saturation_range = (1-s, 1+s)` khớp thẳng.
+    * độ sáng: ultralytics NHÂN kênh V, mmdet CỘNG một delta vào giá trị điểm
+      ảnh. Quy đổi qua mức xám giữa 128 — sát với độ sáng trung bình đo được
+      trên bộ này (V trung bình 132 trên 850 ảnh), nên `hsv_v=0.4` thành
+      delta ±51 thay vì hệ số ×[0.6, 1.4].
+    * sắc: mmdet cộng delta trên thang H 0-179 của OpenCV, ultralytics dùng
+      `hsv_h * 180` — cùng thang, nên nhân thẳng.
+    * tương phản: ultralytics KHÔNG đụng tới. `PhotoMetricDistortion` luôn
+      chạy bước này nên khoá nó ở (1.0, 1.0) thay vì để mặc định (0.5, 1.5);
+      bỏ quên là SOLOv2 được thêm một phép mà ba model kia không có.
+    """
+    v = float(args.get("hsv_v") or 0.0)
+    sat = float(args.get("hsv_s") or 0.0)
+    hue = float(args.get("hsv_h") or 0.0)
+    if not (v or sat or hue):
+        return None
+    return dict(
+        type="PhotoMetricDistortion",
+        brightness_delta=int(round(v * 128)),
+        contrast_range=(1.0, 1.0),
+        saturation_range=(round(max(0.0, 1.0 - sat), 6), round(1.0 + sat, 6)),
+        hue_delta=int(round(hue * 180)),
+    )
+
+
 def build_overrides(arch: str, root: str | Path, splits: dict, n_train: int, args: dict,
                     aspect: float = 9 / 16, out_dir: str = "", load_from: str = "",
                     limit: int | None = None) -> dict:
@@ -223,6 +261,9 @@ def build_overrides(arch: str, root: str | Path, splits: dict, n_train: int, arg
     flip = flip_transform(args["fliplr"], args["flipud"])
     if flip:
         train_pipeline.append(flip)
+    color = color_transform(args)
+    if color:
+        train_pipeline.append(color)
     train_pipeline.append(dict(type="PackDetInputs"))
     # KHÔNG có LoadAnnotations, khác config mẫu của mmdet. Mẫu của họ có, và
     # nó là công thuần tuý: `CocoMetric` bên dưới nhận `ann_file` nên nó đọc

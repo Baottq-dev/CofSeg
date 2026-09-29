@@ -84,7 +84,9 @@ hoặc `f1` — có ba chỗ trong khối lệnh, sửa hết cả ba. Hai bộ 
 
 ```bash
 # 1. huấn luyện — chỉ train + val, không đụng tới split test
-#    (thêm --limit 16 --epochs 1 để khói, kiểm đường chạy trước)
+#    (khói: --limit 64 --epochs 3 --warmup_iters 30. warmup_iters là PHẦN
+#     của lịch (0.03), nên lượt ngắn co nó về 1 vòng và lr 0.02 làm RPN
+#     nổ ngay — FloatingPointError ở vòng 13. Truyền số vòng tuyệt đối.)
 python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --data data/export/block/f1 --runs benchmark/solov2/runs --name solov2 --workers 8
 
 # 2. chấm test bằng trọng số tốt nhất
@@ -116,7 +118,7 @@ dò VRAM rồi thoát.
 python benchmark/solov2/train.py \
   --config benchmark/solov2/configs/train/solov2_r50_mm.yaml \
   --data data/export/field/f1 --runs benchmark/solov2/runs --name solov2 \
-  --imgsz 1024 --batch 16 --epochs 50 \
+  --imgsz 1024 --batch 16 --epochs 100 \
   --lr 0.01 --weight_decay 1e-4 --momentum 0.9 \
   --lr_steps "[0.7,0.9]" --lr_gamma 0.1 --warmup_iters 0.03 --amp true \
   --fliplr 0.5 --flipud 0.5 \
@@ -227,7 +229,7 @@ không còn so được với ba model kia. Sửa thì báo nhóm.
   kiểm được phần dựng config. Việc đầu tiên trên máy Linux, một lượt khói:
 
   ```bash
-  python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --data data/export/block/f1 --limit 16 --epochs 1
+  python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --data data/export/block/f1 --limit 64 --epochs 3 --warmup_iters 30
   ```
 - Khác biệt có chủ đích so với hai model detectron2: **không có xoay 90°**
   (mmdet không có transform sẵn cho mask + box), chỉ lật ngang/dọc/chéo. Nhớ
