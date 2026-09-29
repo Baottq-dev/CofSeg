@@ -94,7 +94,7 @@ dò VRAM rồi thoát.
 python benchmark/yolo/train.py \
   --config benchmark/yolo/configs/train/yolo11s.yaml \
   --data data/export/field/f1 --runs benchmark/yolo/runs --name yolo11s \
-  --imgsz 1024 --batch 16 --epochs 50 --patience 0 \
+  --imgsz 1024 --batch 16 --epochs 100 --patience 0 \
   --optimizer auto --cos_lr true --amp true \
   --mask_ratio 4 --overlap_mask true \
   --fliplr 0.5 --flipud 0.5 --degrees 0 --copy_paste 0 \
