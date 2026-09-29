@@ -385,3 +385,16 @@ def test_readme_noi_mmcv_keo_ve_mmengine_hong():
     i_mmcv = doc.index("pip install --no-build-isolation -e .")
     i_git = doc.index("git+https://github.com/open-mmlab/mmengine")
     assert i_git > i_mmcv, "bước mmengine-từ-git đứng trước bước cài mmcv thì bị đè"
+
+
+def test_readme_kiem_ca_torchvision():
+    """detectron2 lấy ROIAlign và NMS của torchvision, mà torchvision có phần
+    mở rộng C++ link vào libtorch — lệch bản dựng là gãy lúc GỌI op, không
+    phải lúc import. Chỉ kiểm `import torch` là bỏ sót đúng chỗ đó.
+
+    Ngày 29/09/2026 trên Vast, lệnh cài chỉ có torch nên torchvision ở lại bản
+    cũ mà không ai thấy.
+    """
+    doc = (BENCH / "README.md").read_text(encoding="utf-8")
+    assert "from torchvision.ops import nms" in doc, "thiếu phép gọi op thật"
+    assert "torchvision==0.26.0+cu128" in doc, "lệnh cài không kèm torchvision"

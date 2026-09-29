@@ -95,6 +95,23 @@ Kiểm ngay, đừng đợi — và kiểm cả con số CUDA, không chỉ số
 python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
 
+**Kiểm torchvision riêng, đừng tin là nó đi kèm.** Nó có phần mở rộng C++ link
+thẳng vào `libtorch`, nên một bản torchvision dựng cho bản dựng CUDA khác sẽ
+`import` được rồi gãy lúc gọi op — mà detectron2 lấy ROIAlign và NMS của
+torchvision, tức Mask R-CNN dựa hẳn vào đó:
+
+```bash
+python -c "
+import torch, torchvision
+from torchvision.ops import nms
+b = torch.tensor([[0., 0., 1., 1.], [0., 0., 1., 1.]]); s = torch.tensor([0.9, 0.8])
+print(torch.__version__, torchvision.__version__, nms(b, s, 0.5).tolist())"
+```
+
+Dòng này gọi op thật trên CPU nên không cần GPU. Ra `[0]` là xong; ném
+`undefined symbol` hoặc `Couldn't load custom C++ ops` là hai gói lệch bản dựng,
+cài lại **cả hai cùng một lệnh** như trên.
+
 #### Vì sao CUDA 12.8
 
 12.8 là bản **đầu tiên** có `sm_120`, tức bản đầu tiên chạy được Blackwell. Nó
