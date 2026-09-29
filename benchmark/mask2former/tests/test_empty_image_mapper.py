@@ -60,6 +60,9 @@ class _UpstreamMapper:
 
     def __init__(self, cfg, is_train=True):
         self.is_train = is_train
+        # Bản thật dựng LSJ ở đây (ResizeScale + FixedSizeCrop + RandomFlip);
+        # chỉ cần cái danh sách để kiểm phần màu nối vào đúng chỗ.
+        self.tfm_gens = []
 
     def __call__(self, dataset_dict):
         out = {"image": torch.zeros((3, 64, 96), dtype=torch.uint8),
@@ -99,6 +102,23 @@ def mapper_cls(monkeypatch):
         sys.modules,
         "mask2former.data.dataset_mappers.coco_instance_new_baseline_dataset_mapper",
         leaf)
+
+    transforms = types.ModuleType("detectron2.data.transforms")
+
+    class _Ghi:
+        def __init__(self, lo, hi):
+            self.lo, self.hi = lo, hi
+
+        def __repr__(self):
+            return f"{type(self).__name__}({self.lo}, {self.hi})"
+
+    transforms.RandomBrightness = type("RandomBrightness", (_Ghi,), {})
+    transforms.RandomSaturation = type("RandomSaturation", (_Ghi,), {})
+    data = types.ModuleType("detectron2.data")
+    data.transforms = transforms
+    d2.data = data
+    monkeypatch.setitem(sys.modules, "detectron2.data", data)
+    monkeypatch.setitem(sys.modules, "detectron2.data.transforms", transforms)
 
     from cofseg.models.detectron2 import empty_safe_mapper
     return empty_safe_mapper(object())
@@ -147,3 +167,33 @@ def test_khong_dung_vao_dataset_dict_goc(mapper_cls):
 
 def test_luc_val_thi_khong_gan_instances(mapper_cls):
     assert "instances" not in mapper_cls(None, False)(dict(ANH_NEN))
+
+
+# ------------------------------------------------------- màu nối vào LSJ
+
+
+def _mau(is_train=True, **kw):
+    from cofseg.models.detectron2 import empty_safe_mapper
+
+    return empty_safe_mapper(object(), **kw)(None, is_train).tfm_gens
+
+
+def test_mau_noi_vao_cuoi_tfm_gens(mapper_cls):
+    """Ba model kia nhận màu qua hsv_s/hsv_v; Mask2Former phải nhận cùng biên độ.
+
+    Nối vào CUỐI chứ không dựng lại danh sách: LSJ là recipe của tác giả.
+    """
+    gens = _mau(hsv_s=0.7, hsv_v=0.4)
+    assert [type(g).__name__ for g in gens] == ["RandomBrightness", "RandomSaturation"]
+    assert (gens[0].lo, gens[0].hi) == (0.6, 1.4)      # 1 +- hsv_v
+    assert (gens[1].lo, gens[1].hi) == pytest.approx((0.3, 1.7))   # 1 +- hsv_s
+
+
+def test_khong_khai_mau_thi_khong_them_gi(mapper_cls):
+    assert _mau() == []
+    assert _mau(hsv_s=0, hsv_v=0) == []
+
+
+def test_val_khong_tang_cuong_mau(mapper_cls):
+    """Tăng cường chỉ áp lúc train; áp lúc val là chấm trên ảnh đã bị đổi màu."""
+    assert _mau(is_train=False, hsv_s=0.7, hsv_v=0.4) == []

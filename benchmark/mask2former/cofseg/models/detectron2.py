@@ -72,8 +72,8 @@ def load_mask2former(repo: str | Path):
     return mod
 
 
-def empty_safe_mapper(m2f):
-    """Mapper LSJ của Mask2Former, vá chỗ nó gãy trên ẢNH NỀN.
+def empty_safe_mapper(m2f, hsv_s: float = 0.0, hsv_v: float = 0.0):
+    """Mapper LSJ của Mask2Former, vá chỗ nó gãy trên ẢNH NỀN, kèm màu.
 
     `COCOInstanceNewBaselineDatasetMapper.__call__` làm thế này:
 
@@ -96,6 +96,12 @@ def empty_safe_mapper(m2f):
     `Instances` rỗng đúng dạng mà model chờ. Giữ nguyên ảnh nền thay vì bật
     FILTER_EMPTY_ANNOTATIONS cho riêng model này — bốn model phải ăn cùng
     một tập dữ liệu thì bảng so sánh mới có nghĩa.
+
+    `hsv_s` / `hsv_v` nối thêm hai transform màu vào cuối `tfm_gens` của recipe
+    gốc, cùng biên độ với ba model kia. Nối vào cuối chứ không dựng lại danh
+    sách: LSJ (`ResizeScale` + `FixedSizeCrop` + `RandomFlip`) là phần recipe
+    của tác giả, không đụng tới. Hai transform này chỉ đổi điểm ảnh nên thứ tự
+    so với phép hình học không đổi kết quả.
     """
     import copy
 
@@ -107,6 +113,24 @@ def empty_safe_mapper(m2f):
     )
 
     class EmptySafeLSJMapper(COCOInstanceNewBaselineDatasetMapper):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            if not (self.is_train and (hsv_v or hsv_s)):
+                return
+            from detectron2.data import transforms as T
+
+            # Nối vào cuối danh sách của recipe gốc. Nếu upstream đổi cách giữ
+            # transform thì dừng hẳn: bỏ im lặng phần màu là ba model kia có
+            # mà Mask2Former không, đúng chênh lệch ta vừa đi gỡ.
+            if not isinstance(getattr(self, "tfm_gens", None), list):
+                raise RuntimeError(
+                    "COCOInstanceNewBaselineDatasetMapper không còn giữ "
+                    "tfm_gens dạng list — không nối được transform màu.")
+            if hsv_v:
+                self.tfm_gens.append(T.RandomBrightness(1.0 - hsv_v, 1.0 + hsv_v))
+            if hsv_s:
+                self.tfm_gens.append(T.RandomSaturation(1.0 - hsv_s, 1.0 + hsv_s))
+
         @staticmethod
         def _co_vung(d) -> bool:
             return any(a.get("iscrowd", 0) == 0 for a in (d.get("annotations") or []))

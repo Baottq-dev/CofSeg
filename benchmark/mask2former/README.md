@@ -88,7 +88,9 @@ hoặc `f1` — có ba chỗ trong khối lệnh, sửa hết cả ba. Hai bộ 
 
 ```bash
 # 1. huấn luyện — chỉ train + val, không đụng tới split test
-#    (thêm --limit 16 --epochs 1 để khói, kiểm đường chạy trước)
+#    (khói: --limit 64 --epochs 3 --warmup_iters 30. warmup_iters là PHẦN
+#     của lịch (0.03), nên lượt ngắn co nó về 1 vòng và lr 0.02 làm RPN
+#     nổ ngay — FloatingPointError ở vòng 13. Truyền số vòng tuyệt đối.)
 python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/block/f1 --runs benchmark/mask2former/runs --name mask2former --workers 8
 
 # 2. chấm test bằng trọng số tốt nhất
@@ -120,12 +122,12 @@ dò VRAM rồi thoát.
 python benchmark/mask2former/train.py \
   --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml \
   --data data/export/field/f1 --runs benchmark/mask2former/runs --name mask2former \
-  --imgsz 1024 --batch 16 --epochs 100 \
+  --imgsz 1024 --batch 8 --epochs 50 \
   --lr 1e-4 --weight_decay 0.05 --momentum 0.9 \
   --lr_steps "[0.7,0.9]" --lr_gamma 0.1 --warmup_iters 0.03 --amp true \
   --num_queries 100 \
   --keep_ckpts 1 \
-  --val_every 1 --val_conf 0.05 --val_batch 16 --max_det 100 \
+  --val_every 1 --val_conf 0.05 --val_batch 8 --max_det 100 \
   --workers 8 --seed 0 --log_every 20
 ```
 
@@ -142,7 +144,7 @@ Mask2Former không có ROI head — nó sinh mask ở stride 4 của toàn ảnh
 
 Ba giá trị trong lệnh là **hiệu dụng**, còn config để trống cho trainer tự
 tính: `--lr 1e-4` là `1e-4 x batch/16`, `--weight_decay 0.05` là mặc định của
-AdamW trong recipe, `--val_batch 16` là "theo batch train". `--momentum` có
+AdamW trong recipe, `--val_batch 8` là "theo batch train". `--momentum` có
 trong danh sách nhưng AdamW không dùng tới nó. `--workers 8` là giá trị cho
 máy Linux; trên Windows trainer tự đặt 0 vì paging file.
 
@@ -326,10 +328,14 @@ commit ở repo ngoài — git ghi lại commit mới của repo con.
   ```bash
   python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/block/f1 --imgsz 1024 --batch 16 --probe
   ```
-- Tốn giờ nhất trong bốn model: recipe **100 epoch**, gấp đôi Mask R-CNN và
-  SOLOv2, ước ~2–3 h một fold trên 4090 — riêng nó chiếm khoảng 59 % tổng giờ
-  máy của cả bảng. Chạy sau khi ba model kia đã xong một fold để không chiếm
-  GPU quá lâu. Nếu cần cắt giờ, `--epochs 50` đưa nó về ngang hai model kia và
-  bảng cũng công bằng hơn khi so bốn model.
+- Tốn giờ nhất trong bốn model dù chỉ chạy **50 epoch** (ba model kia 100):
+  đo được ~87 phút một fold ở `val_every 1`, batch 8, RTX 5090 — riêng nó
+  chiếm quá nửa tổng giờ máy của cả bảng. Chạy sau khi ba model kia đã xong
+  một fold để không chiếm GPU quá lâu.
+
+  50 chứ không phải 100 là kết quả đo, không phải cắt bớt cho rẻ: lượt chạy
+  thử 100 epoch cho thấy best epoch luôn rơi trước mốc 50, nên phần sau chỉ
+  tốn giờ máy. Recipe gốc dùng 50 epoch trên 118k ảnh COCO; bộ này có ~450 ảnh
+  train nên số vòng thực tế đã ít hơn hai bậc, và query vẫn kịp hội tụ.
 - Giữ nguyên tăng cường LSJ của recipe gốc (mapper trong `train_net.py` của
   repo), không áp flipud/rot90 như hai model R-CNN.

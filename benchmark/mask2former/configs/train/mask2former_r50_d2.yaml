@@ -17,9 +17,17 @@ model:
   arch: mask2former
   repo: benchmark/mask2former/upstream
 train:
-  # Query-based hội tụ chậm hơn R-CNN; recipe COCO là 50 epoch trên 118k ảnh,
-  # với ~600 ảnh train thì 100 epoch (~15k iteration ở batch 4) là mức khởi đầu.
-  epochs: 100
+  # 50, khác ba model kia (100). Query-based vốn hội tụ chậm hơn R-CNN nên
+  # 100 từng là mức khởi đầu, nhưng lượt chạy thử 100 epoch cho thấy best
+  # epoch luôn rơi TRƯỚC mốc 50 — phần sau chỉ tốn giờ máy. Đây là chênh lệch
+  # có chủ đích và đo được, ghi ra đây để bảng kết quả giải thích được nó.
+  epochs: 50
+  # 8, khác ba model kia (16). Không phải lựa chọn: batch 16 tràn VRAM ở
+  # imgsz 1024 — Mask2Former giữ 100 query cộng attention toàn ảnh nên nó tốn
+  # hơn hẳn ba model kia. `lr` để trống nên trainer tự nhân batch/16, tức
+  # 1e-4 x 8/16 = 5e-5: đúng luật scale tuyến tính mà recipe gốc dùng, nên hạ
+  # batch KHÔNG kéo theo lệch lịch học.
+  batch: 8
   # >= số tán tối đa một ảnh (48); 100 là mặc định của recipe.
   num_queries: 100
   # LSJ của recipe gốc tự lật ngang; flipud/rot90 không áp cho mapper này.

@@ -45,6 +45,16 @@ train:
   flipud: 0.5
   rot90: true
 
+  # Màu: cùng biên độ với YOLO, vốn nhận ba con số này từ mặc định của
+  # ultralytics. Trước đây chỉ YOLO có, nên độ bền với ánh sáng rơi vào cột
+  # kiến trúc của bảng thay vì vào cột augmentation. Đo trên 850 ảnh (3 ngày
+  # bay, 07h-16h): V trải 99-175, S trải 78-180, và ruộng tối nhất lại chính
+  # là test của fold f1. Khác flipud/rot90 ở trên, ba khoá này CÓ áp cho mapper
+  # LSJ — chúng chỉ đụng điểm ảnh nên không giẫm lên phép co giãn của recipe.
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+
   # Chấm mask AP trên val mỗi epoch (COCOEvaluator), giữ best.pth theo segm/AP.
   val_every: 1
   val_conf: 0.05
