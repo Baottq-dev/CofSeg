@@ -69,7 +69,9 @@ hoặc `f1` — có ba chỗ trong khối lệnh, sửa hết cả ba. Hai bộ 
 
 ```bash
 # 1. huấn luyện — chỉ train + val, không đụng tới split test
-#    (thêm --limit 16 --epochs 1 để khói, kiểm đường chạy trước)
+#    (khói: --limit 64 --epochs 3 --warmup_iters 30. warmup_iters là PHẦN
+#     của lịch (0.03), nên lượt ngắn co nó về 1 vòng và lr 0.02 làm RPN
+#     nổ ngay — FloatingPointError ở vòng 13. Truyền số vòng tuyệt đối.)
 python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --data data/export/block/f1 --runs benchmark/maskrcnn/runs --name maskrcnn --workers 8
 
 # 2. chấm test bằng trọng số tốt nhất
@@ -101,7 +103,7 @@ dò VRAM rồi thoát.
 python benchmark/maskrcnn/train.py \
   --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml \
   --data data/export/field/f1 --runs benchmark/maskrcnn/runs --name maskrcnn \
-  --imgsz 1024 --batch 16 --epochs 50 \
+  --imgsz 1024 --batch 16 --epochs 100 \
   --lr 0.02 --weight_decay 1e-4 --momentum 0.9 \
   --lr_steps "[0.7,0.9]" --lr_gamma 0.1 --warmup_iters 0.03 --amp true \
   --fliplr 0.5 --flipud 0.5 --rot90 true \
@@ -281,7 +283,7 @@ không còn so được với ba model kia. Sửa thì báo nhóm.
   đường chạy thông chứ chưa phải kết quả.
 
   ```bash
-  python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --data data/export/block/f1 --imgsz 1024 --batch 16 --epochs 3 --workers 4
+  python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml --data data/export/block/f1 --imgsz 1024 --batch 16 --epochs 3 --warmup_iters 30 --workers 4
   ```
 
   Một điểm phải theo dõi khi chạy đủ epoch: `APs` = 0,000 ở cả ba epoch và

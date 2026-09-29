@@ -56,7 +56,7 @@ D2_DEFAULTS: dict = {
     # Đo thật trên RTX 5090: batch 16 ở imgsz 1024 dùng 12.7 GB. Mặc định cũ
     # là 4 — con số của card 8 GB ở nhà, không phải của máy sẽ chạy thật.
     "batch": 16,
-    "epochs": 50,
+    "epochs": 100,
     "lr": None,
     "weight_decay": None,
     "momentum": 0.9,
@@ -70,6 +70,13 @@ D2_DEFAULTS: dict = {
     "fliplr": 0.5,
     "flipud": 0.5,
     "rot90": True,
+    # Cùng tên và cùng biên độ với ba khoá của ultralytics, để bốn model nói
+    # một thứ tiếng: gain = uniform(1-x, 1+x) nhân vào kênh tương ứng.
+    # detectron2 không có transform sắc, nên hsv_h nhận giá trị nhưng KHÔNG
+    # được áp — nêu ra ở đây chứ đừng để người đọc config tưởng là có.
+    "hsv_h": 0.015,
+    "hsv_s": 0.7,
+    "hsv_v": 0.4,
     "val_every": 1,
     "val_conf": 0.05,
     # Batch lúc chấm val. None = theo batch train. Mặc định của detectron2 là
@@ -907,6 +914,19 @@ class Detectron2Trainer(Trainer):
                     augs.append(T.RandomFlip(prob=float(a["flipud"]), horizontal=False, vertical=True))
                 if a["rot90"]:
                     augs.append(T.RandomRotation([0, 90, 180, 270], sample_style="choice", expand=True))
+                # Màu, cùng biên độ với YOLO. Hai transform này chỉ đụng ảnh,
+                # không đụng mask/box, nên đặt sau phần hình học cũng được.
+                # RandomBrightness trộn với đen (img * w) = nhân độ sáng;
+                # RandomSaturation trộn với ảnh xám = nhân độ bão hoà. Ảnh vào
+                # đây là BGR (format của model zoo), nên trọng số luma mà
+                # detectron2 dùng để dựng ảnh xám bị hoán R với B — lệch nhỏ,
+                # và đó là cách mọi config gốc của detectron2 vẫn chạy.
+                if float(a["hsv_v"]):
+                    v = float(a["hsv_v"])
+                    augs.append(T.RandomBrightness(1.0 - v, 1.0 + v))
+                if float(a["hsv_s"]):
+                    s = float(a["hsv_s"])
+                    augs.append(T.RandomSaturation(1.0 - s, 1.0 + s))
                 return build_detection_train_loader(
                     cfg, mapper=DatasetMapper(cfg, is_train=True, augmentations=augs))
 

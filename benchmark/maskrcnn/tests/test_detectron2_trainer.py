@@ -93,8 +93,8 @@ def test_trainer_contract_and_run_tag():
     names = Detectron2Trainer.param_names()
     assert {"imgsz", "batch", "epochs", "lr", "num_queries", "workers"} <= names
     assert Detectron2Trainer.locked_params() == frozenset()
-    assert Detectron2Trainer.run_tag({"train": {"imgsz": 2048, "batch": 1}}) == "i2048b1e50"
-    assert Detectron2Trainer.run_tag({}) == "i1024b16e50"
+    assert Detectron2Trainer.run_tag({"train": {"imgsz": 2048, "batch": 1}}) == "i2048b1e100"
+    assert Detectron2Trainer.run_tag({}) == "i1024b16e100"
 
 
 def test_prepare_counts_train_images_without_detectron2(three_splits, tmp_path):
