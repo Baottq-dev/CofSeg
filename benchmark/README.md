@@ -112,6 +112,21 @@ Dòng này gọi op thật trên CPU nên không cần GPU. Ra `[0]` là xong; n
 `undefined symbol` hoặc `Couldn't load custom C++ ops` là hai gói lệch bản dựng,
 cài lại **cả hai cùng một lệnh** như trên.
 
+#### `cuda-toolkit` hiện ra trong danh sách cài là bình thường
+
+```
+Installing collected packages: cuda-toolkit, torch
+Successfully installed cuda-toolkit-12.8.1 torch-2.11.0+cu128
+```
+
+torch 2.11 đổi cách đóng gói: thay vì hàng chục wheel `nvidia-*-cu12` rời, nó
+khai một metapackage `cuda-toolkit[cublas,cudart,cufft,...]==12.8.1`.
+
+**Đừng nhầm gói này với toolkit đầy đủ.** Danh sách extras không có `nvcc` —
+đây chỉ là **thư viện runtime** để torch chạy. Nvcc dùng để biên dịch ba gói ở
+Bước 3 vẫn là cái của máy (hoặc cái conda cài ở mục *Cài mmcv*). Thấy dòng trên
+rồi tưởng đã có toolkit là bỏ Bước 0, rồi gãy ở `build_ext`.
+
 #### Vì sao CUDA 12.8
 
 12.8 là bản **đầu tiên** có `sm_120`, tức bản đầu tiên chạy được Blackwell. Nó
