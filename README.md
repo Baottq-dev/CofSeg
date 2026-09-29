@@ -145,6 +145,18 @@ Cho nhiều người trong mạng truy cập (máy lab):
 python -m uvicorn app.server:app --host 0.0.0.0 --port 1801
 ```
 
+**Xem dự đoán của model chồng lên nhãn.** Bảng "Dự đoán model" ở cột phải đọc
+thẳng `runs/eval/` — không cần chép gì, không cần chạy lại suy diễn. Tick "Hiện
+dự đoán" là chọn được từng lượt chấm phủ ảnh đang mở (mỗi ảnh nằm trong split
+test của đúng một fold, nên thường có một lượt cho mỗi model), kéo ngưỡng điểm,
+và thấy ngay tán nào khớp, dự đoán nào thừa, tán nào bị bỏ sót. Lớp này **chỉ
+đọc**: bật nó lên là mọi thao tác sửa nhãn bị khoá, để không nhầm dự đoán của
+máy thành nhãn tay. Trỏ sang thư mục lượt chấm khác bằng `EVAL_RUNS_DIR`:
+
+```
+EVAL_RUNS_DIR=benchmark/yolo/runs/eval python -m app.server
+```
+
 ## 6. Chạy benchmark
 
 ```

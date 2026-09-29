@@ -4,7 +4,11 @@
 <meta charset="utf-8"/>
 <title>AgriLabel Studio</title>
 <style>
-  :root{--bg:#0a111e;--panel:#0e1826;--panel2:#132133;--elev:#18293f;--border:#1e2f47;--text:#dbe4f0;--muted:#7f8ea6;--muted2:#5f6f88;--teal:#2dd4bf;--blue:#3b82f6;--green:#22c55e;--accent:#f97316;--radius:8px}
+  :root{--bg:#0a111e;--panel:#0e1826;--panel2:#132133;--elev:#18293f;--border:#1e2f47;--text:#dbe4f0;--muted:#7f8ea6;--muted2:#5f6f88;--teal:#2dd4bf;--blue:#3b82f6;--green:#22c55e;--accent:#f97316;--radius:8px;
+    /* Ba màu của lớp dự đoán, cố ý nằm NGOÀI bảng màu mức hoa (#64748b/#22c55e/
+       #f59e0b/#ef4444) và ngoài màu nháp (#f97316), để nhìn là biết ngay đường
+       nào của model, đường nào của nhãn. */
+    --pred-tp:#22d3ee;--pred-fp:#e879f9;--pred-fn:#fb7185}
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Arial,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);color:var(--text);font-size:13px}
   ::-webkit-scrollbar{width:9px;height:9px}
@@ -187,6 +191,22 @@
   .hlist{display:flex;flex-direction:column;gap:4px;font-size:12px}
   .hlist div{display:flex;align-items:baseline;gap:2px}
   .hlist span{color:var(--muted)}
+  /* --- lớp xem dự đoán (chỉ đọc) --- */
+  .predbox{display:flex;flex-direction:column;gap:7px;border:1px solid var(--border);background:var(--panel2);border-radius:8px;padding:8px}
+  .predbox.on{border-color:var(--pred-tp)}
+  .predbox label{display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:var(--muted);gap:8px}
+  .predbox select{flex:1;min-width:0;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 6px;font-size:12px;outline:none}
+  .predbox input[type=range]{flex:1;min-width:0;accent-color:var(--pred-tp)}
+  .predbox .chk{justify-content:flex-start;gap:6px;color:var(--text);cursor:pointer}
+  .predsum{display:flex;flex-wrap:wrap;gap:4px}
+  .predsum b{font-weight:700;font-variant-numeric:tabular-nums}
+  .pchip{border:1px solid var(--border);border-radius:999px;padding:1px 8px;font-size:11px;background:var(--panel);white-space:nowrap}
+  .pchip.tp{color:var(--pred-tp);border-color:var(--pred-tp)}
+  .pchip.fp{color:var(--pred-fp);border-color:var(--pred-fp)}
+  .pchip.fn{color:var(--pred-fn);border-color:var(--pred-fn)}
+  .predsrc{font-size:10.5px;color:var(--muted2);line-height:1.45;word-break:break-all}
+  .predwarn{font-size:11px;color:#f7c66b;line-height:1.45}
+  .predlock{font-size:11px;color:var(--pred-tp);display:flex;align-items:center;gap:5px}
 </style>
 </head>
 <body>
@@ -265,6 +285,21 @@
       </div>
       <label class="chk"><input id="showMask" type="checkbox"/> Hiện pixel hoa trên ảnh</label>
       <button id="autoAll" class="btn">⚡ Đếm hoa & phân loại tất cả</button>
+    </div>
+    <div class="sec">Dự đoán model <span class="pill" id="predCount">—</span></div>
+    <div id="predBox" class="predbox">
+      <label class="chk"><input id="predOn" type="checkbox"/> Hiện dự đoán (khoá sửa)</label>
+      <div id="predBody" hidden>
+        <div class="predbox" style="border:0;padding:0;gap:7px">
+          <label>Lượt chấm <select id="predRun"></select></label>
+          <label>Điểm ≥ <input id="predConf" type="range" min="5" max="95" step="5" value="50"/>
+            <b id="predConfLbl" style="min-width:34px;text-align:right;color:var(--text)">0,50</b></label>
+          <label class="chk"><input id="predShowGt" type="checkbox" checked/> Hiện cả nhãn tay</label>
+          <div class="predsum" id="predSum"></div>
+          <div class="predwarn" id="predWarn" hidden></div>
+          <div class="predsrc" id="predSrc"></div>
+        </div>
+      </div>
     </div>
     <div class="sec">Instances (vùng cây) <span class="pill" id="rcount">0</span></div>
     <div id="regions" class="reglist"></div>
@@ -391,12 +426,18 @@ const cv=document.getElementById('cv'),ctx=cv.getContext('2d'),wrap=document.get
 const $=id=>document.getElementById(id);
 function enc(t){return t.split('/').map(encodeURIComponent).join('/');}
 function natcmp(a,b){return String(a).localeCompare(String(b),undefined,{numeric:true});}
-const HINT={'sam-click':'SAM Click · Bấm vào 1 cây để tạo vùng mới (lớp đang chọn).','sam-box':'SAM Box · Kéo 1 khung quanh cây để tạo vùng chính xác hơn.','draw':'Vẽ tay · Click các điểm quanh tán; double-click để đóng vùng; Esc để huỷ.','select':'Chọn / Sửa · Kéo điểm trắng để nắn viền (Shift = 1 điểm) · rê lên cạnh để hiện điểm mờ, bấm là thêm điểm ngay đó · chuột phải xoá điểm · Delete xoá vùng · Ctrl+Z hoàn tác.'};
+const HINT={'sam-click':'SAM Click · Bấm vào 1 cây để tạo vùng mới (lớp đang chọn).','sam-box':'SAM Box · Kéo 1 khung quanh cây để tạo vùng chính xác hơn.','draw':'Vẽ tay · Click các điểm quanh tán; double-click để đóng vùng; Esc để huỷ.','select':'Chọn / Sửa · Kéo điểm trắng để nắn viền (Shift = 1 điểm) · rê lên cạnh để hiện điểm mờ, bấm là thêm điểm ngay đó · chuột phải xoá điểm · Delete xoá vùng · Ctrl+Z hoàn tác.',
+ 'view':'👁 Xem dự đoán — KHOÁ SỬA · kéo để di chuyển, lăn để phóng to · rê lên một vùng để xem điểm và IoU · bỏ tick "Hiện dự đoán" để sửa lại.'};
 const BTN={'sam-click':'m-click','sam-box':'m-box','draw':'m-draw','select':'m-sel'};
-function setMode(m){mode=m;draft=[];boxStart=null;hovPt=-1;ghost=null;
+// 'view' = chế độ CHỈ XEM. Khoá bằng một chế độ riêng chứ không rải cờ khắp
+// nơi: bốn nhánh sửa trong handler chuột đều bắt đầu bằng `mode==='...'` nên
+// không nhánh nào khớp nữa, tức không có đường nào lọt. Các nút trong danh
+// sách vùng và phím tắt đi đường riêng nên vẫn hỏi `predLocked()`.
+function setMode(m){if(predOn&&m!=='view')return;
+ mode=m;draft=[];boxStart=null;hovPt=-1;ghost=null;dragPt=-1;dragVi=-1;origPoly=null;softD=null;
  document.querySelectorAll('#bar .seg button').forEach(b=>b.classList.remove('on'));
  if(BTN[m])$(BTN[m]).classList.add('on');
- cv.style.cursor='crosshair';$('hint').textContent=HINT[m]||'';draw();}
+ cv.style.cursor=(m==='view')?'grab':'crosshair';$('hint').textContent=HINT[m]||'';draw();}
 [['m-click','sam-click'],['m-box','sam-box'],['m-draw','draw'],['m-sel','select']].forEach(a=>$(a[0]).onclick=()=>setMode(a[1]));
 function renderClasses(){const box=$('classes');box.innerHTML='';
  classes.forEach(c=>{const row=document.createElement('div');row.className='cls'+(c.id===activeCls?' active':'');row.title='Chọn để gán thủ công mức "'+c.name+'" khi vẽ';
@@ -485,7 +526,11 @@ function renderRegions(){const box=$('regions');const st=box.scrollTop;box.inner
   head.title='#'+r.id+' · '+(r.poly.length/2)+' đỉnh';
   head.appendChild(dot);head.appendChild(idb);head.appendChild(cn);head.appendChild(pc);
   // Chọn từ danh sách thì vùng phải hiện: vùng được chọn luôn nhìn thấy được.
-  head.onclick=()=>{if(!r.vis){pushHist();r.vis=true;}sel=i;setMode('select');tidySel(i);renderRegions();draw();};
+  // Ở chế độ xem dự đoán, bấm một hàng chỉ để HIỆN lại vùng đó: `tidySel` dọn
+  // polygon rồi `persist()` lưu xuống đĩa, tức nó là một thao tác sửa.
+  head.onclick=()=>{if(!r.vis){if(!predLocked())pushHist();r.vis=true;}
+   if(predLocked()){renderRegions();draw();return;}
+   sel=i;setMode('select');tidySel(i);renderRegions();draw();};
   const act=document.createElement('div');act.className='ract';
   const selc=document.createElement('select');selc.title='Gán mức mật độ thủ công';classes.forEach(cc=>{const o=document.createElement('option');o.value=cc.id;o.textContent=cc.name;if(cc.id===r.cls)o.selected=true;selc.appendChild(o);});
   selc.onchange=()=>{pushHist();r.cls=parseInt(selc.value);r.manual=true;persist();draw();renderRegions();};
@@ -498,6 +543,11 @@ function renderRegions(){const box=$('regions');const st=box.scrollTop;box.inner
   bV.onclick=()=>{pushHist();r.vis=!r.vis;if(!r.vis&&sel===i){sel=-1;dragPt=-1;hovPt=-1;ghost=null;}draw();renderRegions();};
   const bD=document.createElement('button');bD.className='del';bD.textContent='🗑';bD.title='Xoá vùng';
   bD.onclick=()=>{pushHist();inst.splice(i,1);if(sel===i)sel=-1;else if(sel>i)sel--;persist();draw();renderRegions();};
+  // 👁 chỉ đổi trạng thái XEM (`vis` không đi vào payload lưu) nên vẫn mở ở
+  // chế độ xem dự đoán — ẩn một nhãn đi để nhìn rõ đường dự đoán bên dưới là
+  // đúng việc người ta cần lúc so sánh. Ba nút còn lại đều ghi xuống đĩa.
+  [selc,bF,bD].forEach(el=>{if(predLocked()){el.disabled=true;el.style.opacity=.4;
+   el.style.cursor='not-allowed';el.title='Đang ở chế độ xem dự đoán — tắt để sửa lại';}});
   act.appendChild(selc);act.appendChild(bF);act.appendChild(bV);act.appendChild(bD);
   row.appendChild(head);row.appendChild(act);box.appendChild(row);});
  box.scrollTop=st;
@@ -714,7 +764,10 @@ async function selectImg(t){if(current&&ready&&dirty){flush();}if(current&&ready
   emptyMark=!!(d&&d.empty&&!inst.length);
   store[t]=inst.map(cloneR);emptyStore[t]=emptyMark;}
  if(tok!==selToken)return;
- ready=true;$('count').textContent=countText();syncEmptyBtn();renderRegions();draw();renderClasses();scheduleMask();}
+ ready=true;$('count').textContent=countText();syncEmptyBtn();renderRegions();draw();renderClasses();scheduleMask();
+ // Đổi ảnh thì lớp dự đoán phải đổi theo: mỗi ảnh nằm trong split test của
+ // đúng một fold, nên danh sách lượt chấm cũng khác.
+ predData=null;predHover=null;predRender();predOnImage(tok);}
 function payload(){return JSON.stringify(Object.assign({name:current,width:img.width||0,height:img.height||0,polygons:inst.map(r=>r.poly),classes:inst.map(r=>r.cls),manual:inst.map(r=>!!r.manual),categories:classes,empty:(emptyMark&&!inst.length)},flowerParams()));}
 // Chỉ báo lưu. Bản cũ gọi fetch rồi bỏ qua kết quả, nên server có báo lỗi cũng
 // không ai thấy — kể cả khi nó không đọc được ảnh và không tính được mật độ hoa.
@@ -912,13 +965,208 @@ function arcDistPx(p,vi,limit){const n=p.length/2,d=new Float64Array(n).fill(Inf
    if(acc<d[nxt])d[nxt]=acc;
    cur=nxt;}}
  return d;}
+// =================== lớp xem dự đoán của model (CHỈ ĐỌC) ===================
+// Dữ liệu lấy thẳng từ runs/eval/ qua /api/pred/*, không có bản sao nào trong
+// data/. Lớp này KHÔNG BAO GIỜ đi vào `inst`: app autosave sau 700 ms và còn
+// bắn sendBeacon lúc rời trang, nên một dự đoán lọt vào `inst` là bị ghi thẳng
+// thành nhãn thật trong masks/corrected/, im lặng, cho cả 850 ảnh.
+let predOn=false,predRuns=[],predRun='',predConf=0.5,predData=null,predShowGt=true;
+let predToken=0,predTimer=null,predHover=null,predBefore='sam-click';
+function predColors(){const s=getComputedStyle(document.documentElement);
+ return {tp:(s.getPropertyValue('--pred-tp')||'#22d3ee').trim(),
+         fp:(s.getPropertyValue('--pred-fp')||'#e879f9').trim(),
+         fn:(s.getPropertyValue('--pred-fn')||'#fb7185').trim()};}
+function polyPath(p){ctx.beginPath();
+ for(let k=0;k<p.length;k+=2){k===0?ctx.moveTo(sx(p[k]),sy(p[k+1])):ctx.lineTo(sx(p[k]),sy(p[k+1]));}
+ ctx.closePath();}
+// Bề rộng trên MÀN HÌNH của một polygon — dùng để quyết định có viết chữ lên
+// nó không. Tán trung vị rộng 328 px ảnh, ở mức khớp khung (~0,43) là ~141 px,
+// đủ chỗ; nhưng lúc zoom ra thì không, và chữ chồng chữ khó đọc hơn không chữ.
+function polyW(p){let a=Infinity,b=-Infinity;
+ for(let k=0;k<p.length;k+=2){if(p[k]<a)a=p[k];if(p[k]>b)b=p[k];}
+ return (b-a)*scale;}
+// Vẽ SAU cùng, đè lên nhãn. Ba quy ước, chọn theo số đo chứ không theo cảm tính:
+//
+// 1. Dự đoán CHỈ CÓ VIỀN, nhãn mới có nền. Hai đường biên của một cặp đã ghép
+//    cách nhau trung vị 12,5-13,5 px ảnh (sáu model, 11,5k cặp) = 5,4-5,8 px
+//    màn hình ở mức khớp khung. Tô nền cả hai lớp là nuốt trọn đúng dải sai
+//    lệch mà người ta mở lớp này lên để nhìn.
+// 2. Viền dự đoán là NÉT ĐỨT. Chỗ hai đường trùng nhau (sai lệch dưới 1 px
+//    màn hình lúc zoom ra), nét đứt để đường liền của nhãn lộ ra qua khe —
+//    khác màu thôi thì đường vẽ sau che hẳn đường vẽ trước.
+// 3. Chỉ TÔ NỀN cho thứ SAI: dự đoán thừa (hồng) và tán bị bỏ sót (đỏ). Nền
+//    ở đây nghĩa là "có chuyện", viền trơn nghĩa là "khớp".
+function drawPred(){
+ if(!predOn||!predData||!predData.ok)return;
+ const C=predColors();
+ ctx.save();
+ // Tán bị BỎ SÓT — thứ đáng nhìn nhất trong một lượt so sánh, nên phải là thứ
+ // nổi nhất. Vẽ VIỀN TỐI rộng phía dưới rồi mới tô màu lên: nền ruộng lúc
+ // trưa sáng gần trắng, màu hồng nhạt đặt thẳng lên đó thì chìm hẳn (đã thử).
+ // Nét dài hơn nét của dự đoán để hai lớp không lẫn nhau dù cùng là nét đứt.
+ (predData.gt||[]).forEach(g=>{if(g.matched||!g.points||g.points.length<6)return;
+  polyPath(g.points);
+  ctx.fillStyle=hexA(C.fn,0.22);ctx.fill();
+  ctx.setLineDash([]);ctx.lineWidth=6;ctx.strokeStyle='rgba(6,12,22,.55)';ctx.stroke();
+  ctx.setLineDash([10,5]);ctx.lineWidth=3;ctx.strokeStyle=C.fn;ctx.stroke();});
+ ctx.setLineDash([6,4]);
+ // Một dự đoán rời thành nhiều vòng vẫn là MỘT dự đoán: đếm theo `det` để
+ // ngưỡng "quá nhiều chữ" không bị tỉ lệ vụn của model làm lệch, và chỉ vòng
+ // LỚN NHẤT của mỗi dự đoán mới được viết chữ (nếu không, một tán vỡ ba mảnh
+ // hiện ba lần cùng một con số).
+ const lon={};
+ (predData.polygons||[]).forEach((q,i)=>{const w=polyW(q.points);
+  if(lon[q.det]===undefined||w>lon[q.det].w)lon[q.det]={i:i,w:w};});
+ (predData.polygons||[]).forEach((q,i)=>{const p=q.points;if(!p||p.length<6)return;
+  const hov=(predHover&&predHover.kind==='pred'&&predHover.i===i);
+  polyPath(p);
+  if(!q.matched){ctx.fillStyle=hexA(C.fp,hov?0.26:0.12);ctx.fill();}
+  else if(hov){ctx.fillStyle=hexA(C.tp,0.18);ctx.fill();}
+  ctx.strokeStyle=q.matched?C.tp:C.fp;ctx.lineWidth=hov?3.5:(q.matched?2:2.5);ctx.stroke();});
+ // Chữ vẽ thành lượt RIÊNG để nó không bị viền của tán vẽ sau đè lên.
+ //
+ // Không chặn bằng "quá N dự đoán thì thôi": ngưỡng đếm vừa chặn nhầm lúc
+ // zoom sâu (41 tán to đùng vẫn thừa chỗ) vừa không cứu được lúc SOLOv2 xếp
+ // 100 dự đoán trùng nhau lên cùng một tán. Vấn đề thật là CHỮ ĐÈ CHỮ, nên
+ // đo đúng thứ đó: giữ lại các khung chữ đã vẽ và bỏ qua khung nào chạm vào
+ // chúng. Dự đoán điểm cao được xét trước (danh sách đã sắp theo điểm) nên
+ // chỗ chật thì con số đáng tin nhất là con số còn lại.
+ ctx.setLineDash([]);ctx.font='600 11px ui-monospace,Menlo,Consolas,monospace';
+ ctx.textAlign='center';ctx.textBaseline='middle';
+ const da=[];
+ (predData.polygons||[]).forEach((q,i)=>{const p=q.points;if(!p||p.length<6)return;
+  if(lon[q.det].i!==i||polyW(p)<54)return;
+  const c=centroid(p),x=sx(c[0]),y=sy(c[1]);
+  const t=q.conf.toFixed(2)+(q.matched?(' · '+q.iou.toFixed(2)):' ✗');
+  const w=ctx.measureText(t).width+8,L=x-w/2,R=x+w/2,T=y-8,B=y+8;
+  if(da.some(r=>L<r[2]&&R>r[0]&&T<r[3]&&B>r[1]))return;
+  da.push([L,T,R,B]);
+  ctx.fillStyle='rgba(6,12,22,.72)';ctx.fillRect(L,T,w,16);
+  ctx.fillStyle=q.matched?C.tp:C.fp;ctx.fillText(t,x,y);});
+ ctx.textAlign='start';ctx.textBaseline='alphabetic';
+ ctx.restore();}
+// Tra cứu bằng chuột ở chế độ xem: dự đoán được ưu tiên vì nó nằm TRÊN.
+function predPick(x,y){
+ if(!predOn||!predData||!predData.ok)return null;
+ const ps=predData.polygons||[];
+ for(let i=ps.length-1;i>=0;i--)if(ps[i].points.length>=6&&pip(ps[i].points,x,y))
+  return {kind:'pred',i:i,r:ps[i]};
+ const gs=predData.gt||[];
+ for(let i=gs.length-1;i>=0;i--)if(gs[i].points&&gs[i].points.length>=6&&pip(gs[i].points,x,y))
+  return {kind:'gt',i:i,r:gs[i]};
+ return null;}
+function predHint(){
+ if(!predData||!predData.ok){$('hint').textContent=HINT.view;return;}
+ const h=predHover;
+ if(!h){$('hint').textContent=HINT.view;return;}
+ $('hint').textContent=(h.kind==='pred')
+  ? ('Dự đoán · điểm '+h.r.conf.toFixed(3)+(h.r.matched
+      ? (' · ghép với nhãn #'+(h.r.gt+1)+' ở IoU '+h.r.iou.toFixed(3))
+      : ' · KHÔNG ghép được nhãn nào (dự đoán thừa)'))
+  : ('Nhãn #'+(h.i+1)+' · '+(h.r.matched
+      ? ('được ghép ở IoU '+h.r.iou.toFixed(3))
+      : 'KHÔNG model nào ghép được (bỏ sót)'));}
+// --- khoá sửa ---------------------------------------------------------------
+// Một hàm duy nhất, gọi ở MỌI lối vào có thể đổi hoặc lưu nhãn. Khoá bằng cách
+// đổi sang chế độ 'view' thì bốn nhánh sửa trong handler chuột không khớp nữa,
+// nhưng các nút trong danh sách vùng và phím tắt vẫn đi đường riêng nên vẫn
+// phải hỏi ở đây.
+function predLocked(){return predOn;}
+function syncPredLock(){
+ const on=predOn;
+ ['m-click','m-box','m-draw','m-sel','undo','clear','noTree','autoAll','addCls']
+  .forEach(id=>{const b=$(id);if(!b)return;
+   // Nhớ tooltip gốc ở lần chạm ĐẦU TIÊN, nếu không thì tắt chế độ xem xong
+   // mọi nút đều mang vĩnh viễn dòng "đang ở chế độ xem dự đoán".
+   if(b.dataset.t0===undefined)b.dataset.t0=b.title||'';
+   b.disabled=on;b.style.opacity=on?0.4:'';b.style.cursor=on?'not-allowed':'';
+   b.title=on?'Đang ở chế độ xem dự đoán — tắt để sửa lại':b.dataset.t0;});
+ $('predBox').classList.toggle('on',on);
+ $('predBody').hidden=!on;
+ renderRegions();}
+// --- nạp dữ liệu ------------------------------------------------------------
+// `tok` là selToken lúc bắt đầu. Danh sách lượt chấm phụ thuộc ẢNH (mỗi ảnh
+// nằm trong split test của đúng một fold), nên hai lần đổi ảnh chồng nhau mà
+// không chốt thì lượt về sau có thể ghi đè bằng kết quả của ảnh trước — đúng
+// lý do `selectImg` đã có selToken.
+async function predLoadRuns(tok){
+ predRuns=[];predRun='';
+ const sel=$('predRun');sel.innerHTML='';
+ if(!current){$('predCount').textContent='—';return;}
+ const ten=current;
+ let d=null;
+ try{d=await(await fetch('/api/pred/runs?name='+enc(ten),{cache:'no-store'})).json();}catch(e){d=null;}
+ if(ten!==current||(tok!==undefined&&tok!==selToken))return;
+ predRuns=(d&&d.runs)||[];
+ $('predCount').textContent=predRuns.length?(predRuns.length+' lượt'):'0';
+ if(!predRuns.length){
+  const o=document.createElement('option');
+  o.textContent=(d&&d.error)?d.error:'Không có lượt chấm nào phủ ảnh này';
+  o.value='';sel.appendChild(o);sel.disabled=true;return;}
+ sel.disabled=false;
+ predRuns.forEach(r=>{const o=document.createElement('option');o.value=r.run;o.textContent=r.label;
+  o.title=r.run+'\n'+(r.weights||'');sel.appendChild(o);});
+ // Giữ nguyên model đang xem khi đổi ảnh, nếu ảnh mới cũng có model đó.
+ const giu=predRuns.find(r=>r.model===(predData&&predData.source&&predData.source.model));
+ predRun=(giu||predRuns[0]).run;sel.value=predRun;}
+async function predFetch(){
+ if(!predOn||!current||!predRun){predData=null;predRender();draw();return;}
+ const tok=++predToken,ten=current;
+ $('predSum').innerHTML='<span class="pchip">đang đọc…</span>';
+ let d=null;
+ try{d=await(await fetch('/api/pred/data?name='+enc(ten)+'&run='+encodeURIComponent(predRun)
+   +'&conf='+predConf,{cache:'no-store'})).json();}catch(e){d={ok:false,error:String(e)};}
+ // Hai chốt khác nhau: `predToken` bắt việc đổi model/ngưỡng giữa chừng, còn
+ // so tên ảnh bắt việc đổi ẢNH giữa chừng — vẽ dự đoán của ảnh khác lên ảnh
+ // đang mở là sai lặng lẽ, nhìn vẫn ra polygon nên không ai nghi.
+ if(tok!==predToken||ten!==current)return;
+ predData=d;predHover=null;predRender();draw();predHint();}
+function predSchedule(){clearTimeout(predTimer);predTimer=setTimeout(predFetch,180);}
+function predRender(){
+ const box=$('predSum'),src=$('predSrc'),w=$('predWarn');
+ if(!predData){box.innerHTML='';src.textContent='';w.hidden=true;return;}
+ if(!predData.ok){box.innerHTML='<span class="pchip fp">'+(predData.error||'lỗi')+'</span>';
+  src.textContent='';w.hidden=true;return;}
+ const s=predData.summary;
+ box.innerHTML=
+  '<span class="pchip tp">khớp <b>'+s.tp+'</b></span>'+
+  '<span class="pchip fp">thừa <b>'+s.fp+'</b></span>'+
+  '<span class="pchip fn">sót <b>'+s.fn+'</b></span>'+
+  '<span class="pchip">IoU TB <b>'+(s.mean_iou==null?'—':s.mean_iou.toFixed(3))+'</b></span>'+
+  '<span class="pchip">'+s.n_pred+'/'+s.n_pred_all+' dự đoán · '+s.n_gt+' nhãn</span>';
+ const o=predData.source;
+ src.textContent=o.run+'  ·  imgsz '+(o.imgsz||'?')+'  ·  chấm ở conf '+(o.conf==null?'?':o.conf)
+  +'  ·  ghép ở IoU '+predData.iou_thr+'\n'+(o.weights||'');
+ w.hidden=!predData.warn;w.textContent=predData.warn||'';}
+async function predOnImage(tok){
+ if(!predOn)return;
+ await predLoadRuns(tok);
+ if(tok!==undefined&&tok!==selToken)return;
+ await predFetch();}
+// --- nối dây ----------------------------------------------------------------
+$('predOn').onchange=async e=>{
+ predOn=e.target.checked;
+ if(predOn){
+  flush();                       // lưu nốt phần đang sửa TRƯỚC khi khoá
+  predBefore=(mode==='view')?'sam-click':mode;
+  sel=-1;dragPt=-1;hovPt=-1;ghost=null;draft=[];boxStart=null;
+  syncPredLock();setMode('view');
+  await predLoadRuns(selToken);await predFetch();}
+ else{predData=null;predHover=null;syncPredLock();setMode(predBefore);predRender();draw();}};
+$('predRun').onchange=e=>{predRun=e.target.value;predFetch();};
+$('predConf').oninput=e=>{predConf=(+e.target.value)/100;
+ $('predConfLbl').textContent=predConf.toFixed(2).replace('.',',');predSchedule();};
+$('predShowGt').onchange=e=>{predShowGt=e.target.checked;draw();};
 function draw(){ctx.clearRect(0,0,cv.width,cv.height);
  if(img.complete&&img.width)ctx.drawImage(img,ox,oy,img.width*scale,img.height*scale);
  if(showMask&&maskImg)ctx.drawImage(maskImg,ox,oy,img.width*scale,img.height*scale);
- inst.forEach((r,i)=>{if(!r.vis)return;const col=clsColor(r.cls),on=(i===sel&&mode==='select'),p=r.poly;
-  ctx.beginPath();for(let k=0;k<p.length;k+=2){k===0?ctx.moveTo(sx(p[k]),sy(p[k+1])):ctx.lineTo(sx(p[k]),sy(p[k+1]));}ctx.closePath();
-  ctx.fillStyle=hexA(col,on?0.42:0.22);ctx.fill();
-  ctx.strokeStyle=on?'#ffffff':col;ctx.lineWidth=on?3:2;ctx.stroke();
+ // Ở chế độ xem dự đoán, nhãn lùi về làm NỀN: nền nhạt hơn và viền mảnh hơn,
+ // để lớp dự đoán vẽ đè lên còn đọc được. Bỏ hẳn nhãn đi thì mất vế so sánh,
+ // nên đó là một ô tick riêng chứ không phải mặc định.
+ if(!(predOn&&!predShowGt))inst.forEach((r,i)=>{if(!r.vis)return;const col=clsColor(r.cls),on=(i===sel&&mode==='select'),p=r.poly;
+  polyPath(p);
+  ctx.fillStyle=hexA(col,on?0.42:(predOn?0.10:0.22));ctx.fill();
+  ctx.strokeStyle=on?'#ffffff':col;ctx.lineWidth=on?3:(predOn?1:2);ctx.stroke();
   if(on)for(const vi of handleIdx(p,HANDLE_PX)){const k=vi*2,hv=(k===hovPt);
    ctx.beginPath();ctx.arc(sx(p[k]),sy(p[k+1]),hv?7:5,0,7);ctx.fillStyle=hv?col:'#fff';ctx.fill();ctx.strokeStyle=hv?'#fff':col;ctx.lineWidth=hv?2:1.5;ctx.stroke();}});
  // Đỉnh giả: vòng tròn rỗng nét đứt + dấu cộng, để phân biệt ngay với đỉnh
@@ -936,7 +1184,8 @@ function draw(){ctx.clearRect(0,0,cv.width,cv.height);
   for(let k=0;k<draft.length;k+=2){k===0?ctx.moveTo(sx(draft[k]),sy(draft[k+1])):ctx.lineTo(sx(draft[k]),sy(draft[k+1]));}
   if(mouse)ctx.lineTo(sx(cX(mouse[0])),sy(cY(mouse[1])));ctx.stroke();ctx.setLineDash([]);
   for(let k=0;k<draft.length;k+=2){ctx.beginPath();ctx.arc(sx(draft[k]),sy(draft[k+1]),4,0,7);ctx.fillStyle='#f97316';ctx.fill();}}
- if(mode==='sam-box'&&boxStart&&mouse){const bx=cX(boxStart[0]),by=cY(boxStart[1]),mx=cX(mouse[0]),my=cY(mouse[1]);ctx.strokeStyle='#f97316';ctx.setLineDash([5,4]);ctx.strokeRect(sx(bx),sy(by),(mx-bx)*scale,(my-by)*scale);ctx.setLineDash([]);}}
+ if(mode==='sam-box'&&boxStart&&mouse){const bx=cX(boxStart[0]),by=cY(boxStart[1]),mx=cX(mouse[0]),my=cY(mouse[1]);ctx.strokeStyle='#f97316';ctx.setLineDash([5,4]);ctx.strokeRect(sx(bx),sy(by),(mx-bx)*scale,(my-by)*scale);ctx.setLineDash([]);}
+ drawPred();}
 async function samCall(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(j.error){alert('SAM lỗi: '+j.error);return;}const ni=[];(j.polygons||[]).forEach(p=>ni.push(addRegion(p)));if(ni.length)sel=inst.length-1;refresh();if(ni.length)computeFlower(ni);}
 // Chỉ bắt vào các tay cầm ĐANG HIỆN, để bấm trúng cái mình nhìn thấy.
 function hitVertex(p,x,y){let best=-1,bd=11;
@@ -999,7 +1248,10 @@ cv.addEventListener('mousedown',async e=>{
     beginDrag(vi,x,y,e.shiftKey);renderRegions();return;}}
   const ip=hitPolygon(x,y);
   if(ip>=0){sel=ip;dragPt=-1;tidySel(ip);renderRegions();draw();}
-  else{sel=-1;pan=[e.clientX,e.clientY,ox,oy];cv.style.cursor='grabbing';renderRegions();draw();}}});
+  else{sel=-1;pan=[e.clientX,e.clientY,ox,oy];cv.style.cursor='grabbing';renderRegions();draw();}}
+ // Chế độ xem: kéo ở BẤT KỲ đâu cũng là di chuyển ảnh. Không có nhánh nào
+ // chạm vào `inst` nên không có gì để khoá thêm.
+ else if(mode==='view'){pan=[e.clientX,e.clientY,ox,oy];cv.style.cursor='grabbing';}});
 cv.addEventListener('mousemove',e=>{
  if(pan){ox=pan[2]+(e.clientX-pan[0]);oy=pan[3]+(e.clientY-pan[1]);draw();return;}
  mouse=toImg(e);
@@ -1028,20 +1280,25 @@ cv.addEventListener('mousemove',e=>{
   const cur=(hv>=0)?'move':(g?'copy':((hitPolygon(mouse[0],mouse[1])>=0)?'pointer':'grab'));
   if(cv.style.cursor!==cur)cv.style.cursor=cur;
   const moved=(!g!==!ghost)||(g&&ghost&&(g.x!==ghost.x||g.y!==ghost.y));
-  if(hv!==hovPt||moved){hovPt=hv;ghost=g;draw();}}});
+  if(hv!==hovPt||moved){hovPt=hv;ghost=g;draw();}}
+ else if(mode==='view'){const h=predPick(mouse[0],mouse[1]);
+  const doi=(!h!==!predHover)||(h&&predHover&&(h.kind!==predHover.kind||h.i!==predHover.i));
+  if(doi){predHover=h;cv.style.cursor=h?'help':'grab';predHint();draw();}}});
 // Nhả chuột bắt trên WINDOW, không phải canvas: kéo đỉnh ra tới panel bên rồi
 // nhả thì canvas không nhận mouseup, dragPt/origPoly còn nguyên, rê chuột về là
 // cả cụm đỉnh chạy theo con trỏ. Với vùng đã ẩn thì không thấy gì cho tới khi
 // hiện lại và hình đã méo. Pan chuột giữa cũng kẹt y hệt.
 window.addEventListener('mouseup',async e=>{
- if(pan){pan=null;cv.style.cursor=(mode==='select')?'grab':'crosshair';return;}
+ if(pan){pan=null;cv.style.cursor=(mode==='select'||mode==='view')?'grab':'crosshair';return;}
  if(mode==='sam-box'&&boxStart){const xy=toImg(e),x=xy[0],y=xy[1],b=[cX(Math.min(boxStart[0],x)),cY(Math.min(boxStart[1],y)),cX(Math.max(boxStart[0],x)),cY(Math.max(boxStart[1],y))];boxStart=null;
   if(Math.abs(b[2]-b[0])>5&&Math.abs(b[3]-b[1])>5){pushHist();await samCall('/api/sam/box',{name:current,box:b});}else draw();return;}
  if(dragPt>=0){dragPt=-1;dragVi=-1;origPoly=null;softD=null;
   cv.style.cursor='move';
   if(sel>=0&&inst[sel])inst[sel].poly=cleanPoly(inst[sel].poly);
   persist();renderRegions();draw();if(sel>=0)computeFlower([sel]);}});
-cv.addEventListener('mouseleave',()=>{if(!pan&&dragPt<0){hovPt=-1;ghost=null;if(mode==='select')cv.style.cursor='crosshair';draw();}});
+cv.addEventListener('mouseleave',()=>{if(!pan&&dragPt<0){hovPt=-1;ghost=null;
+ if(predHover){predHover=null;predHint();}
+ if(mode==='select')cv.style.cursor='crosshair';draw();}});
 cv.addEventListener('dblclick',()=>{if(mode==='draw'&&draft.length>=6){pushHist();const ni=addRegion(draft.slice());draft=[];sel=inst.length-1;refresh();computeFlower([ni]);}});
 cv.addEventListener('contextmenu',e=>e.preventDefault());
 // Phím tắt chỉ dành cho canvas. Đang gõ trong ô tìm kiếm / ô số Otsu / dropdown
@@ -1051,9 +1308,11 @@ function typing(e){const t=e.target,tag=t&&t.tagName;
  return tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||(t&&t.isContentEditable);}
 window.addEventListener('keydown',e=>{
  if(typing(e))return;
- if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){e.preventDefault();undo();return;}
+ // Hai phím này SỬA nhãn, nên chúng cũng phải khoá ở chế độ xem dự đoán —
+ // chúng đi thẳng vào `inst` chứ không qua handler chuột.
+ if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){e.preventDefault();if(!predLocked())undo();return;}
  if(e.key==='Escape'){draft=[];draw();}
- if(e.key==='Delete'&&sel>=0&&inst[sel]&&inst[sel].vis){pushHist();inst.splice(sel,1);sel=-1;refresh();}
+ if(e.key==='Delete'&&!predLocked()&&sel>=0&&inst[sel]&&inst[sel].vis){pushHist();inst.splice(sel,1);sel=-1;refresh();}
  if(e.key==='+'||e.key==='=')zoomAt(cv.width/2,cv.height/2,1.25);
  if(e.key==='-')zoomAt(cv.width/2,cv.height/2,0.8);
  if(e.key==='0')resetView();});
@@ -1093,7 +1352,7 @@ const hlp=document.querySelector('.hbtn');
 if(hlp){hlp.title='Phím tắt';hlp.onclick=()=>$('helpModal').classList.add('open');}
 $('helpClose').onclick=$('helpOk').onclick=()=>$('helpModal').classList.remove('open');
 $('helpModal').onclick=e=>{if(e.target===$('helpModal'))$('helpModal').classList.remove('open');};
-renderClasses();setMode('sam-click');loadModels();loadPaths();loadFolders().then(loadImgs);
+renderClasses();setMode('sam-click');syncPredLock();loadModels();loadPaths();loadFolders().then(loadImgs);
 </script>
 </body>
 </html>
