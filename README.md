@@ -119,15 +119,28 @@ Chạy benchmark **không cần** `pip install -e .`: mỗi thư mục tự ch�
 
 ### Kiểm lại sau khi cài
 
+Hai gói phải kiểm bằng cách **gọi op**, không phải bằng `import`: torchvision
+và mmcv đều có phần mở rộng C++, và cả hai đều có kiểu hỏng mà `import` vẫn
+trót lọt.
+
 ```
 python -c "
-import torch, ultralytics, detectron2, mmdet, mmcv
-from mmcv.ops import nms
-print('torch', torch.__version__, '| GPU:', torch.cuda.get_device_name(0))
+import torch, torchvision, ultralytics, detectron2, mmdet, mmcv
+from mmcv.ops import nms as mmcv_nms
+from torchvision.ops import nms as tv_nms
+b = torch.tensor([[0., 0., 1., 1.], [0., 0., 1., 1.]]); s = torch.tensor([0.9, 0.8])
+print('torch', torch.__version__, torch.version.cuda, '| GPU:', torch.cuda.get_device_name(0))
+print('torchvision', torchvision.__version__, '| nms ->', tv_nms(b, s, 0.5).tolist())
 print('detectron2', detectron2.__version__, '| mmdet', mmdet.__version__,
       '| mmcv', mmcv.__version__, '| ultralytics', ultralytics.__version__)
 "
 ```
+
+| gãy ở dòng nào | nghĩa là |
+|---|---|
+| `tv_nms(...)` ném `undefined symbol` | torchvision dựng cho bản CUDA khác torch — cài lại **cả hai** cùng một lệnh |
+| `from mmcv.ops import` ném `ModuleNotFoundError: mmcv._ext` | mmcv build lúc chưa có torch nên không có op nào; xem *Cài mmcv* |
+| `torch.version.cuda` khác major của `nvcc --version` | ba gói build từ nguồn sẽ gãy ở `build_ext` |
 
 Bốn model đã cài được trên máy lab (2 × RTX 4090). **Chưa train thật lần nào**
 — khói một lượt mỗi model trước khi chạy cả sáu fold.

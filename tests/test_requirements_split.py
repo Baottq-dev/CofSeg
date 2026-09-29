@@ -395,6 +395,7 @@ def test_readme_kiem_ca_torchvision():
     Ngày 29/09/2026 trên Vast, lệnh cài chỉ có torch nên torchvision ở lại bản
     cũ mà không ai thấy.
     """
-    doc = (BENCH / "README.md").read_text(encoding="utf-8")
-    assert "from torchvision.ops import nms" in doc, "thiếu phép gọi op thật"
-    assert "torchvision==0.26.0+cu128" in doc, "lệnh cài không kèm torchvision"
+    for path in (ROOT / "README.md", BENCH / "README.md"):
+        doc = path.read_text(encoding="utf-8")
+        assert "torchvision.ops import nms" in doc, f"{path.name}: thiếu phép gọi op thật"
+        assert "torchvision==0.26.0+cu128" in doc,             f"{path.name}: lệnh cài không kèm torchvision"
