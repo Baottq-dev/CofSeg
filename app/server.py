@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 from app import flower as fl
+from app import predictions as pred
 from app.annotator import SamAnnotator
 
 CFG = yaml.safe_load(open("configs/config.yaml", encoding="utf-8"))
@@ -549,6 +550,65 @@ def load(name: str):
             "hsv_ratios": hsv_r, "otsu_ratios": otsu_r, "otsu_info": otsu_i,
             "flower_method": data.get("flower_method", "hsv"),
             "empty": _is_empty_label(data)}
+
+
+# ------------------------------------- dự đoán của các lượt chấm (CHỈ ĐỌC)
+# Đọc thẳng runs/eval/, không chép sang data/: xem app/predictions.py để biết
+# vì sao. Hai endpoint này KHÔNG ghi gì cả — nhãn trong masks/corrected/ chỉ
+# được dùng làm vế đối chiếu, không bao giờ bị sửa từ đây.
+def _flat(name):
+    # Tên ảnh đã làm phẳng, ĐÚNG khoá mà bộ xuất COCO dùng cho `file_name`.
+    return _full_rel(name).replace("/", "__")
+
+
+def _gt_polys(name):
+    """Polygon nhãn ĐANG hiển thị, để ghép với dự đoán.
+
+    Ghép với chính thứ trên màn hình chứ không với nhãn trong bộ xuất: người
+    dùng nhìn thấy tán nào được tô "khớp" thì đó đúng là tán họ đang xem. Nếu
+    nhãn đã sửa sau lúc xuất thì `polygons_for` báo ở trường `warn`.
+    """
+    jp = _json_path(name)
+    if not os.path.exists(jp):
+        return []
+    try:
+        _, _, anns = _read_records(jp)
+    except Exception:  # noqa: BLE001 - nhãn hỏng không được làm sập lớp xem
+        return []
+    return [a["poly"] for a in anns]
+
+
+@app.get("/api/pred/runs")
+def pred_runs(name: str = ""):
+    # Các lượt chấm có dự đoán cho ảnh này. Nhãn hiển thị trong ô chọn được
+    # dựng ở đây: một model chấm nhiều lượt (chấm lại sau khi sửa code) thì
+    # phải phân biệt được, còn một lượt thì đừng bắt người dùng đọc dấu thời
+    # gian vô ích.
+    try:
+        rows = pred.runs_for(_flat(name))
+    except Exception as e:  # noqa: BLE001
+        return {"runs": [], "error": str(e)}
+    dem = {}
+    for r in rows:
+        dem[r["model"]] = dem.get(r["model"], 0) + 1
+    moi = {}
+    for r in sorted(rows, key=lambda d: d["run"], reverse=True):
+        r["latest"] = r["model"] not in moi
+        moi[r["model"]] = True
+        r["label"] = r["model"] if dem[r["model"]] == 1 else (
+            r["model"] + " · " + r["run"][:16].replace("_", " "))
+    rows.sort(key=lambda d: (d["model"], d["run"]))
+    return {"runs": rows, "error": pred.get_index().error, "image": _flat(name)}
+
+
+@app.get("/api/pred/data")
+def pred_data(name: str = "", run: str = "", conf: float = 0.5,
+              eps: float = pred.DEFAULT_EPS):
+    try:
+        return pred.polygons_for(_flat(name), run, _gt_polys(name),
+                                 conf=float(conf), eps=float(eps))
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
 
 
 @app.post("/api/save")
