@@ -18,6 +18,41 @@ trực tiếp thì độ chính xác giảm bao nhiêu** — so ms/ảnh và mAP
 - v11 là bản hiện hành, v8 là bản các bài trước hay dùng, cùng cơ chế mask;
   chạy cả hai nếu còn giờ (`yolo26s` cũng có sẵn config).
 
+## Dựng môi trường riêng
+
+Phần này dành cho trường hợp chạy **một mình model này**, env riêng, không dùng
+env chung của `benchmark/requirements.txt`. Lệnh ở đây đủ để chép chạy từ đầu
+đến cuối; phần *vì sao* (vì sao CUDA 12.8, vì sao mmcv không có wheel, vì sao
+mmcv dựng bản rỗng mà không báo lỗi) nằm ở `benchmark/README.md` mục
+*Dựng môi trường*.
+
+Model **nhẹ nhất trong bốn**: không gói nào phải biên dịch từ nguồn, nên không
+cần nvcc, và đây cũng là model duy nhất chạy được trên Windows.
+
+```bash
+conda create -y -n cofseg-yolo11 python=3.12 && conda activate cofseg-yolo11
+pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 --index-url https://download.pytorch.org/whl/cu128
+pip install -r benchmark/yolo11/requirements.txt
+```
+
+Kiểm — gọi op thật, đừng chỉ `import`:
+
+```bash
+python -c "
+import torch, torchvision, ultralytics
+from torchvision.ops import nms
+b = torch.tensor([[0., 0., 1., 1.], [0., 0., 1., 1.]]); s = torch.tensor([0.9, 0.8])
+print(torch.__version__, torch.version.cuda, '| tv', torchvision.__version__, nms(b, s, 0.5).tolist())
+print('ultralytics', ultralytics.__version__, '| GPU:', torch.cuda.get_device_name(0))"
+```
+
+Torchvision có phần mở rộng C++ link vào `libtorch`: bản dựng cho CUDA khác sẽ
+`import` trót lọt rồi gãy lúc gọi op. Vì vậy cài torch và torchvision **trong
+cùng một lệnh**, đừng cài rời.
+
+`ultralytics-thop` thiếu thì không sao — ultralytics bọc nó trong `try/except`,
+chỉ mất con số GFLOPs ở dòng tóm tắt model, thứ bảng kết quả không dùng.
+
 ## Cách chạy
 
 Từ **gốc repo** (để `data/` và `weights/` dùng chung). Đặt `--runs` vào thư mục

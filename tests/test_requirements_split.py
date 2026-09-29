@@ -219,11 +219,17 @@ def test_requirements_cung_ghi_lenh_that(path):
 
 
 def test_commit_detectron2_trong_readme_khop_voi_script(setup_env):
-    """Hai chỗ ghi cùng một commit; lệch là người đọc cài nhầm bản."""
+    """Mọi chỗ ghi cùng một commit; lệch là người đọc cài nhầm bản.
+
+    Bốn chỗ: scripts/setup_env.py, benchmark/README.md, và README của hai
+    model dùng detectron2.
+    """
     commit = setup_env.D2.split("@")[-1]
     assert len(commit) == 40, commit
-    assert commit in (BENCH / "README.md").read_text(encoding="utf-8"), \
-        "benchmark/README.md ghim commit detectron2 khác với scripts/setup_env.py"
+    for path in (BENCH / "README.md", BENCH / "maskrcnn" / "README.md",
+                 BENCH / "mask2former" / "README.md"):
+        assert commit in path.read_text(encoding="utf-8"), \
+            f"{path.relative_to(ROOT)} ghim commit detectron2 khác setup_env.py"
 
 
 def test_lenh_va_dong_ma_trong_readme_con_dung():
@@ -399,3 +405,62 @@ def test_readme_kiem_ca_torchvision():
         doc = path.read_text(encoding="utf-8")
         assert "torchvision.ops import nms" in doc, f"{path.name}: thiếu phép gọi op thật"
         assert "torchvision==0.26.0+cu128" in doc,             f"{path.name}: lệnh cài không kèm torchvision"
+
+
+# --------------------- README của từng model phải tự dựng được env riêng
+#: Lệnh cài torch, phải giống nhau từng ký tự ở mọi chỗ nó xuất hiện.
+TORCH_CMD = ("pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 "
+             "--index-url https://download.pytorch.org/whl/cu128")
+
+
+@pytest.mark.parametrize("model", MODELS)
+def test_readme_model_tu_dung_duoc_env(model):
+    """Chạy riêng một model là chuyện có thật: mỗi người một máy, một lịch.
+
+    README của thư mục phải đủ để dựng env từ đầu, không bắt đọc chéo sang
+    file khác mới có lệnh — đúng nguyên tắc mỗi thư mục tự chứa mà
+    test_shipped_configs đã giữ cho phần mã.
+    """
+    doc = (BENCH / model / "README.md").read_text(encoding="utf-8")
+    assert "## Dựng môi trường riêng" in doc, f"{model}: thiếu mục dựng env"
+    assert TORCH_CMD in doc, f"{model}: lệnh cài torch thiếu hoặc khác bản chung"
+    assert f"pip install -r benchmark/{model}/requirements.txt" in doc, \
+        f"{model}: không trỏ file requirements của chính nó"
+    # Gọi op thật: cả hai kiểu hỏng nguy hiểm đều import trót lọt.
+    assert "torchvision.ops import nms" in doc, f"{model}: thiếu phép gọi op"
+
+
+def test_lenh_cai_torch_giong_nhau_o_moi_noi():
+    """Sáu README cộng năm header requirements. Một chỗ trôi là hai người
+    trong nhóm dựng ra hai env khác nhau mà không ai thấy."""
+    for path in (ROOT / "README.md", BENCH / "README.md",
+                 *(BENCH / m / "README.md" for m in MODELS)):
+        doc = path.read_text(encoding="utf-8")
+        assert "torch==2.11.0+cu128" in doc and "torchvision==0.26.0+cu128" in doc, \
+            f"{path.relative_to(ROOT)}: lệnh cài torch trôi khỏi bản chung"
+
+
+@pytest.mark.parametrize("model", MODELS)
+def test_readme_model_chi_noi_ve_goc_no_can(model):
+    """Mỗi model có đường cài riêng; nhắc gói nó không cần là bắt người ta
+    biên dịch thừa 20-120 phút, bỏ sót gói nó cần là env thiếu."""
+    doc = (BENCH / model / "README.md").read_text(encoding="utf-8")
+    can_d2 = model in ("maskrcnn", "mask2former")
+    assert ("git+https://github.com/facebookresearch/detectron2" in doc) is can_d2, \
+        f"{model}: detectron2 {'phải' if can_d2 else 'không được'} có trong mục env"
+    assert ("MMCV_WITH_OPS=1" in doc) is (model == "solov2"), \
+        f"{model}: chỉ SOLOv2 mới phải build mmcv"
+    assert ("pixel_decoder/ops" in doc) is (model == "mask2former"), \
+        f"{model}: chỉ Mask2Former mới phải biên dịch MSDeformAttn"
+
+
+def test_readme_solov2_neu_du_ba_cai_bay():
+    """Ba cái bẫy của SOLOv2 đều báo xanh rồi chết lúc train, nên chúng phải
+    nằm ngay trong README của người phụ trách chứ không chỉ ở file chung."""
+    doc = (BENCH / "solov2" / "README.md").read_text(encoding="utf-8")
+    assert "from mmcv.ops import nms" in doc, "thiếu phép kiểm op mmcv có thật"
+    assert "git+https://github.com/open-mmlab/mmengine" in doc, "thiếu mmengine từ git"
+    assert "mmcv_maximum_version" in doc, "thiếu bước nới chốt phiên bản mmdet"
+    i_mmcv = doc.index("pip install --no-build-isolation -e .")
+    i_git = doc.index("git+https://github.com/open-mmlab/mmengine")
+    assert i_git > i_mmcv, "mmengine-từ-git đứng trước cài mmcv thì bị đè"
