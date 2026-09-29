@@ -20,6 +20,60 @@ này** trên cùng một ruộng. Vì vậy hai thứ phải giữ nghiêm:
   cận dưới của trục biên trong bảng.
 - Xử lý từng ROI riêng, không biết cây bên cạnh → tán chạm nhau hay tràn mask.
 
+## Dựng môi trường riêng
+
+Phần này dành cho trường hợp chạy **một mình model này**, env riêng, không dùng
+env chung của `benchmark/requirements.txt`. Lệnh ở đây đủ để chép chạy từ đầu
+đến cuối; phần *vì sao* (vì sao CUDA 12.8, vì sao mmcv không có wheel, vì sao
+mmcv dựng bản rỗng mà không báo lỗi) nằm ở `benchmark/README.md` mục
+*Dựng môi trường*.
+
+Model này cần **detectron2**, không cần mmcv và không phải biên dịch op CUDA
+nào của riêng nó — ROIAlign và NMS lấy của torchvision.
+
+```bash
+conda create -y -n cofseg-maskrcnn python=3.12 && conda activate cofseg-maskrcnn
+nvcc --version | tail -2
+pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 --index-url https://download.pytorch.org/whl/cu128
+pip install -r benchmark/maskrcnn/requirements.txt
+pip install --no-build-isolation "detectron2 @ git+https://github.com/facebookresearch/detectron2.git@a2f4a8771ab77e8411c26b27f24f9489a28a2453"
+```
+
+`nvcc --version` phải ra **12.x**. Lệch major với `torch.version.cuda` là gói
+biên dịch từ nguồn gãy ở `build_ext`, bằng một câu không hề nhắc tới torch.
+Máy có nvcc 13.x thì cài `cuda-toolkit=12.8.1` vào chính env — xem
+`benchmark/README.md` mục *Cài mmcv*.
+
+`--no-build-isolation` vì `setup.py` của detectron2 `import torch`, mà môi
+trường build cô lập của pip không có torch.
+
+Máy không biên dịch CUDA được thì giấu GPU lúc cài — **với model này không mất
+gì**, vì hai op nó dùng đều của torchvision:
+
+```bash
+CUDA_VISIBLE_DEVICES="" pip install --no-build-isolation "detectron2 @ git+https://github.com/facebookresearch/detectron2.git@a2f4a8771ab77e8411c26b27f24f9489a28a2453"
+```
+
+Kiểm — phải gọi cả `model_zoo`, không chỉ `import detectron2`:
+
+```bash
+python -c "
+import torch, torchvision, detectron2
+from detectron2 import model_zoo
+from torchvision.ops import nms
+b = torch.tensor([[0., 0., 1., 1.], [0., 0., 1., 1.]]); s = torch.tensor([0.9, 0.8])
+print(torch.__version__, torch.version.cuda, '| tv', torchvision.__version__, nms(b, s, 0.5).tolist())
+print('detectron2', detectron2.__version__)"
+```
+
+`model_zoo` là chỗ duy nhất còn `import pkg_resources`, mà `import detectron2`
+không kéo nó theo. Bỏ qua thì bước cài báo xanh rồi lần train đầu mới chết,
+sau khi đã nạp xong dữ liệu.
+
+Torchvision có phần mở rộng C++ link vào `libtorch`: bản dựng cho CUDA khác sẽ
+`import` trót lọt rồi gãy lúc gọi op. Vì vậy cài torch và torchvision **trong
+cùng một lệnh**, đừng cài rời.
+
 ## Cách chạy
 
 Từ **gốc repo** (để `data/` và `weights/` dùng chung). Đặt `--runs` vào thư mục
