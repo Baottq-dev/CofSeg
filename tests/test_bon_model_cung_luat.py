@@ -115,15 +115,23 @@ def test_d2_khong_con_de_batch_cham_mac_dinh():
 
 
 # -------------------------------- bộ mặc định, đo từ chính bộ dữ liệu này
-#: Ba số này phải giống nhau ở cả bốn model, nếu không bảng đo nhầm thứ khác.
-CHUNG = {"imgsz": 1024, "batch": 16}
+#: imgsz phải giống nhau ở cả bốn model, nếu không bảng đo nhầm thứ khác.
+CHUNG = {"imgsz": 1024}
+
+#: batch: 16 cho ba model, 8 cho Mask2Former vì 16 tràn VRAM ở imgsz 1024.
+#: Khai ở file nào thì kiểm ở file đó — Mask2Former ghi đè base nên batch của
+#: nó nằm trong config model, còn imgsz vẫn ở base.
+BATCH = {"maskrcnn": ("_base_d2.yaml", 16),
+         "solov2": ("solov2_r50_mm.yaml", 16),
+         "yolo": ("yolo26s.yaml", 16),
+         "mask2former": ("mask2former_r50_d2.yaml", 8)}
 
 
 @pytest.mark.parametrize("model,cfg", [
     ("maskrcnn", "_base_d2.yaml"), ("mask2former", "_base_d2.yaml"),
     ("solov2", "solov2_r50_mm.yaml"), ("yolo", "yolo26s.yaml")])
 def test_bon_model_cung_imgsz_va_batch(model, cfg):
-    """imgsz và batch không phải lựa chọn của từng người.
+    """imgsz không phải lựa chọn của từng người; batch thì có một ngoại lệ.
 
     imgsz quyết định cỡ tán mà model nhìn thấy: tán trung vị 324 px ở ảnh gốc
     2560x1440 còn 129 px ở imgsz 1024. Một model chạy 1536 là nó nhìn tán to
@@ -131,19 +139,34 @@ def test_bon_model_cung_imgsz_va_batch(model, cfg):
 
     batch 16 đo thật trên RTX 5090: 12.7 GB ở imgsz 1024. Mặc định cũ là 4
     (hai model detectron2/mmdet) và 2 (YOLO) — con số của card 8 GB ở nhà.
+
+    Mask2Former là ngoại lệ ở batch 8: 16 tràn VRAM vì nó giữ 100 query cộng
+    attention toàn ảnh. Ngoại lệ này chấp nhận được vì `lr` để trống, nên
+    trainer nhân batch/16 và lịch học giữ đúng tỉ lệ của recipe gốc. Khoá
+    trong test để nó không lặng lẽ trôi tiếp sang 4 rồi 2.
     """
     t = _train_block(model, cfg)
     for k, v in CHUNG.items():
         assert int(t[k]) == v, f"{model}: {k}={t[k]}, phải {v}"
+    ten, batch = BATCH[model]
+    tb = _train_block(model, ten)
+    assert int(tb["batch"]) == batch, f"{model}: batch={tb['batch']}, phải {batch}"
 
 
 @pytest.mark.parametrize("model,cfg,epochs", [
-    ("maskrcnn", "_base_d2.yaml", 50), ("solov2", "solov2_r50_mm.yaml", 50),
-    ("yolo", "yolo26s.yaml", 50),
-    ("mask2former", "mask2former_r50_d2.yaml", 100)])
+    ("maskrcnn", "_base_d2.yaml", 100), ("solov2", "solov2_r50_mm.yaml", 100),
+    ("yolo", "yolo26s.yaml", 100),
+    ("mask2former", "mask2former_r50_d2.yaml", 50)])
 def test_ngan_sach_epoch(model, cfg, epochs):
-    """50 epoch cho ba model; Mask2Former 100 vì query hội tụ chậm hơn — đó là
-    chênh lệch có chủ đích, ghi trong config của nó."""
+    """100 epoch cho ba model; Mask2Former 50 — chênh lệch có chủ đích.
+
+    Trước đây ngược lại (50 cho ba model, 100 cho Mask2Former, vì query hội tụ
+    chậm hơn). Lượt chạy thử 100 epoch của Mask2Former cho thấy best epoch luôn
+    rơi TRƯỚC mốc 50, nên phần sau chỉ tốn giờ máy chứ không đổi kết quả.
+
+    Test này tồn tại để con số không trôi theo dòng lệnh: sáu lượt YOLO đầu
+    tiên chạy 100 epoch bằng cờ `--epochs` trong khi config ghi 50, và không
+    có gì báo rằng YOLO đang được gấp đôi ngân sách của hai model kia."""
     t = _train_block(model, cfg)
     assert int(t["epochs"]) == epochs, f"{model}: epochs={t['epochs']}, phải {epochs}"
 

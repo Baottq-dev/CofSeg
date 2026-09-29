@@ -222,8 +222,8 @@ phải kiến trúc:
 | | giá trị | vì sao |
 |---|---|---|
 | `imgsz` | **1024** | tán trung vị còn 129 px. Chạy 1536 là nhìn tán to hơn 1.5 lần, và chênh lệch đó sẽ bị ghi vào cột kiến trúc |
-| `batch` | **16** | đo thật trên RTX 5090: 12.7 GB ở imgsz 1024. Mặc định cũ (4, và 2 cho YOLO) là con số của card 8 GB ở nhà |
-| `epochs` | **50** | Mask2Former 100, vì query hội tụ chậm hơn — chênh lệch có chủ đích, ghi trong config của nó |
+| `batch` | **16** | đo thật trên RTX 5090: 12.7 GB ở imgsz 1024. Mặc định cũ (4, và 2 cho YOLO) là con số của card 8 GB ở nhà. Mask2Former **8**: 16 tràn VRAM vì nó giữ 100 query cộng attention toàn ảnh — `lr` để trống nên trainer nhân `batch/16` và lịch học vẫn đúng tỉ lệ recipe |
+| `epochs` | **100** | Mask2Former **50**: lượt chạy thử 100 epoch cho thấy best epoch luôn rơi trước mốc 50, phần sau chỉ tốn giờ máy — chênh lệch có chủ đích, ghi trong config của nó |
 
 `warmup_iters` chuyển sang **phần của lịch** (`0.03`), cùng quy ước với
 `lr_steps`: dưới 1 là phần, từ 1 trở lên là số vòng tuyệt đối. Lý do đo được:
@@ -292,12 +292,30 @@ cùng chịu một mức nên so nội bộ vẫn đúng; so với số in trong
 | xoay 90° | ✓ | — | — | — |
 | co giãn | — | — | **LSJ 0.1–2.0** | 0.5 |
 | dịch | — | — | crop ô vuông | 0.1 |
-| màu (HSV) | — | — | — | ✓ |
+| màu (HSV) | ✓ | ✓ | ✓ | ✓ |
 | mosaic | — | — | — | **tắt** |
 
 Hai ô đáng chú ý. **LSJ** là recipe gốc của Mask2Former, bỏ đi là bỏ recipe
 tác giả — giữ. **mosaic tắt** là ta lệch khỏi recipe YOLO có chủ đích: nó ghép
 4 ảnh thành 1 nên thu nhỏ tán, đi ngược mục tiêu giữ độ phân giải đường biên.
+
+**Màu giờ có ở cả bốn**, cùng ba con số `hsv_h 0.015 / hsv_s 0.7 / hsv_v 0.4`.
+Trước đây chỉ YOLO có, và không ai đặt nó — đó là mặc định của ultralytics lọt
+vào. Bộ này bay 3 ngày, 07h-16h, và độ sáng chênh nhau thật: đo trên 850 ảnh
+thì V trải 99-175 (1.76 lần), S trải 78-180 (2.32 lần). Ruộng tối nhất
+(field_1, V trung bình 115) lại chính là test của fold f1, nên độ bền với ánh
+sáng ảnh hưởng thẳng lên bảng. Để một model có và ba model không là ghi chênh
+lệch đó vào cột kiến trúc.
+
+Ba khung không có transform giống hệt nhau, nên chỗ lệch phải nói ra: detectron2
+(Mask R-CNN, Mask2Former) không có phép đổi **sắc**, nên `hsv_h` khai ra mà
+không được áp; mmdet (SOLOv2) chỉ có `PhotoMetricDistortion`, nó **cộng** delta
+độ sáng thay vì **nhân**, quy đổi qua mức xám 128 nên `hsv_v 0.4` thành ±51, và
+phần tương phản của nó bị khoá ở 1.0 vì ultralytics không đụng tới tương phản.
+
+`hsv_s 0.7` cho biên `×[0.3, 1.7]` = 5.67 lần, rộng gấp 2.4 lần mọi thứ bộ này
+chứa. Giữ nguyên để bốn model khớp nhau, nhưng đó là con số đáng đo lại bằng
+một lượt ablation (tắt màu trên YOLO, 6 fold, ~50 phút) trước khi chốt bảng.
 (Lý do thứ hai trước đây — bộ nhớ vọt ngẫu nhiên trên card 8 GB — không còn
 hiệu lực trên máy thuê.)
 
