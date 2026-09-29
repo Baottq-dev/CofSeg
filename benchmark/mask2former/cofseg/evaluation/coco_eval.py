@@ -36,6 +36,19 @@ STAT_NAMES = (
     "AR_1", "AR_10", "AR_100", "AR_small", "AR_medium", "AR_large",
 )
 
+#: Ngưỡng IoU lấy thêm thành cột riêng, ngoài AP50/AP75 mà summarize() đã in.
+#:
+#: 0.90 là ngưỡng tách được "vẽ bó sát" khỏi "tìm đúng chỗ", và nó đảo thứ hạng:
+#: đo trên sáu model của bộ này, AP50 chỉ chênh nhau 1.9 điểm (91.7-93.6) trong
+#: khi AP90 chênh 7.4 điểm (12.1-19.4), và Mask2Former từ hạng 4 theo AP lên
+#: hạng 1 theo AP90. Không có cột này thì chênh lệch đó phải tính bằng script
+#: ngoài — đã xảy ra một lần, xem docs/reports/model.
+#:
+#: 0.95 lấy về cho đủ dải nhưng ở bộ này nó xấp xỉ 0 trên mọi model
+#: (0.20-0.65 trung bình sáu ruộng, từng ruộng có giá trị 0.01), nên KHÔNG dùng
+#: nó để xếp hạng.
+EXTRA_IOU = (0.90, 0.95)
+
 
 def encode_mask(mask: np.ndarray) -> dict:
     """Mặt nạ nhị phân -> RLE mà pycocotools hiểu.
@@ -215,6 +228,40 @@ class BoundaryCOCOeval(COCOeval):
         return ious
 
 
+def ap_at_iou(evaluator, iou: float, area: str = "all", max_det: int = 100) -> float:
+    """AP tại MỘT ngưỡng IoU, đọc từ mảng precision mà accumulate() đã dựng.
+
+    Không tính thêm gì cả. `accumulate()` luôn dựng precision cho CẢ mười
+    ngưỡng 0.50:0.05:0.95 rồi để nguyên trong `eval["precision"]` dạng
+    [T=10, R=101, K, A=4, M=3]; `summarize()` chỉ chọn IN ba lát (AP, AP50,
+    AP75). Trung bình mười lát ở đây bằng đúng `stats[0]` tới chữ số cuối —
+    đã đối chiếu trên cả 36 lượt chấm, không lệch lượt nào.
+
+    KHÔNG gọi `_summarize(1, iouThr=0.9)` của pycocotools để lấy con số này:
+    hàm đó dò ngưỡng bằng `np.where(iouThr == p.iouThrs)`, mà
+    `np.linspace(.5, .95, 10)[8]` là 0.8999999999999999 nên phép so bằng
+    trượt, `t` rỗng, và hàm trả về -1 KHÔNG báo lỗi. 0.50/0.75/0.95 thì khớp,
+    đúng 0.90 là không — loại sai lặng lẽ khó thấy nhất. Ở đây dò bằng khoảng
+    cách nhỏ nhất nên dấu phẩy động không xen vào được, còn `atol` chặn trường
+    hợp gọi bằng một ngưỡng KHÔNG nằm trong dải đã chấm (lúc đó im lặng lấy
+    ngưỡng gần nhất mới là sai thật).
+
+    Trả -1.0 khi không có ô nào hợp lệ, đúng quy ước của summarize().
+    """
+    pr = (getattr(evaluator, "eval", None) or {}).get("precision")
+    if pr is None:
+        raise RuntimeError("ap_at_iou cần accumulate() chạy trước")
+    p = evaluator.params
+    thrs = np.asarray(p.iouThrs, dtype=float)
+    t = int(np.argmin(np.abs(thrs - iou)))
+    if abs(float(thrs[t]) - iou) > 1e-6:
+        raise ValueError(f"ngưỡng IoU {iou} không có trong dải đã chấm "
+                         f"{[round(x, 2) for x in thrs.tolist()]}")
+    s = pr[t, :, :, list(p.areaRngLbl).index(area), list(p.maxDets).index(max_det)]
+    s = s[s > -1]
+    return float(np.mean(s)) if s.size else -1.0
+
+
 def _run(evaluator, img_ids) -> tuple[dict, str]:
     evaluator.params.imgIds = sorted(img_ids)
     buf = io.StringIO()
@@ -223,6 +270,15 @@ def _run(evaluator, img_ids) -> tuple[dict, str]:
         evaluator.accumulate()
         evaluator.summarize()
     stats = {n: float(v) for n, v in zip(STAT_NAMES, evaluator.stats)}
+    # Mỗi ngưỡng thêm một khoá PHẲNG, cùng lối đặt tên với AP50/AP75 đã có, để
+    # bảng tổng hợp (scripts/summarize_folds.py) đọc bằng một đường khoá thẳng.
+    for iou in EXTRA_IOU:
+        stats[f"AP{round(iou * 100)}"] = ap_at_iou(evaluator, iou)
+    # Cả dải mười ngưỡng, vì bước phân tích nào cũng cần nó và nó đã có sẵn
+    # trong bộ nhớ: không có khoá này thì lần sau lại có người viết lại
+    # accumulate() bằng tay chỉ để lấy mười con số (đã xảy ra một lần).
+    stats["AP_by_iou"] = {f"{t:.2f}": ap_at_iou(evaluator, float(t))
+                          for t in evaluator.params.iouThrs}
     return stats, buf.getvalue().rstrip()
 
 

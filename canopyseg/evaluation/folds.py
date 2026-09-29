@@ -26,6 +26,11 @@ METRICS = [
     ("mAP", ("coco", "mask", "AP"), 3, 1),
     ("AP50", ("coco", "mask", "AP50"), 3, 1),
     ("AP75", ("coco", "mask", "AP75"), 3, 1),
+    # AP90 là cột phân biệt "vẽ bó sát" với "tìm đúng chỗ", và nó đảo thứ hạng:
+    # sáu model chênh nhau 1.9 điểm ở AP50 nhưng 7.4 điểm ở AP90. Lượt chấm cũ
+    # chưa có khoá này thì `_dig` trả None và ô in ra "—", nên bảng trộn lượt cũ
+    # với lượt mới vẫn đọc được.
+    ("AP90", ("coco", "mask", "AP90"), 3, 1),
     ("BAP", ("coco", "boundary", "AP"), 3, 1),
     ("BIoU", ("summary", "mean_boundary_iou"), 3, 1),
     ("area_err_pct", ("summary", "mean_area_error_pct"), 2, 1),
@@ -180,10 +185,11 @@ def fmt(v, nd=3) -> str:
 
 
 def to_markdown(rows: list[dict], title: str = "") -> str:
-    cols = ["dataset", "field", "model", "images", "mAP", "dmAP_pct", "AP50", "AP75", "BAP",
-            "BIoU", "area_err_pct", "recall", "precision", "ms_img", "run"]
+    cols = ["dataset", "field", "model", "images", "mAP", "dmAP_pct", "AP50", "AP75", "AP90",
+            "BAP", "BIoU", "area_err_pct", "recall", "precision", "ms_img", "run"]
     head = ["bộ fold", "ruộng", "model", "ảnh", "mAP", "Δ% vs " + REFERENCE, "AP50", "AP75",
-            "Boundary AP", "Boundary IoU", "sai số DT %", "recall", "precision", "ms/ảnh", "lần chấm"]
+            "AP90", "Boundary AP", "Boundary IoU", "sai số DT %", "recall", "precision",
+            "ms/ảnh", "lần chấm"]
     nd = {c: n for c, _, n, _ in METRICS}
     nd.update({"dmAP_pct": 1})
     lines = [f"# {title}", ""] if title else []
@@ -196,7 +202,7 @@ def to_markdown(rows: list[dict], title: str = "") -> str:
 def write_csv(rows: list[dict], path: str | Path) -> Path:
     path = Path(path)
     cols = ["dataset", "field", "fold", "model", "images", "mAP", "dmAP_pct", "AP50", "AP75",
-            "BAP", "BIoU", "area_err_pct", "recall", "precision", "ms_img", "run"]
+            "AP90", "BAP", "BIoU", "area_err_pct", "recall", "precision", "ms_img", "run"]
     with path.open("w", encoding="utf-8", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
