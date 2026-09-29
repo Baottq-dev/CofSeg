@@ -233,13 +233,12 @@ def test_commit_detectron2_trong_readme_khop_voi_script(setup_env):
 
 
 def test_lenh_va_dong_ma_trong_readme_con_dung():
-    """Ba chuỗi README bảo người ta sed/ghim; kiểm chúng vẫn khớp nguồn thật."""
+    """README bảo người ta sed một dòng có thật; kiểm nó vẫn khớp nguồn.
+
+    Lệnh sed nhắm vào dòng raise trong submodule Mask2Former.
+    """
     doc = (BENCH / "README.md").read_text(encoding="utf-8")
 
-    # chỉ mục wheel mmcv
-    assert "download.openmmlab.com/mmcv/dist/cu121/torch2.4/index.html" in doc
-
-    # dòng raise mà lệnh sed nhắm vào, trong submodule Mask2Former
     src = (BENCH / "mask2former" / "upstream" / "mask2former" / "modeling"
            / "pixel_decoder" / "ops" / "functions" / "ms_deform_attn_func.py")
     if src.exists():
@@ -464,3 +463,77 @@ def test_readme_solov2_neu_du_ba_cai_bay():
     i_mmcv = doc.index("pip install --no-build-isolation -e .")
     i_git = doc.index("git+https://github.com/open-mmlab/mmengine")
     assert i_git > i_mmcv, "mmengine-từ-git đứng trước cài mmcv thì bị đè"
+
+
+# ------------------- benchmark/README.md: một đường cài, không chắp vá
+#: Phần hướng dẫn nằm giữa hai tiêu đề này.
+HUONG_DAN = ("## Dựng môi trường", "## Khi hỏng")
+
+
+def _phan_huong_dan() -> str:
+    doc = (BENCH / "README.md").read_text(encoding="utf-8")
+    dau, cuoi = (doc.index(h) for h in HUONG_DAN)
+    assert dau < cuoi
+    return doc[dau:cuoi]
+
+
+def test_huong_dan_danh_so_lien_tuc_tu_1():
+    """Tám bước, đánh số liền, đọc từ trên xuống là xong.
+
+    Đánh số liền là cam kết: không bước nào 'tuỳ máy', không bước nào chỉ dành
+    cho một nhánh. Thêm một nhánh vào giữa là số bị đứt và test này thấy.
+    """
+    buoc = re.findall(r"^### (\d+)\. ", _phan_huong_dan(), re.M)
+    assert buoc == [str(i) for i in range(1, 9)], f"số bước đứt quãng: {buoc}"
+
+
+def test_huong_dan_khong_chua_phan_sua_loi():
+    """Sửa lỗi nằm ở mục *Khi hỏng*, không xen vào đường cài.
+
+    Trộn hai thứ là người đọc lần đầu phải tự đoán câu nào áp dụng cho máy
+    mình — đúng kiểu chắp vá mà bản này bỏ đi.
+    """
+    phan = _phan_huong_dan()
+    for dau_vet, la_gi in [
+        ('CUDA_VISIBLE_DEVICES=""', "đường lùi khi không biên dịch được"),
+        ("pip uninstall", "lệnh gỡ ra làm lại"),
+        ("docker run", "cách thử compile trước khi thuê máy"),
+        ("MSDA = None", "lệnh sed nới chốt MSDeformAttn"),
+    ]:
+        assert dau_vet not in phan, f"{la_gi} lọt vào phần hướng dẫn"
+
+
+def test_huong_dan_chi_co_mot_duong_cai():
+    """Một lệnh cài torch, một nguồn mmcv. Hai đường là hai env trong nhóm."""
+    phan = _phan_huong_dan()
+    assert phan.count("pip install torch==") == 1, "còn hơn một lệnh cài torch"
+    assert "download.openmmlab.com" not in phan, \
+        "nhánh wheel mmcv (cu121) đã bỏ: nó không có kernel sm_120"
+    assert "whl/cu121" not in phan, "còn nhánh lệnh cu121 trong phần hướng dẫn"
+
+
+def test_moi_buoc_build_deu_co_lenh_kiem_ngay_sau():
+    """Ba gói build từ nguồn, cả ba đều có kiểu hỏng 'cài xong vẫn hỏng', nên
+    bước nào cũng phải kèm lệnh kiểm gọi op — không để dồn xuống cuối."""
+    phan = _phan_huong_dan()
+    for moc, kiem in [
+        ("pip install --no-build-isolation \\\n  \"detectron2 @", "from detectron2 import model_zoo"),
+        ("pip install --no-build-isolation -e .", "from mmcv.ops import nms"),
+        ("pixel_decoder/ops", "MSDeformAttn; print"),
+    ]:
+        assert moc in phan, f"thiếu bước build: {moc[:40]}"
+        assert phan.index(kiem) > phan.index(moc), \
+            f"lệnh kiểm không đứng sau bước build: {kiem}"
+
+
+def test_khi_hong_tra_duoc_theo_dong_bao_loi():
+    """Mục *Khi hỏng* là bảng tra: dán dòng lỗi vào là ra bước phải quay lại."""
+    doc = (BENCH / "README.md").read_text(encoding="utf-8")
+    khi_hong = doc[doc.index("## Khi hỏng"):doc.index("## Chạy")]
+    for dong in ("mismatches the version",
+                 "No module named 'mmcv._ext'",
+                 "UnpicklingError",
+                 "MMCV==2.2.0 is used but incompatible",
+                 "no kernel image is available",
+                 "cusparse.h"):
+        assert dong in khi_hong, f"bảng tra thiếu dòng lỗi: {dong}"

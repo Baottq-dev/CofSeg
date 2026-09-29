@@ -50,7 +50,7 @@ pip install --no-build-isolation --no-deps benchmark/mask2former/upstream/mask2f
 `nvcc --version` phải ra **12.x**. Lệch major với `torch.version.cuda` là gói
 biên dịch từ nguồn gãy ở `build_ext`, bằng một câu không hề nhắc tới torch.
 Máy có nvcc 13.x thì cài `cuda-toolkit=12.8.1` vào chính env — xem
-`benchmark/README.md` mục *Cài mmcv*.
+`benchmark/README.md` mục *Dựng môi trường*, bước 1.
 
 Dùng pip build thẳng thư mục `ops` chứ đừng chạy `make.sh` của repo gốc: nó gọi
 `setup.py install`, thứ setuptools mới đã bỏ.
@@ -138,7 +138,7 @@ không còn so được với ba model kia. Sửa thì báo nhóm.
 | Nguồn | https://github.com/facebookresearch/Mask2Former |
 | Commit ghim | `9b0651c` (20/05/2022, bản cuối của repo) |
 | License | MIT |
-| Dùng làm gì | `cofseg/models/detectron2.py` nạp `train_net.py` và gói `mask2former` làm module; op `MSDeformAttn` biên dịch tại chỗ — xem `benchmark/README.md` mục *Biên dịch op CUDA cho Mask2Former* |
+| Dùng làm gì | `cofseg/models/detectron2.py` nạp `train_net.py` và gói `mask2former` làm module; op `MSDeformAttn` biên dịch tại chỗ — xem `benchmark/README.md` mục *Dựng môi trường*, bước 7 |
 
 Repo con đi theo git: `git clone --recurse-submodules`, hoặc
 `git submodule update --init benchmark/mask2former/upstream` nếu đã clone rồi.

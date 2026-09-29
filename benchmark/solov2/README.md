@@ -54,7 +54,7 @@ sed -i "s/mmcv_maximum_version = '2.2.0'/mmcv_maximum_version = '2.3.0'/" "$MMDE
 `nvcc --version` phải ra **12.x**. Lệch major với `torch.version.cuda` là gói
 biên dịch từ nguồn gãy ở `build_ext`, bằng một câu không hề nhắc tới torch.
 Máy có nvcc 13.x thì cài `cuda-toolkit=12.8.1` vào chính env — xem
-`benchmark/README.md` mục *Cài mmcv*.
+`benchmark/README.md` mục *Dựng môi trường*, bước 1.
 
 `TORCH_CUDA_ARCH_LIST` đặt theo card: `12.0` cho RTX 5090, `8.9` cho RTX 4090 /
 L40S, `8.0` cho A100, `9.0` cho H100. Nhiều card thì ngăn bằng dấu chấm phẩy.
@@ -153,4 +153,5 @@ không còn so được với ba model kia. Sửa thì báo nhóm.
   (mmdet không có transform sẵn cho mask + box), chỉ lật ngang/dọc/chéo. Nhớ
   ghi chú khi đọc bảng.
 - mmdet 3.3.0 khai `mmcv < 2.2` nhưng wheel dựng sẵn cho torch 2.4 là 2.2.0;
-  Nới dòng kiểm đó bằng `sed`; xem `benchmark/README.md` mục *Cài mmcv*.
+  Nới dòng kiểm đó bằng `sed`; xem `benchmark/README.md` mục *Dựng môi
+  trường*, bước 6.

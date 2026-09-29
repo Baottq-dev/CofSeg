@@ -139,7 +139,7 @@ print('detectron2', detectron2.__version__, '| mmdet', mmdet.__version__,
 | gãy ở dòng nào | nghĩa là |
 |---|---|
 | `tv_nms(...)` ném `undefined symbol` | torchvision dựng cho bản CUDA khác torch — cài lại **cả hai** cùng một lệnh |
-| `from mmcv.ops import` ném `ModuleNotFoundError: mmcv._ext` | mmcv build lúc chưa có torch nên không có op nào; xem *Cài mmcv* |
+| `from mmcv.ops import` ném `ModuleNotFoundError: mmcv._ext` | mmcv build lúc chưa có torch nên không có op nào; xem *Khi hỏng* |
 | `torch.version.cuda` khác major của `nvcc --version` | ba gói build từ nguồn sẽ gãy ở `build_ext` |
 
 Bốn model đã cài được trên máy lab (2 × RTX 4090). **Chưa train thật lần nào**

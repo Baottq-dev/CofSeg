@@ -42,7 +42,7 @@ pip install --no-build-isolation "detectron2 @ git+https://github.com/facebookre
 `nvcc --version` phải ra **12.x**. Lệch major với `torch.version.cuda` là gói
 biên dịch từ nguồn gãy ở `build_ext`, bằng một câu không hề nhắc tới torch.
 Máy có nvcc 13.x thì cài `cuda-toolkit=12.8.1` vào chính env — xem
-`benchmark/README.md` mục *Cài mmcv*.
+`benchmark/README.md` mục *Dựng môi trường*, bước 1.
 
 `--no-build-isolation` vì `setup.py` của detectron2 `import torch`, mà môi
 trường build cô lập của pip không có torch.
