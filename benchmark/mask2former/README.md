@@ -108,7 +108,7 @@ python benchmark/mask2former/train.py \
   --data data/export/field/f1 --runs benchmark/mask2former/runs --name mask2former \
   --imgsz 1024 --batch 16 --epochs 100 \
   --lr 1e-4 --weight_decay 0.05 --momentum 0.9 \
-  --lr_steps "[0.7,0.9]" --lr_gamma 0.1 --warmup_iters 200 --amp true \
+  --lr_steps "[0.7,0.9]" --lr_gamma 0.1 --warmup_iters 0.03 --amp true \
   --num_queries 100 \
   --val_every 1 --val_conf 0.05 --val_batch 16 --max_det 100 \
   --workers 8 --seed 0 --log_every 20
@@ -252,7 +252,7 @@ checkout <commit>` rồi commit ở repo ngoài — git ghi lại commit mới c
   chỉ đọc mã, chưa đo.
 
   ```bash
-  python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/block/f1 --imgsz 1024 --batch 4 --probe
+  python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/block/f1 --imgsz 1024 --batch 16 --probe
   ```
 - Tốn giờ nhất trong bốn model: recipe **100 epoch**, gấp đôi Mask R-CNN và
   SOLOv2, ước ~2–3 h một fold trên 4090 — riêng nó chiếm khoảng 59 % tổng giờ

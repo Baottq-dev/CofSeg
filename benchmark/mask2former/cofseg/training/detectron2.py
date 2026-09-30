@@ -47,14 +47,19 @@ from .base import Trainer
 #: tỉ lệ tuyến tính theo batch (0.02 @16 cho R-CNN, 1e-4 @16 cho Mask2Former).
 D2_DEFAULTS: dict = {
     "imgsz": 1024,
-    "batch": 4,
+    # Đo thật trên RTX 5090: batch 16 ở imgsz 1024 dùng 12.7 GB. Mặc định cũ
+    # là 4 — con số của card 8 GB ở nhà, không phải của máy sẽ chạy thật.
+    "batch": 16,
     "epochs": 50,
     "lr": None,
     "weight_decay": None,
     "momentum": 0.9,
     "lr_steps": [0.7, 0.9],
     "lr_gamma": 0.1,
-    "warmup_iters": 200,
+    # < 1 là PHẦN của lịch, >= 1 là số vòng tuyệt đối (cùng quy ước lr_steps).
+    # 200 vòng cứng là 12.5% lịch khi batch 16 (500 ảnh -> 32 vòng/epoch,
+    # 50 epoch -> 1600 vòng), trong khi recipe COCO warmup chưa tới 1%.
+    "warmup_iters": 0.03,
     "amp": True,
     "fliplr": 0.5,
     "flipud": 0.5,
@@ -67,6 +72,12 @@ D2_DEFAULTS: dict = {
     "val_batch": None,
     "max_det": 100,
     "num_queries": 100,   # chỉ Mask2Former; ảnh dày nhất có 48 tán
+    # Đầu mask của R-CNN dự đoán ở POOLER_RESOLUTION*2 rồi phóng lên bbox.
+    # 14 (-> 28x28) là recipe gốc, và với tán trung vị 129 px ở imgsz 1024 thì
+    # mỗi ô mask nuốt 4.6 px — đó là TRẦN đường biên của model này, không phải
+    # imgsz. Đặt 28 (-> 56x56) hạ còn 2.3 px/ô; giữ 14 làm mặc định để mốc số 0
+    # đúng recipe, nhưng đây là thí nghiệm đáng chạy cho dự án lấy biên làm trọng tâm.
+    "mask_resolution": 14,
     "workers": 0,
     "seed": 0,
     "log_every": 20,
@@ -101,6 +112,9 @@ def build_opts(arch: str, n_train: int, args: dict, aspect: float = 9 / 16,
         wd = BASE_WD[arch]
     # lr_steps nhận PHẦN của lịch (0.7 = 70% số vòng) hoặc số vòng tuyệt đối,
     # phân biệt bằng < 1. Ghi theo phần thì đổi epochs không phải tính lại mốc.
+    w = float(args["warmup_iters"])
+    warmup = int(w * max_iter) if 0 < w < 1 else int(w)
+    warmup = max(1, min(warmup, max_iter))
     steps = tuple(sorted({int(s * max_iter) if 0 < float(s) < 1 else int(s)
                           for s in (args.get("lr_steps") or ())
                           if 0 < (float(s) * max_iter if float(s) < 1 else float(s)) < max_iter}))
@@ -118,7 +132,7 @@ def build_opts(arch: str, n_train: int, args: dict, aspect: float = 9 / 16,
         "SOLVER.GAMMA", float(args["lr_gamma"]),
         "SOLVER.MOMENTUM", float(args["momentum"]),
         "SOLVER.WEIGHT_DECAY", float(wd),
-        "SOLVER.WARMUP_ITERS", min(int(args["warmup_iters"]), max_iter),
+        "SOLVER.WARMUP_ITERS", warmup,
         "SOLVER.CHECKPOINT_PERIOD", per_epoch,
         "SOLVER.AMP.ENABLED", bool(args["amp"]),
         "TEST.EVAL_PERIOD", per_epoch * int(args["val_every"]),
@@ -132,7 +146,8 @@ def build_opts(arch: str, n_train: int, args: dict, aspect: float = 9 / 16,
         # LSJ của recipe gốc cắt ô vuông IMAGE_SIZE sau khi co giãn 0.1-2.0.
         opts += ["INPUT.IMAGE_SIZE", int(args["imgsz"])]
     else:
-        opts += ["MODEL.ROI_HEADS.SCORE_THRESH_TEST", float(args["val_conf"])]
+        opts += ["MODEL.ROI_HEADS.SCORE_THRESH_TEST", float(args["val_conf"]),
+                 "MODEL.ROI_MASK_HEAD.POOLER_RESOLUTION", int(args["mask_resolution"])]
     return opts
 
 
