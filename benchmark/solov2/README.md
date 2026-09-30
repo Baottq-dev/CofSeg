@@ -101,6 +101,90 @@ cp "$EV/per_region.csv" benchmark/solov2/results/solov2_block_f1_per_region.csv
 cd benchmark/solov2 && python -m pytest tests
 ```
 
+### Lệnh đầy đủ
+
+Khối trên là lệnh hằng ngày; khối này liệt kê **mọi tham số** để khi cần chỉnh
+thì khỏi đi tra. Giá trị ghi ra chính là mặc định, nên lệnh này cho kết quả y
+hệt lệnh ngắn ở trên.
+
+`--data`, `--runs`, `--name` là của `train.py`; phần còn lại đi thẳng vào
+trainer, gõ sai tên thì nó chặn và gợi ý tên gần đúng. `--list-params` in đủ
+danh sách, `--print-config` in config đã gộp mà không chạy gì, `--probe` chỉ
+dò VRAM rồi thoát.
+
+```bash
+python benchmark/solov2/train.py \
+  --config benchmark/solov2/configs/train/solov2_r50_mm.yaml \
+  --data data/export/field/f1 --runs benchmark/solov2/runs --name solov2 \
+  --imgsz 1024 --batch 16 --epochs 50 \
+  --lr 0.01 --weight_decay 1e-4 --momentum 0.9 \
+  --lr_steps "[0.7,0.9]" --lr_gamma 0.1 --warmup_iters 200 --amp true \
+  --fliplr 0.5 --flipud 0.5 \
+  --val_every 1 --val_conf 0.05 --val_batch 16 --max_det 100 \
+  --workers 8 --seed 0 --log_every 20
+```
+
+Không có `--rot90`: mmdet không có transform xoay cho mask + box. Đây là chênh
+lệch có chủ đích so với hai model detectron2, nhớ ghi chú khi đọc bảng.
+
+Bỏ `--lr` đi thì lr tự tính theo batch (`0.01 x batch/16`); truyền tay là
+tắt phép tự tính đó. `--lr_steps` phải có nháy vì giá trị đọc bằng YAML.
+
+Lệnh chấm, đầy đủ tham số:
+
+```bash
+python benchmark/solov2/evaluate.py \
+  --config benchmark/solov2/configs/eval/solov2_r50_mm.yaml \
+  --data data/export/field/f1 --split test \
+  --runs benchmark/solov2/runs --name solov2 \
+  --set model.weights=benchmark/solov2/runs/train/<...>/weights/best.pth \
+  --set model.conf=0.05 --set model.max_det=100 \
+  --set eval.iou_thr=0.5 --set eval.band_ratio=0.02 \
+  --set eval.dilation_ratio=0.02 --set eval.nsd_tau=2.0
+```
+
+`--set model.*` đi vào khối `model:` của config chấm, `--set eval.*` vào khối
+`eval:`. Bốn khoá `eval:` là định nghĩa của phép đo, đổi chúng là số không so
+được với ba model kia nữa: `iou_thr` ngưỡng ghép cặp, `band_ratio` bề rộng
+vành biên theo cỡ tán, `dilation_ratio` bề rộng vành của Boundary AP (2%
+đường chéo ảnh, đúng bài báo), `nsd_tau` dung sai của NSD.
+
+### Đổi backbone
+
+R50 là mặc định vì ba model dùng chung nó, nhờ vậy chênh lệch giữa chúng quy
+về cơ chế. Đổi backbone ở **một** model là mất tính chất đó — đổi thì đổi cả
+ba, hoặc báo cáo riêng như thí nghiệm phụ.
+
+Model này vướng hơn hai model detectron2: config zoo ghim trong `ZOO` của
+`cofseg/training/mmdet.py`, còn `model.config` là file **ghi đè**. Nên cách
+gọn là thêm một arch vào `ZOO`:
+
+```python
+    "solov2_r101_dcn": dict(
+        config="solov2/solov2_r101-dcn_fpn_ms-3x_coco.py",
+        checkpoint="https://download.openmmlab.com/mmdetection/v2.0/solov2/"
+                   "solov2_r101_dcn_fpn_3x_coco/solov2_r101_dcn_fpn_3x_coco_20220513_214734-16c966cb.pth",
+        overrides="configs/mmdet/solov2_r50_coffee.py",   # dùng lại: chỉ đặt num_classes
+        lr=0.01,
+    ),
+```
+
+rồi `--set model.arch=solov2_r101_dcn`.
+
+Bốn backbone OpenMMLab có phát hành **trọng số COCO**, tra từ
+`configs/solov2/metafile.yml` của mmdet 3.3.0:
+
+| arch | config | ghi chú |
+|---|---|---|
+| R50 | `solov2_r50_fpn_ms-3x_coco.py` | đang dùng |
+| R101-DCN | `solov2_r101-dcn_fpn_ms-3x_coco.py` | deformable conv, nặng hơn |
+| X101-DCN | `solov2_x101-dcn_fpn_ms-3x_coco.py` | nặng nhất |
+| R18 / R50 light | `solov2-light_*_fpn_ms-3x_coco.py` | nhẹ, mask stride thô hơn |
+
+Có `solov2_r101_fpn_ms-3x_coco.py` (R101 **không** DCN) nhưng metafile không
+kèm trọng số COCO nào cho nó — chọn bản đó là khởi đầu từ ImageNet, tức không
+so được với ba model kia vốn đều bắt đầu từ COCO.
+
 ## Trong thư mục này
 
 | | |
