@@ -60,6 +60,10 @@ D2_DEFAULTS: dict = {
     "rot90": True,
     "val_every": 1,
     "val_conf": 0.05,
+    # Batch lúc chấm val. None = theo batch train. Mặc định của detectron2 là
+    # 1, và ở batch 1 thì val tốn gấp đôi train trên bộ này dù nó ít ảnh hơn
+    # bốn lần — suy luận không có backward nên còn thừa rất nhiều VRAM.
+    "val_batch": None,
     "max_det": 100,
     "num_queries": 100,   # chỉ Mask2Former; ảnh dày nhất có 48 tán
     "workers": 0,
@@ -389,6 +393,7 @@ class Detectron2Trainer(Trainer):
 
         a = self.train_args
         base = m2f.Trainer if m2f is not None else DefaultTrainer
+        val_batch = max(1, int(a.get("val_batch") or a["batch"]))
         quiet = not a.get("verbose")
         reporter = None if not quiet else self._epoch_reporter()
         self._reporter = reporter
@@ -464,6 +469,19 @@ class Detectron2Trainer(Trainer):
                 if not quiet:
                     return ws
                 return [w for w in ws if not isinstance(w, CommonMetricPrinter)]
+
+            @classmethod
+            def build_test_loader(cls, cfg, dataset_name):
+                """Như DefaultTrainer nhưng nạp nhiều ảnh một lượt.
+
+                `build_detection_test_loader` để mặc định batch_size=1. Suy
+                luận không giữ đồ thị cho backward nên cùng một batch tốn ít
+                VRAM hơn hẳn lúc train; giữ 1 là bỏ không phần lớn card.
+                """
+                from detectron2.data import build_detection_test_loader
+
+                return build_detection_test_loader(cfg, dataset_name,
+                                                   batch_size=val_batch)
 
             @classmethod
             def build_train_loader(cls, cfg):
