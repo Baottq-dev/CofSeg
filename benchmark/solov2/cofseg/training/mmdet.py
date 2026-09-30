@@ -8,9 +8,9 @@ Cách nối vào mmdet: nạp config zoo đóng gói trong gói mmdet (không cl
 gộp phần ghi đè model trong thư mục người phụ trách (ZOO[arch]["overrides"]),
 rồi tự sinh khối dữ
 liệu / lịch học / hook từ `train:` (build_overrides — thuần Python, có test).
-Vòng lặp là mmengine Runner; sau khi xong chấm test bằng checkpoint tốt nhất,
-ghi predictions.json (COCO results) và test_metrics.json cùng bố cục với
-ba model kia để bảng tổng hợp đọc chung một bố cục.
+Vòng lặp là mmengine Runner. CHỈ train và val: không đụng tới split test —
+chấm là việc của evaluate.py, nơi có Boundary AP và chỉ số biên từng vùng mà
+CocoMetric không có.
 
 Tăng cường: lật ngang/dọc như hai trainer kia; không có xoay 90° vì mmdet
 không có transform sẵn cho mask + box (ghi vào bảng là chênh lệch có chủ đích).
@@ -430,6 +430,10 @@ class MMDetTrainer(Trainer):
                 self.val_started = None
                 self.val_seconds = None
                 self.pending = None
+                # Cộng dồn cả lượt: train và val lệch nhau vài lần, nên khối
+                # cuối phải nói riêng từng cái thay vì gộp thành một số.
+                self.train_total = 0.0
+                self.val_total = 0.0
                 # Loss lấy từ `outputs` của after_train_iter chứ không từ
                 # message_hub: đó là nguồn mmengine đưa thẳng vào tay hook,
                 # có mặt kể cả khi log_processor được cấu hình khác đi.
@@ -460,6 +464,8 @@ class MMDetTrainer(Trainer):
                 loss, lr, mem = self.pending or (None, None, None)
                 whole = None if self.started is None else time.time() - self.started
                 train_s = self.trained if self.trained is not None else whole
+                self.train_total += train_s or 0.0
+                self.val_total += self.val_seconds or 0.0
                 print(progress.epoch_line(
                     self.epoch, epochs, self.epoch * per_epoch, total,
                     loss=loss, lr=lr, mem=mem,
@@ -548,8 +554,9 @@ class MMDetTrainer(Trainer):
 
         return EpochReporter()
 
-    def _print_summary(self, best_row, test_segm: dict, seconds, weights) -> None:
-        """Khối cuối lượt chạy, cùng dạng với ba model kia."""
+    def _print_summary(self, best_row, seconds, weights) -> None:
+        """Khối cuối lượt chạy, cùng dạng với ba model kia. Chỉ số của VAL —
+        test là việc của evaluate.py."""
         def pair(ap, ap50):
             return f"mAP50-95 {progress.fmt_num(ap)}   mAP50 {progress.fmt_num(ap50)}"
 
@@ -561,10 +568,7 @@ class MMDetTrainer(Trainer):
                 got = best_row.get(key)
                 return None if got in (None, "") else float(got) * 100
             rows.append(("val", pair(pct("coco/segm_mAP"), pct("coco/segm_mAP_50"))))
-        fields = getattr(self, "test_fields", []) or []
-        label = f"test ({', '.join(fields)})" if fields else "test"
-        rows.append((label, pair(test_segm.get("AP"), test_segm.get("AP50"))))
-        rows.append(("thời gian", f"train {progress.fmt_time(seconds)}"))
+        rows.append(("thời gian", self._time_row(seconds)))
         seen = getattr(getattr(self, "warned", None), "seen", ())
         if seen:
             rows.append(("cảnh báo", f"{len(seen)} loại  ->  warnings.log"))
@@ -629,7 +633,8 @@ class MMDetTrainer(Trainer):
         t0 = time.time()
         runner = self._build_runner(Runner, cfg, quiet)
         if quiet:
-            runner.register_hook(self._epoch_reporter(), priority="LOWEST")
+            self._reporter = self._epoch_reporter()
+            runner.register_hook(self._reporter, priority="LOWEST")
         runner.train()
         train_seconds = round(time.time() - t0, 1)
 
@@ -649,29 +654,9 @@ class MMDetTrainer(Trainer):
         cfg.dump(str(weights_dir / "mmdet_config.py"))
         rows = self._results_csv(per_epoch)
 
-        # Chấm TEST bằng checkpoint tốt nhất -> predictions.json (COCO results,
-        # image_id là id gốc của bản xuất) để chấm lại ở nhà qua coco_predictions.
-        cfg_t = cfg.copy()
-        cfg_t.load_from = str(best)
-        cfg_t.work_dir = str(self.out_dir / "test")
-        n_test = (getattr(self, "dataset_counts", None) or {}).get("test")
-        where = f" trên {n_test} ảnh" if n_test else ""
-        print(f"\nChấm test bằng best.pth{where} ...", flush=True)
-        metrics = Runner.from_cfg(cfg_t).test() or {}
-        preds = self.out_dir / "test" / "pred.segm.json"
-        pred_out = self.run_dir / "predictions.json"
-        if preds.exists():
-            shutil.copy2(preds, pred_out)
-        segm = {"AP": metrics.get("coco/segm_mAP"), "AP50": metrics.get("coco/segm_mAP_50"),
-                "AP75": metrics.get("coco/segm_mAP_75")}
-        segm = {k: round(100 * float(v), 3) for k, v in segm.items() if v is not None}
-        (self.run_dir / "test_metrics.json").write_text(
-            json.dumps({"segm": segm, "raw": metrics}, indent=2, ensure_ascii=False, default=float),
-            encoding="utf-8")
-
         val_rows = [r for r in rows if r.get("coco/segm_mAP") not in (None, "")]
         best_row = max(val_rows, key=lambda r: float(r["coco/segm_mAP"])) if val_rows else None
-        self._print_summary(best_row, segm, train_seconds, best)
+        self._print_summary(best_row, train_seconds, best)
         return {
             "weights": {"best": str(best), "last": str(weights_dir / "last.pth")},
             "best_epoch": int(best_row["epoch"]) if best_row else -1,
@@ -679,8 +664,6 @@ class MMDetTrainer(Trainer):
             "epochs_run": int(self.train_args["epochs"]),
             "train_seconds": train_seconds,
             "results_csv": str(self.run_dir / "results.csv"),
-            "predictions": str(pred_out) if pred_out.exists() else None,
-            "test": segm,
             "args": dict(self.train_args),
         }
 

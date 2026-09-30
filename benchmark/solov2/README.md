@@ -83,18 +83,17 @@ hoặc `f1` — có ba chỗ trong khối lệnh, sửa hết cả ba. Hai bộ 
 `scripts/make_fold.py`, xem `benchmark/README.md`.
 
 ```bash
-# 1. huấn luyện (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
+# 1. huấn luyện — chỉ train + val, không đụng tới split test
+#    (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
 python benchmark/solov2/train.py --config benchmark/solov2/configs/train/solov2_r50_mm.yaml --data data/export/block/f1 --runs benchmark/solov2/runs --name solov2 --workers 8
 
-# 2. dự đoán test do trainer ghi ra -> preds/ để cả nhóm dùng chung
+# 2. chấm test bằng trọng số tốt nhất
 RUN=$(ls -td benchmark/solov2/runs/train/*_solov2_block-f1_* | head -1)
-mkdir -p preds && cp "$RUN/predictions.json" preds/solov2_block_f1.json
+python benchmark/solov2/evaluate.py --config benchmark/solov2/configs/eval/solov2_r50_mm.yaml --set model.weights="$RUN/weights/best.pth" --data data/export/block/f1 --split test --runs benchmark/solov2/runs --name solov2
 
-# 3. chấm: Boundary AP, Boundary IoU, sai số diện tích, bảng từng vùng
-python benchmark/solov2/evaluate.py --config benchmark/solov2/configs/eval/_coco.yaml --file preds/solov2_block_f1.json --data data/export/block/f1 --split test --runs benchmark/solov2/runs --name solov2
-
-# 4. chép file kết quả nhỏ vào results/ (runs/ không vào git)
+# 3. dự đoán + kết quả nhỏ
 EV=$(ls -td benchmark/solov2/runs/eval/*_solov2_block-f1_* | head -1)
+mkdir -p preds && cp "$EV/predictions.json" preds/solov2_block_f1.json
 cp "$EV/metrics.json"   benchmark/solov2/results/solov2_block_f1_metrics.json
 cp "$EV/per_region.csv" benchmark/solov2/results/solov2_block_f1_per_region.csv
 
