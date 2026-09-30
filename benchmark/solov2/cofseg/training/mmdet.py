@@ -60,6 +60,10 @@ MM_DEFAULTS: dict = {
     "flipud": 0.5,
     "val_every": 1,
     "val_conf": 0.05,
+    # Batch lúc chấm val. None = theo batch train. mmdet để mặc định 1, và ở
+    # batch 1 thì val tốn gấp đôi train trên bộ này dù nó ít ảnh hơn bốn lần:
+    # đo được 12.7 GB lúc train, 2.5 GB lúc val trên cùng card.
+    "val_batch": None,
     "max_det": 100,
     "workers": 0,
     "seed": 0,
@@ -148,6 +152,7 @@ def build_overrides(arch: str, root: str | Path, splits: dict, n_train: int, arg
     if lr is None:
         lr = ZOO[arch]["lr"] * batch / 16
     workers = int(args["workers"])
+    val_batch = max(1, int(args.get("val_batch") or batch))
     # imgsz là CẠNH DÀI như YOLO/torchvision/detectron2; mmdet Resize keep_ratio
     # nhận (max cạnh dài, max cạnh ngắn) không phân biệt thứ tự.
     imgsz = int(args["imgsz"])
@@ -215,11 +220,11 @@ def build_overrides(arch: str, root: str | Path, splits: dict, n_train: int, arg
             batch_sampler=dict(type="AspectRatioBatchSampler"),
             dataset=train_ds),
         val_dataloader=dict(
-            batch_size=1, **loader_common, drop_last=False,
+            batch_size=val_batch, **loader_common, drop_last=False,
             sampler=dict(type="DefaultSampler", shuffle=False),
             dataset=dataset(splits["val"], test_pipeline, True)),
         test_dataloader=dict(
-            batch_size=1, **loader_common, drop_last=False,
+            batch_size=val_batch, **loader_common, drop_last=False,
             sampler=dict(type="DefaultSampler", shuffle=False),
             dataset=dataset(splits["test"], test_pipeline, True)),
         val_evaluator=dict(type="CocoMetric", ann_file=ann(splits["val"]), metric="segm",
@@ -230,8 +235,10 @@ def build_overrides(arch: str, root: str | Path, splits: dict, n_train: int, arg
                             backend_args=None),
         train_cfg=dict(type="EpochBasedTrainLoop", max_epochs=epochs,
                        val_interval=int(args["val_every"])),
-        val_cfg=dict(type="ValLoop"),
-        test_cfg=dict(type="TestLoop"),
+        # fp16 theo chính cờ amp của train: AmpOptimWrapper chỉ bọc bước tối
+        # ưu hoá, vòng val vẫn FP32 nếu không khai ở đây.
+        val_cfg=dict(type="ValLoop", fp16=bool(args["amp"])),
+        test_cfg=dict(type="TestLoop", fp16=bool(args["amp"])),
         optim_wrapper=dict(
             type="AmpOptimWrapper" if args["amp"] else "OptimWrapper",
             optimizer=dict(type="SGD", lr=float(lr),
