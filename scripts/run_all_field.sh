@@ -67,6 +67,18 @@ moi_nhat() { ls -td $1 2>/dev/null | head -1; }   # cố ý không quote: cần 
 
 ghi() { printf '%s\t%s\n' "$(date +%H:%M:%S)" "$*"; }
 
+# Ctrl-C phải dừng CẢ bảng, không phải nhảy sang fold sau. Không có trap thì
+# nó nhảy, và đây là lý do đúng chứ không phải phỏng đoán: train.py bắt
+# KeyboardInterrupt rồi `return 1` (benchmark/solov2/train.py:218), nên bash
+# thấy một mã thoát thường chứ không thấy tiến trình con chết BẰNG SIGINT —
+# mà chỉ trường hợp sau mới làm bash tự abort script. Hệ quả: `chay` trả 1,
+# vòng lặp ghi "HỎNG" rồi `continue`, và mỗi lần Ctrl-C lại bỏ lại một thư
+# mục run không có checkpoint nào. Thư mục đó độc: lượt sau script thấy nó,
+# truyền --resume, rồi trainer chết vì không có `last_checkpoint`.
+#
+# 130 = 128 + SIGINT, quy ước của shell.
+trap 'echo; ghi "bị ngắt — dừng. Chạy lại script để nối tiếp phần còn thiếu."; exit 130' INT TERM
+
 ghi_tien_do() {   # model fold giai_doan trang_thai giay
   [ "$DRY" = 1 ] && return 0
   mkdir -p "$(dirname "$TIENDO")"
