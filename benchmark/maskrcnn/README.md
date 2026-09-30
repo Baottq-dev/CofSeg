@@ -86,6 +86,73 @@ cp "$EV/per_region.csv" benchmark/maskrcnn/results/maskrcnn_block_f1_per_region.
 cd benchmark/maskrcnn && python -m pytest tests
 ```
 
+### Lệnh đầy đủ
+
+Khối trên là lệnh hằng ngày; khối này liệt kê **mọi tham số** để khi cần chỉnh
+thì khỏi đi tra. Giá trị ghi ra chính là mặc định, nên lệnh này cho kết quả y
+hệt lệnh ngắn ở trên.
+
+`--data`, `--runs`, `--name` là của `train.py`; phần còn lại đi thẳng vào
+trainer, gõ sai tên thì nó chặn và gợi ý tên gần đúng. `--list-params` in đủ
+danh sách, `--print-config` in config đã gộp mà không chạy gì, `--probe` chỉ
+dò VRAM rồi thoát.
+
+```bash
+python benchmark/maskrcnn/train.py \
+  --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml \
+  --data data/export/field/f1 --runs benchmark/maskrcnn/runs --name maskrcnn \
+  --imgsz 1024 --batch 16 --epochs 50 \
+  --lr 0.02 --weight_decay 1e-4 --momentum 0.9 \
+  --lr_steps "[0.7,0.9]" --lr_gamma 0.1 --warmup_iters 200 --amp true \
+  --fliplr 0.5 --flipud 0.5 --rot90 true \
+  --val_every 1 --val_conf 0.05 --val_batch 16 --max_det 100 \
+  --workers 8 --seed 0 --log_every 20
+```
+
+Bỏ `--lr` đi thì lr tự tính theo batch (`0.02 x batch/16`); truyền tay là
+tắt phép tự tính đó. `--lr_steps` phải có nháy vì giá trị đọc bằng YAML.
+
+Lệnh chấm, đầy đủ tham số:
+
+```bash
+python benchmark/maskrcnn/evaluate.py \
+  --config benchmark/maskrcnn/configs/eval/maskrcnn_r50_d2.yaml \
+  --data data/export/field/f1 --split test \
+  --runs benchmark/maskrcnn/runs --name maskrcnn \
+  --set model.weights=benchmark/maskrcnn/runs/train/<...>/weights/best.pth \
+  --set model.arch=maskrcnn --set model.conf=0.05 --set model.max_det=100 \
+  --set eval.iou_thr=0.5 --set eval.band_ratio=0.02 \
+  --set eval.dilation_ratio=0.02 --set eval.nsd_tau=2.0
+```
+
+`--set model.*` đi vào khối `model:` của config chấm, `--set eval.*` vào khối
+`eval:`. Bốn khoá `eval:` là định nghĩa của phép đo, đổi chúng là số không so
+được với ba model kia nữa: `iou_thr` ngưỡng ghép cặp, `band_ratio` bề rộng
+vành biên theo cỡ tán, `dilation_ratio` bề rộng vành của Boundary AP (2%
+đường chéo ảnh, đúng bài báo), `nsd_tau` dung sai của NSD.
+
+### Đổi backbone
+
+R50 là mặc định vì ba model dùng chung nó, nhờ vậy chênh lệch giữa chúng quy
+về cơ chế. Đổi backbone ở **một** model là mất tính chất đó — đổi thì đổi cả
+ba, hoặc báo cáo riêng như thí nghiệm phụ.
+
+```bash
+# R101
+python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml \
+  --data data/export/field/f1 --runs benchmark/maskrcnn/runs --name maskrcnn-r101 \
+  --set model.config_file=COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml
+
+# X101-32x8d
+python benchmark/maskrcnn/train.py --config benchmark/maskrcnn/configs/train/maskrcnn_r50_d2.yaml \
+  --data data/export/field/f1 --runs benchmark/maskrcnn/runs --name maskrcnn-x101 \
+  --set model.config_file=COCO-InstanceSegmentation/mask_rcnn_X_101_32x8d_FPN_3x.yaml
+```
+
+Trọng số COCO đi theo config: `base_cfg` gọi `model_zoo.get_checkpoint_url`
+cho đúng file đó, nên không phải khai `model.weights`. Đặt `--name` khác đi,
+không thì hai backbone rơi vào tên thư mục giống nhau.
+
 ## Trong thư mục này
 
 | | |
