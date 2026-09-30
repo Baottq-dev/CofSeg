@@ -91,6 +91,82 @@ cp "$EV/per_region.csv" benchmark/mask2former/results/mask2former_block_f1_per_r
 cd benchmark/mask2former && python -m pytest tests
 ```
 
+### Lệnh đầy đủ
+
+Khối trên là lệnh hằng ngày; khối này liệt kê **mọi tham số** để khi cần chỉnh
+thì khỏi đi tra. Giá trị ghi ra chính là mặc định, nên lệnh này cho kết quả y
+hệt lệnh ngắn ở trên.
+
+`--data`, `--runs`, `--name` là của `train.py`; phần còn lại đi thẳng vào
+trainer, gõ sai tên thì nó chặn và gợi ý tên gần đúng. `--list-params` in đủ
+danh sách, `--print-config` in config đã gộp mà không chạy gì, `--probe` chỉ
+dò VRAM rồi thoát.
+
+```bash
+python benchmark/mask2former/train.py \
+  --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml \
+  --data data/export/field/f1 --runs benchmark/mask2former/runs --name mask2former \
+  --imgsz 1024 --batch 16 --epochs 100 \
+  --lr 1e-4 --weight_decay 0.05 --momentum 0.9 \
+  --lr_steps "[0.7,0.9]" --lr_gamma 0.1 --warmup_iters 200 --amp true \
+  --num_queries 100 \
+  --val_every 1 --val_conf 0.05 --val_batch 16 --max_det 100 \
+  --workers 8 --seed 0 --log_every 20
+```
+
+`--fliplr/--flipud/--rot90` **không có tác dụng** với model này: nó giữ mapper
+LSJ của recipe gốc (co giãn 0.1–2.0 rồi cắt ô vuông `imgsz`), và mapper đó tự
+lật ngang. Đừng truyền chúng rồi tưởng đã đổi được gì.
+
+Bỏ `--lr` đi thì lr tự tính theo batch (`1e-4 x batch/16`); truyền tay là
+tắt phép tự tính đó. `--lr_steps` phải có nháy vì giá trị đọc bằng YAML.
+
+Lệnh chấm, đầy đủ tham số:
+
+```bash
+python benchmark/mask2former/evaluate.py \
+  --config benchmark/mask2former/configs/eval/mask2former_r50_d2.yaml \
+  --data data/export/field/f1 --split test \
+  --runs benchmark/mask2former/runs --name mask2former \
+  --set model.weights=benchmark/mask2former/runs/train/<...>/weights/best.pth \
+  --set model.arch=mask2former --set model.repo=benchmark/mask2former/upstream \
+  --set model.conf=0.05 --set model.max_det=100 \
+  --set eval.iou_thr=0.5 --set eval.band_ratio=0.02 \
+  --set eval.dilation_ratio=0.02 --set eval.nsd_tau=2.0
+```
+
+`--set model.*` đi vào khối `model:` của config chấm, `--set eval.*` vào khối
+`eval:`. Bốn khoá `eval:` là định nghĩa của phép đo, đổi chúng là số không so
+được với ba model kia nữa: `iou_thr` ngưỡng ghép cặp, `band_ratio` bề rộng
+vành biên theo cỡ tán, `dilation_ratio` bề rộng vành của Boundary AP (2%
+đường chéo ảnh, đúng bài báo), `nsd_tau` dung sai của NSD.
+
+### Đổi backbone
+
+R50 là mặc định vì ba model dùng chung nó, nhờ vậy chênh lệch giữa chúng quy
+về cơ chế. Đổi backbone ở **một** model là mất tính chất đó — đổi thì đổi cả
+ba, hoặc báo cáo riêng như thí nghiệm phụ.
+
+`model.config_file` là đường dẫn **bên trong** `upstream/`, và với repo này
+thì trọng số COCO không suy ra được từ config nên phải khai luôn:
+
+```bash
+# R101
+python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml \
+  --data data/export/field/f1 --runs benchmark/mask2former/runs --name mask2former-r101 \
+  --set model.config_file=configs/coco/instance-segmentation/maskformer2_R101_bs16_50ep.yaml \
+  --set model.weights=https://dl.fbaipublicfiles.com/maskformer/mask2former/coco/instance/maskformer2_R101_bs16_50ep/model_final_eba159.pkl
+
+# Swin-T
+python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml \
+  --data data/export/field/f1 --runs benchmark/mask2former/runs --name mask2former-swint \
+  --set model.config_file=configs/coco/instance-segmentation/swin/maskformer2_swin_tiny_bs16_50ep.yaml \
+  --set model.weights=https://dl.fbaipublicfiles.com/maskformer/mask2former/coco/instance/maskformer2_swin_tiny_bs16_50ep/model_final_86143f.pkl
+```
+
+Có sẵn trong `upstream/configs/coco/instance-segmentation/`: R50, R101, và
+Swin T/S/B/L. Bản Swin nặng hơn R50 nhiều — dò `--probe` trước khi đặt lịch.
+
 ## Trong thư mục này
 
 | | |
