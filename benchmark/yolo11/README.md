@@ -77,6 +77,97 @@ cp "$EV/per_region.csv" benchmark/yolo11/results/yolo11s_block_f1_per_region.csv
 cd benchmark/yolo11 && python -m pytest tests
 ```
 
+### Lệnh đầy đủ
+
+Khối trên là lệnh hằng ngày; khối này liệt kê **mọi tham số** để khi cần chỉnh
+thì khỏi đi tra. Giá trị ghi ra chính là mặc định, nên lệnh này cho kết quả y
+hệt lệnh ngắn ở trên.
+
+`--data`, `--runs`, `--name` là của `train.py`; phần còn lại đi thẳng vào
+trainer, gõ sai tên thì nó chặn và gợi ý tên gần đúng. `--list-params` in đủ
+danh sách, `--print-config` in config đã gộp mà không chạy gì, `--probe` chỉ
+dò VRAM rồi thoát.
+
+```bash
+python benchmark/yolo11/train.py \
+  --config benchmark/yolo11/configs/train/yolo11s.yaml \
+  --data data/export/field/f1 --runs benchmark/yolo11/runs --name yolo11s \
+  --imgsz 1024 --batch 16 --epochs 50 --patience 0 \
+  --optimizer auto --cos_lr true --amp true \
+  --mask_ratio 4 --overlap_mask true \
+  --fliplr 0.5 --flipud 0.5 --degrees 0 --copy_paste 0 \
+  --mosaic 0 --close_mosaic 0 --scale 0.5 \
+  --workers 8 --seed 0 --deterministic true --val true --plots true
+```
+
+Trainer nhận **toàn bộ 114 tham số** của ultralytics, không chỉ những cái ở
+trên — `--list-params` in hết. Bốn khoá bị khoá (`data`, `project`, `name`,
+`exist_ok`) vì trainer tự đặt để kết quả rơi đúng thư mục run.
+
+`optimizer: auto` nghĩa là ultralytics tự chọn AdamW và tự đặt `lr0` theo số
+lớp và số epoch, nên đặt `--lr0` tay sẽ **không** có tác dụng chừng nào
+optimizer còn là auto.
+
+`--degrees`, `--copy_paste` và `--patience` để 0 là cố ý: ba model kia không
+có hai tăng cường đó, và chúng chạy đủ số epoch đã khai. Bật lên là cho model
+này lợi thế không đến từ kiến trúc.
+
+Lệnh chấm, đầy đủ tham số:
+
+```bash
+python benchmark/yolo11/evaluate.py \
+  --config benchmark/yolo11/configs/eval/yolo11s.yaml \
+  --data data/export/field/f1 --split test \
+  --runs benchmark/yolo11/runs --name yolo11s \
+  --set model.weights=benchmark/yolo11/runs/train/<...>/weights/best.pt \
+  --set model.imgsz=1024 --set model.conf=0.05 --set model.iou=0.7 \
+  --set model.max_det=100 --set model.retina_masks=true \
+  --set eval.iou_thr=0.5 --set eval.band_ratio=0.02 \
+  --set eval.dilation_ratio=0.02 --set eval.nsd_tau=2.0
+```
+
+`--set model.*` đi vào khối `model:` của config chấm, `--set eval.*` vào khối
+`eval:`. Bốn khoá `eval:` là định nghĩa của phép đo, đổi chúng là số không so
+được với ba model kia nữa: `iou_thr` ngưỡng ghép cặp, `band_ratio` bề rộng
+vành biên theo cỡ tán, `dilation_ratio` bề rộng vành của Boundary AP (2%
+đường chéo ảnh, đúng bài báo), `nsd_tau` dung sai của NSD.
+
+`model.imgsz` lúc chấm phải bằng `--imgsz` lúc train, không thì model học ở
+một độ phân giải rồi bị chấm ở độ phân giải khác.
+
+`weights/best.pt` là bản chọn theo mask AP thuần. `ultralytics/weights/best.pt`
+vẫn còn, nhưng nó chọn theo fitness cộng cả chỉ số hộp nên không so được với
+ba model kia.
+
+Còn một đường chấm thứ hai, `--native`, gọi thẳng `model.val()` của ultralytics
+— đúng thứ `yolo val` chạy, giữ để đối chiếu với các báo cáo YOLO khác:
+
+```bash
+python benchmark/yolo11/evaluate.py --native \
+  --weights benchmark/yolo11/runs/train/<...>/weights/best.pt \
+  --data data/export/field/f1 --split test --imgsz 1024 --batch 4 --max-det 100
+```
+
+### Đổi backbone
+
+Model này **không đổi backbone được**, khác ba model kia: backbone của YOLO
+gắn liền với kiến trúc, không có chỗ cắm ResNet vào. Thứ đổi được là **cỡ
+model** — n / s / m / l / x, cùng kiến trúc, khác độ rộng và độ sâu:
+
+```bash
+python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml \
+  --data data/export/field/f1 --runs benchmark/yolo11/runs --name yolo11m \
+  --set model=weights/yolo11m-seg.pt
+```
+
+Thiếu file thì ultralytics tự tải về đúng đường dẫn đó. Chọn cỡ `s` cho bảng
+vì đo trên chính 6521 vùng của bộ này thì nút thắt là **độ phân giải** chứ
+không phải dung lượng model: lưới mặt nạ của YOLO là `imgsz/4`, nên đổi `l`
+lấy imgsz thấp là đánh đổi lỗ.
+
+Hai họ YOLO khác chạy được bằng đúng đường này, config có sẵn:
+`configs/train/yolov8s.yaml` và `configs/train/yolo26s.yaml`.
+
 ## Trong thư mục này
 
 | | |
