@@ -22,8 +22,10 @@ ultralytics không biết về dữ liệu này:
 from __future__ import annotations
 
 import json
+import shutil
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import yaml
 
@@ -37,10 +39,15 @@ from .base import Trainer
 AERIAL_DEFAULTS: dict = {
     "flipud": 0.5,  # ảnh nadir không có chiều "trên"
     "fliplr": 0.5,
-    "degrees": 180.0,  # xoay bất kỳ đều hợp lệ
     "deterministic": True,
     "seed": 0,
 }
+
+#: Cột chỉ số mà ta chọn checkpoint theo. Ultralytics chọn best.pt theo
+#: `SegmentMetrics.fitness = seg.fitness() + box.fitness()`, tức trộn cả chỉ
+#: số HỘP vào; ba model kia chọn thuần theo mask AP. Không đổi được bằng tham
+#: số, nên trainer tự giữ thêm một bản best theo đúng cột này.
+FITNESS_KEY = "metrics/mAP50-95(M)"
 
 
 @register("trainer", "yolo")
@@ -211,6 +218,7 @@ class YoloTrainer(Trainer):
             exist_ok=True,
         )
         self.warned = progress.warnings_to_file(self.run_dir / "warnings.log")
+        picked = self._best_by_mask_ap(model)
         t0 = time.time()
         results = model.train(**args)
         train_seconds = round(time.time() - t0, 1)
@@ -224,6 +232,16 @@ class YoloTrainer(Trainer):
             save_dir = self.run_dir / "ultralytics"
         weights = save_dir / "weights"
         best, last = weights / "best.pt", weights / "last.pt"
+        # Bản chọn theo mask AP thuần, về đúng bố cục của ba model kia
+        # (run_dir/weights/best.pt) để lệnh chấm viết giống nhau cho cả bốn.
+        mine = self.run_dir / "weights"
+        mine.mkdir(exist_ok=True)
+        if picked.path is not None and picked.path.exists():
+            shutil.copy2(picked.path, mine / "best.pt")
+        elif best.exists():
+            shutil.copy2(best, mine / "best.pt")
+        if last.exists():
+            shutil.copy2(last, mine / "last.pt")
         if not best.exists() and not last.exists():
             # Không có trọng số nghĩa là lần chạy hỏng, dù ultralytics không
             # ném lỗi. Báo ra ngay thay vì trả về summary rỗng trông như thành công.
@@ -232,11 +250,14 @@ class YoloTrainer(Trainer):
             )
         out = {
             "weights": {
-                "best": str(best) if best.exists() else None,
+                "best": str(mine / "best.pt") if (mine / "best.pt").exists() else None,
                 # last.pt cũng phải chấm: val chỉ có 20 ảnh nên best.pt được
                 # chọn theo một tín hiệu rất nhiễu.
-                "last": str(last) if last.exists() else None,
+                "last": str(mine / "last.pt") if (mine / "last.pt").exists() else None,
+                "ultralytics_best": str(best) if best.exists() else None,
             },
+            "best_epoch": picked.epoch,
+            "best_val_AP": round(picked.value * 100, 4) if picked.value is not None else -1.0,
             "save_dir": str(save_dir),
             "args": {k: v for k, v in args.items() if not k.startswith("_")},
         }
@@ -244,8 +265,35 @@ class YoloTrainer(Trainer):
         if metrics:
             out["ultralytics_metrics"] = {k: float(v) for k, v in metrics.items()}
         out["train_seconds"] = train_seconds
-        self._print_summary(metrics or {}, train_seconds, best if best.exists() else last)
+        self._print_summary(metrics or {}, train_seconds, mine / "best.pt")
         return out
+
+    def _best_by_mask_ap(self, model):
+        """Giữ thêm một bản best chọn thuần theo mask AP trên val.
+
+        Ultralytics chọn best.pt theo `seg.fitness() + box.fitness()`, tức
+        cộng cả chỉ số hộp vào, còn ba model kia chọn theo mask AP. Không có
+        tham số nào đổi được, và callback `on_fit_epoch_end` chạy SAU
+        `save_model()`, nên cách sạch nhất là chép lại `last.pt` mà
+        ultralytics vừa ghi cho epoch này — không đụng một dòng nào của thư viện.
+        """
+        picked = SimpleNamespace(value=None, epoch=-1, path=None)
+        store = self.run_dir / "weights"
+
+        def on_fit_epoch_end(trainer):
+            got = (trainer.metrics or {}).get(FITNESS_KEY)
+            if got is None or not Path(trainer.last).exists():
+                return
+            got = float(got)
+            if picked.value is not None and got <= picked.value:
+                return
+            store.mkdir(exist_ok=True)
+            out = store / "best_mask_ap.pt"
+            shutil.copy2(trainer.last, out)
+            picked.value, picked.epoch, picked.path = got, int(trainer.epoch) + 1, out
+
+        model.add_callback("on_fit_epoch_end", on_fit_epoch_end)
+        return picked
 
     def _print_summary(self, metrics: dict, seconds, weights) -> None:
         """Khối cuối lượt chạy, cùng dạng với ba model kia.

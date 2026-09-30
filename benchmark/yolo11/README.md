@@ -62,9 +62,10 @@ hoặc `f1` — có ba chỗ trong khối lệnh, sửa hết cả ba. Hai bộ 
 # 1. huấn luyện (thêm --epochs 1 --fraction 0.05 để khói)
 python benchmark/yolo11/train.py --config benchmark/yolo11/configs/train/yolo11s.yaml --data data/export/block/f1 --runs benchmark/yolo11/runs --name yolo11s --workers 8
 
-# 2. chấm bằng trọng số tốt nhất
+# 2. chấm bằng trọng số tốt nhất (weights/best.pt: chọn theo mask AP thuần,
+#    không phải best.pt của ultralytics vốn cộng cả chỉ số hộp)
 RUN=$(ls -td benchmark/yolo11/runs/train/*_yolo11s_block-f1_* | head -1)
-python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo11s.yaml --set model.weights="$RUN/ultralytics/weights/best.pt" --data data/export/block/f1 --split test --runs benchmark/yolo11/runs --name yolo11s
+python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo11s.yaml --set model.weights="$RUN/weights/best.pt" --data data/export/block/f1 --split test --runs benchmark/yolo11/runs --name yolo11s
 
 # 3. dự đoán + kết quả nhỏ
 EV=$(ls -td benchmark/yolo11/runs/eval/*_yolo11s_block-f1_* | head -1)

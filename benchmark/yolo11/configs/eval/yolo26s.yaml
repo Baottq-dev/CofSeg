@@ -1,10 +1,13 @@
 # YOLO26s-seg qua đường chấm chung. Trọng số: --set model.weights=<best.pt>
-#     python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo26s.yaml --set model.weights=runs/train/<...>/ultralytics/weights/best.pt --imgsz 1024
+#     python benchmark/yolo11/evaluate.py --config benchmark/yolo11/configs/eval/yolo26s.yaml --set model.weights=runs/train/<...>/weights/best.pt --imgsz 1024
 base: _base.yaml
 name: yolo26s-seg
 model:
   name: yolo_seg
-  weights: runs/train/CHANGE_ME/ultralytics/weights/best.pt
+  # weights/best.pt của run: bản chọn theo mask AP thuần, cùng bố cục với ba
+  # model kia. best.pt của ultralytics (ultralytics/weights/) chọn theo
+  # fitness cộng cả chỉ số hộp — vẫn còn đó nếu muốn đối chiếu.
+  weights: runs/train/CHANGE_ME/weights/best.pt
   imgsz: 1024
   # conf thấp để AP thấy đủ đường PR; bảng từng vùng dùng cặp đã ghép nên
   # dự đoán điểm thấp chỉ thành "thừa" nếu không khớp ai.

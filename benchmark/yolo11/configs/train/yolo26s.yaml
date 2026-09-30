@@ -51,7 +51,9 @@ train:
   overlap_mask: true
 
   epochs: 100
-  patience: 30
+  # 0 = tắt dừng sớm. Ba model kia chạy đủ số epoch đã khai; để YOLO dừng ở
+  # epoch 40 rồi so với chúng ở epoch 100 là so hai ngân sách khác nhau.
+  patience: 0
   # optimizer: auto -> ultralytics tự chọn AdamW và tự đặt lr0/momentum theo
   # số lớp và số epoch (lần chạy thử nó chọn lr=0.002). Đặt lr0 tay ở đây sẽ
   # KHÔNG có tác dụng chừng nào optimizer còn là auto.
@@ -77,11 +79,15 @@ train:
   # đứng thì không, nên lật dọc và xoay bất kỳ đều hợp lệ.
   flipud: 0.5
   fliplr: 0.5
-  degrees: 180.0
-  # Chỉ 337 ảnh train, nên dán ghép giúp bù dữ liệu. Đây là tham số dành cho
-  # phân đoạn, mặc định tắt. Nó cũng làm tăng số vùng mỗi ảnh, nhưng có chặn
-  # trên (không quá gấp đôi), khác hẳn mosaic ở dưới.
-  copy_paste: 0.3
+  # degrees để 0. Ảnh nadir xoay kiểu gì cũng hợp lệ, nhưng chỉ YOLO có tham
+  # số này: mmdet không có transform xoay cho mask+box, còn detectron2 xoay
+  # bội 90 (không nội suy) chứ không xoay góc bất kỳ. Bật nó là cho một model
+  # thêm dữ liệu mà ba model kia không có.
+  degrees: 0.0
+  # copy_paste để 0 vì lý do như degrees: chỉ YOLO có nó. Nó dán thêm vùng
+  # vào ảnh, tức thêm dữ liệu huấn luyện mà ba model kia không được hưởng.
+  # Muốn đo riêng xem nó giúp bao nhiêu thì chạy một lượt ngoài bảng với 0.3.
+  copy_paste: 0.0
 
   # ---- mosaic TẮT, và đây không phải lựa chọn thẩm mỹ ----
   # Bộ nhớ của nhánh mặt nạ tỉ lệ với SỐ VÙNG trong batch, không phải với
