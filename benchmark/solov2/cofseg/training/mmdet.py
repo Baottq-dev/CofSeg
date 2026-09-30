@@ -47,14 +47,19 @@ from .base import Trainer
 #: nghĩa như nhau trên mọi model. lr None = recipe gốc tỉ lệ theo batch.
 MM_DEFAULTS: dict = {
     "imgsz": 1024,
-    "batch": 4,
+    # Đo thật trên RTX 5090: batch 16 ở imgsz 1024 dùng 12.7 GB. Mặc định cũ
+    # là 4 — con số của card 8 GB ở nhà, không phải của máy sẽ chạy thật.
+    "batch": 16,
     "epochs": 50,
     "lr": None,
     "weight_decay": 1e-4,
     "momentum": 0.9,
     "lr_steps": [0.7, 0.9],
     "lr_gamma": 0.1,
-    "warmup_iters": 200,
+    # < 1 là PHẦN của lịch, >= 1 là số vòng tuyệt đối (cùng quy ước lr_steps).
+    # 200 vòng cứng là 12.5% lịch khi batch 16, trong khi recipe COCO warmup
+    # chưa tới 1%. Thấy rõ ở lượt khói: hết 3 epoch lr vẫn chưa lên tới 0.01.
+    "warmup_iters": 0.03,
     "amp": True,
     "fliplr": 0.5,
     "flipud": 0.5,
@@ -153,6 +158,9 @@ def build_overrides(arch: str, root: str | Path, splits: dict, n_train: int, arg
         lr = ZOO[arch]["lr"] * batch / 16
     workers = int(args["workers"])
     val_batch = max(1, int(args.get("val_batch") or batch))
+    w = float(args["warmup_iters"])
+    warmup = int(w * max_iter) if 0 < w < 1 else int(w)
+    warmup = max(1, min(warmup, max_iter))
     # imgsz là CẠNH DÀI như YOLO/torchvision/detectron2; mmdet Resize keep_ratio
     # nhận (max cạnh dài, max cạnh ngắn) không phân biệt thứ tự.
     imgsz = int(args["imgsz"])
@@ -247,7 +255,7 @@ def build_overrides(arch: str, root: str | Path, splits: dict, n_train: int, arg
             clip_grad=dict(max_norm=35, norm_type=2)),
         param_scheduler=[
             dict(type="LinearLR", start_factor=1.0 / 3, by_epoch=False, begin=0,
-                 end=min(int(args["warmup_iters"]), max_iter)),
+                 end=warmup),
             dict(type="MultiStepLR", begin=0, end=epochs, by_epoch=True,
                  milestones=milestones, gamma=float(args["lr_gamma"])),
         ],

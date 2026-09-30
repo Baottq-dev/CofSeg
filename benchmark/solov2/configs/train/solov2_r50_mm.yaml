@@ -36,12 +36,14 @@ train:
   # recipe COCO; tán ~366 px ở ảnh gốc còn ~94 px ở 1024 -> rơi vào hai tầng
   # đầu, mỗi ô ~26-28 px.
   imgsz: 1024
-  batch: 4
+  # 16 đo thật trên chính model này: 12.7 GB ở imgsz 1024, RTX 5090.
+  batch: 16
   epochs: 50
   # lr trống = recipe gốc tỉ lệ theo batch: 0.01 x batch/16 (SGD, momentum
   # 0.9, weight decay 1e-4, clip grad 35). Lịch: giảm 10x ở 70% và 90% epoch.
   lr: null
-  warmup_iters: 200
+  # phần của lịch, không phải số vòng cứng: 200 vòng là 12.5% lịch ở batch 16
+  warmup_iters: 0.03
   amp: true
 
   # Ảnh nadir không có chiều "trên": lật ngang + lật dọc (độc lập). KHÔNG có

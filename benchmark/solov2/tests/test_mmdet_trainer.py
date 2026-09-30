@@ -30,7 +30,8 @@ def test_schedule_follows_epochs_and_lr_scales_with_batch():
     o = _over(600, batch=4, epochs=50)
     assert o["train_cfg"] == {"type": "EpochBasedTrainLoop", "max_epochs": 50, "val_interval": 1}
     warm, steps = o["param_scheduler"]
-    assert warm["end"] == 200 and warm["by_epoch"] is False
+    # warmup_iters < 1 là PHẦN của lịch: 0.03 x 7500 = 225.
+    assert warm["end"] == 225 and warm["by_epoch"] is False
     assert steps["milestones"] == [35, 45] and steps["end"] == 50    # 70 % và 90 %
     assert o["optim_wrapper"]["optimizer"]["lr"] == pytest.approx(0.01 * 4 / 16)
     assert o["optim_wrapper"]["type"] == "AmpOptimWrapper"
@@ -97,7 +98,7 @@ def test_trainer_contract_and_run_tag():
     assert {"imgsz", "batch", "epochs", "lr", "workers", "val_conf"} <= names
     assert MMDetTrainer.locked_params() == frozenset()
     assert MMDetTrainer.run_tag({"train": {"imgsz": 2048, "batch": 1}}) == "i2048b1e50"
-    assert MMDetTrainer.run_tag({}) == "i1024b4e50"
+    assert MMDetTrainer.run_tag({}) == "i1024b16e50"
 
 
 def test_prepare_counts_train_images_and_checks_class_names(three_splits, tmp_path):
