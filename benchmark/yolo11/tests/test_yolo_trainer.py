@@ -48,7 +48,9 @@ def test_summary_lay_chi_so_mat_na_chu_khong_phai_hop(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "mAP50-95 27.61" in out and "mAP50 55.79" in out
     assert "99.99" not in out and "88.88" not in out
-    assert "train 2:12" in out
+    # ultralytics val ngay trong model.train(), nên 2:12 là TỔNG train + val;
+    # nhãn phải nói đúng điều đó thay vì gọi tất cả là "train".
+    assert "train + val 2:12" in out
     assert "ultralytics" in out
 
 

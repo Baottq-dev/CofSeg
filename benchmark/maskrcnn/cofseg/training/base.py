@@ -18,6 +18,26 @@ class Trainer(ABC):
         self.cfg = cfg
         self.run_dir = Path(run_dir)
 
+    # --------------------------------------------------------------- thời gian
+    def _time_row(self, seconds) -> str:
+        """Dòng "thời gian" của khối cuối, tách train khỏi val khi biết được.
+
+        Gộp hai số làm một rồi dán nhãn "train" là nói dối: val chạy batch 1
+        nên trên bộ này nó tốn gấp đôi train, và ai đọc cũng sẽ tưởng train
+        mới là chỗ hết giờ máy. Trainer nào giữ một reporter có `train_total`
+        và `val_total` thì hai số đó được in riêng; không có thì in tổng, và
+        nhãn nói đúng rằng đó là tổng.
+        """
+        from .. import progress
+
+        rep = getattr(self, "_reporter", None)
+        train_s = getattr(rep, "train_total", 0.0) or 0.0
+        val_s = getattr(rep, "val_total", 0.0) or 0.0
+        if train_s and val_s:
+            return (f"train {progress.fmt_time(train_s)}"
+                    f" + val {progress.fmt_time(val_s)}")
+        return f"train + val {progress.fmt_time(seconds)}"
+
     # -------------------------------------------------------------------- đặt tên
     @classmethod
     def run_tag(cls, cfg: dict) -> str:

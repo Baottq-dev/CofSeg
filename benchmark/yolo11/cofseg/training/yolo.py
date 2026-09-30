@@ -263,7 +263,7 @@ class YoloTrainer(Trainer):
                 ("val (mặt nạ)",
                  f"mAP50-95 {progress.fmt_num(pct('metrics/mAP50-95(M)'))}   "
                  f"mAP50 {progress.fmt_num(pct('metrics/mAP50(M)'))}"),
-                ("thời gian", f"train {progress.fmt_time(seconds)}")]
+                ("thời gian", self._time_row(seconds))]
         seen = getattr(getattr(self, "warned", None), "seen", ())
         if seen:
             rows.append(("cảnh báo", f"{len(seen)} loại  ->  warnings.log"))
