@@ -458,15 +458,18 @@ def test_readme_solov2_neu_du_ba_cai_bay():
 
 
 # ------------------- benchmark/README.md: một đường cài, không chắp vá
-#: Phần hướng dẫn nằm giữa hai tiêu đề này.
-HUONG_DAN = ("## Dựng môi trường", "## Chạy")
+#: Mục mở đầu phần hướng dẫn. Kết thúc là tiêu đề `##` kế tiếp, tìm bằng
+#: regex chứ không ghim tên — chèn thêm một mục sau nó là chuyện bình thường.
+HUONG_DAN = "## Dựng môi trường"
 
 
 def _phan_huong_dan() -> str:
     doc = (BENCH / "README.md").read_text(encoding="utf-8")
-    dau, cuoi = (doc.index(h) for h in HUONG_DAN)
-    assert dau < cuoi
-    return doc[dau:cuoi]
+    dau = doc.index(HUONG_DAN)
+    sau = doc[dau + len(HUONG_DAN):]
+    ket = re.search(r"^## ", sau, re.M)
+    assert ket, "không thấy mục nào sau phần hướng dẫn"
+    return HUONG_DAN + sau[: ket.start()]
 
 
 def test_huong_dan_danh_so_lien_tuc_tu_1():

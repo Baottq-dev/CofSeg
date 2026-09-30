@@ -184,6 +184,62 @@ PYTHONPATH=benchmark/mask2former/upstream python -c \
 Đủ bảy dòng, `mmengine vá: True` và `MSDeformAttn OK` là env dùng được cho cả
 bốn model.
 
+## Siêu tham số, và số liệu chọn ra chúng
+
+Mặc định của bốn model đặt theo chính bộ dữ liệu này, không theo recipe COCO
+cũng không theo card 8 GB ở nhà. Đo trên 850 ảnh / 12138 vùng của
+`data/export/dataset_v1`:
+
+| | |
+|---|---|
+| ảnh | 2560 x 1440, đồng nhất cả bộ |
+| tán, cạnh tương đương | trung vị **324 px**, p5 127 px, p95 620 px |
+| vùng mỗi ảnh | trung vị 13, trung bình 14.3, tối đa **48** |
+| ảnh nền | 2 / 850 |
+
+Ba số phải giống nhau ở cả bốn model, vì chúng ảnh hưởng kết quả mà không
+phải kiến trúc:
+
+| | giá trị | vì sao |
+|---|---|---|
+| `imgsz` | **1024** | tán trung vị còn 129 px. Chạy 1536 là nhìn tán to hơn 1.5 lần, và chênh lệch đó sẽ bị ghi vào cột kiến trúc |
+| `batch` | **16** | đo thật trên RTX 5090: 12.7 GB ở imgsz 1024. Mặc định cũ (4, và 2 cho YOLO) là con số của card 8 GB ở nhà |
+| `epochs` | **50** | Mask2Former 100, vì query hội tụ chậm hơn — chênh lệch có chủ đích, ghi trong config của nó |
+
+`warmup_iters` chuyển sang **phần của lịch** (`0.03`), cùng quy ước với
+`lr_steps`: dưới 1 là phần, từ 1 trở lên là số vòng tuyệt đối. Lý do đo được:
+500 ảnh ở batch 16 là 32 vòng/epoch, 50 epoch là 1600 vòng, nên 200 vòng cứng
+thành **12.5% lịch** trong khi recipe COCO warmup chưa tới 1%. Lượt khói
+28/09 cho thấy đúng điều đó: hết 3 epoch lr vẫn chưa lên tới giá trị đã đặt.
+
+`max_det` 100 và `num_queries` 100 giữ nguyên: ảnh dày nhất có 48 tán, nên cả
+hai đều dư gấp đôi.
+
+### Hai trần độ phân giải không nằm ở imgsz
+
+Đáng biết trước khi đọc bảng kết quả, vì dự án lấy đường biên làm trọng tâm:
+
+| | trần | ở imgsz 1024 |
+|---|---|---|
+| Mask R-CNN | đầu mask **28x28** rồi phóng lên bbox | tán trung vị 129 px -> **4.6 px mỗi ô** |
+| YOLO | lưới prototype `imgsz/4` = 256 | **10 px ảnh gốc** mỗi ô |
+
+Cả hai đều nâng được: `--mask_resolution 28` cho R-CNN (thành 56x56, còn 2.3
+px/ô), `--mask_ratio 2` cho YOLO (proto 512, còn 5 px). Mặc định giữ nguyên
+recipe gốc để mốc số 0 không bị đổi ngầm; nâng chúng là một thí nghiệm riêng,
+đáng chạy sau khi có mốc nền. SOLOv2 và Mask2Former không có trần kiểu này:
+cả hai sinh mask ở stride 4 của toàn ảnh.
+
+### Ngưỡng diện tích của COCO gần như vô nghĩa ở đây
+
+97.4% số vùng rơi vào ô **large** theo thang COCO (small `<32²`, medium
+`<96²`, tính trên ảnh gốc): chỉ 91 vùng small và 230 vùng medium trên 12138.
+
+Nên trong bảng `cocoeval.txt`, ba dòng `AP_small` / `AP_medium` / `AP_large`
+không chia được bộ này thành ba nhóm có ý nghĩa — đọc `AP_large` là gần như
+đọc `AP`. Muốn cắt theo cỡ tán thì dùng `per_region.csv`, nơi mỗi vùng có
+`gt_area` và `gt_side` thật.
+
 ## Chạy
 
 Cắt fold một lần cho cả nhóm, từ gốc repo. Sáu lượt luôn giống nhau (mỗi ruộng

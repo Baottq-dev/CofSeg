@@ -112,3 +112,63 @@ def test_d2_khong_con_de_batch_cham_mac_dinh():
         src = (BENCH / model / "cofseg" / "training" / "detectron2.py").read_text(encoding="utf-8")
         assert "def build_test_loader" in src, f"{model}: không override loader chấm"
         assert "batch_size=val_batch" in src, f"{model}: loader chấm không nhận val_batch"
+
+
+# -------------------------------- bộ mặc định, đo từ chính bộ dữ liệu này
+#: Ba số này phải giống nhau ở cả bốn model, nếu không bảng đo nhầm thứ khác.
+CHUNG = {"imgsz": 1024, "batch": 16}
+
+
+@pytest.mark.parametrize("model,cfg", [
+    ("maskrcnn", "_base_d2.yaml"), ("mask2former", "_base_d2.yaml"),
+    ("solov2", "solov2_r50_mm.yaml"), ("yolo11", "yolo26s.yaml")])
+def test_bon_model_cung_imgsz_va_batch(model, cfg):
+    """imgsz và batch không phải lựa chọn của từng người.
+
+    imgsz quyết định cỡ tán mà model nhìn thấy: tán trung vị 324 px ở ảnh gốc
+    2560x1440 còn 129 px ở imgsz 1024. Một model chạy 1536 là nó nhìn tán to
+    hơn 1.5 lần, và chênh lệch đó sẽ bị ghi vào cột "kiến trúc".
+
+    batch 16 đo thật trên RTX 5090: 12.7 GB ở imgsz 1024. Mặc định cũ là 4
+    (hai model detectron2/mmdet) và 2 (YOLO) — con số của card 8 GB ở nhà.
+    """
+    t = _train_block(model, cfg)
+    for k, v in CHUNG.items():
+        assert int(t[k]) == v, f"{model}: {k}={t[k]}, phải {v}"
+
+
+@pytest.mark.parametrize("model,cfg,epochs", [
+    ("maskrcnn", "_base_d2.yaml", 50), ("solov2", "solov2_r50_mm.yaml", 50),
+    ("yolo11", "yolo26s.yaml", 50),
+    ("mask2former", "mask2former_r50_d2.yaml", 100)])
+def test_ngan_sach_epoch(model, cfg, epochs):
+    """50 epoch cho ba model; Mask2Former 100 vì query hội tụ chậm hơn — đó là
+    chênh lệch có chủ đích, ghi trong config của nó."""
+    t = _train_block(model, cfg)
+    assert int(t["epochs"]) == epochs, f"{model}: epochs={t['epochs']}, phải {epochs}"
+
+
+@pytest.mark.parametrize("model,cfg", [
+    ("maskrcnn", "_base_d2.yaml"), ("mask2former", "_base_d2.yaml"),
+    ("solov2", "solov2_r50_mm.yaml")])
+def test_warmup_theo_phan_cua_lich(model, cfg):
+    """200 vòng cứng là 12.5% lịch khi batch 16 (500 ảnh -> 32 vòng/epoch,
+    50 epoch -> 1600 vòng), trong khi recipe COCO warmup chưa tới 1%. Thấy rõ
+    ở lượt khói 28/09: hết 3 epoch lr vẫn chưa lên tới giá trị đã đặt.
+
+    Ghi theo PHẦN thì đổi batch không phải tính lại.
+    """
+    t = _train_block(model, cfg)
+    w = float(t["warmup_iters"])
+    assert 0 < w < 1, f"{model}: warmup_iters={w} là số vòng cứng, phải là phần của lịch"
+
+
+@pytest.mark.parametrize("model", ("maskrcnn", "mask2former"))
+def test_dau_mask_cua_rcnn_khai_ro_do_phan_giai(model):
+    """Đầu mask của R-CNN dự đoán ở 28x28 rồi phóng lên bbox, nên với tán
+    trung vị 129 px ở imgsz 1024 thì mỗi ô nuốt 4.6 px. Đó là trần đường biên
+    của model, KHÔNG phải imgsz — một con số phải nhìn thấy được, không nằm
+    ẩn trong recipe."""
+    src = (BENCH / model / "cofseg" / "training" / "detectron2.py").read_text(encoding="utf-8")
+    assert '"mask_resolution"' in src, f"{model}: độ phân giải đầu mask không lộ ra"
+    assert "ROI_MASK_HEAD.POOLER_RESOLUTION" in src, f"{model}: không nối vào config d2"

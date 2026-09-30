@@ -41,8 +41,14 @@ train:
   # và nbs=64 vẫn gộp gradient cho phía tối ưu hoá. Nếu kết quả cho thấy BN là
   # vấn đề thì hạ imgsz xuống 1280 để lấy batch 3 (trần thấp hơn) hoặc đóng
   # băng BN — đừng tăng batch ở 1536, nó rơi qua vách.
-  imgsz: 1536
-  batch: 2
+  # 1024 để khớp ba model kia — bảng so sánh phải đo cơ chế, không đo độ phân
+  # giải. Bảng trần ở trên vẫn đúng: ở 1024 lưới mặt nạ là 256, mỗi ô nuốt 10
+  # px ảnh gốc, và tán trung vị 324 px gốc còn 129 px. Muốn đo riêng phần độ
+  # phân giải thì chạy thêm một lượt --imgsz 1536 NGOÀI bảng.
+  imgsz: 1024
+  # 16 như ba model kia; đo thật 12.7 GB ở imgsz 1024 trên RTX 5090. Vách 7 GB
+  # nói ở trên là của card 8 GB ở nhà, không phải của máy chạy thật.
+  batch: 16
   # Độ phân giải MỤC TIÊU của nhánh mặt nạ = imgsz/mask_ratio. Mặc định 4 hạ
   # giám sát xuống 320 khi imgsz=1280. Hạ tham số này làm biên sắc hơn nhưng
   # tốn thêm bộ nhớ — đáng thử ở lần quét sau, sau khi có mốc nền.
@@ -50,7 +56,8 @@ train:
   # Tán mọc sát nhau nên mặt nạ chồng lấn; giữ True để chúng không đè nhau.
   overlap_mask: true
 
-  epochs: 100
+  # 50 như Mask R-CNN và SOLOv2. Mask2Former mới là 100, vì query hội tụ chậm.
+  epochs: 50
   # 0 = tắt dừng sớm. Ba model kia chạy đủ số epoch đã khai; để YOLO dừng ở
   # epoch 40 rồi so với chúng ở epoch 100 là so hai ngân sách khác nhau.
   patience: 0
