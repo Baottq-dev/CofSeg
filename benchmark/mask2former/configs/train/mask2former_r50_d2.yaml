@@ -30,4 +30,26 @@ train:
   batch: 8
   # >= số tán tối đa một ảnh (48); 100 là mặc định của recipe.
   num_queries: 100
+  # 2, khác ba model kia (1). Val của model này ĐẮT HƠN train: mỗi fold là
+  # 3300 vòng x 0.508 s = 28 phút huấn luyện, nhưng 50 lần val x n_val ảnh x
+  # 1.194 s/ảnh, tức f6 (280 ảnh val) tốn 4h39 chỉ để chấm. Cả 6 fold ở mức 1
+  # là 17.1 giờ, ở mức 2 là 10.1 giờ.
+  #
+  # Đo cái mất, không đoán: lượt 2026-09-26_045509 chạy 100 epoch ở val_every
+  # 1 nên có đủ 98 điểm val. Quét MỌI điểm xuất phát của từng bước nhảy (chặn
+  # trên thật, không phải trường hợp may):
+  #     bước 2 -> mất nhiều nhất 0.041 AP, trung bình 0.020
+  #     bước 3 -> 0.556 / 0.199
+  #     bước 5 -> 0.573 / 0.345
+  # Rẻ vì đường cong là cao nguyên: từ epoch 10 tới 100 AP nằm trong
+  # 58.3-61.4, đỉnh 61.42 ở epoch 35 chỉ nhô hơn mặt bằng ~0.6. Xem 50 trong
+  # 100 epoch thì gần như chắc chắn vẫn chạm cao nguyên.
+  #
+  # ĐỪNG áp con số này cho SOLOv2: đỉnh của nó ở epoch 8-13 trong 50 rồi TỤT
+  # (đo cả 6 fold), đỉnh nhọn nên grid thô bắn trượt — bước 2 đã mất tới 0.014
+  # và bước 5 mất 0.024, tức 2.4 điểm AP. SOLOv2 giữ val_every 1.
+  #
+  # `_base_d2.yaml` để 1 vì Mask R-CNN cần mức đó (best epoch của nó rải tới
+  # 42/50); ghi đè ở đây chứ không sửa file dùng chung.
+  val_every: 2
   # LSJ của recipe gốc tự lật ngang; flipud/rot90 không áp cho mapper này.

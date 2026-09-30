@@ -127,7 +127,7 @@ python benchmark/mask2former/train.py \
   --lr_steps "[0.7,0.9]" --lr_gamma 0.1 --warmup_iters 0.03 --amp true \
   --num_queries 100 \
   --keep_ckpts 1 \
-  --val_every 1 --val_conf 0.05 --val_batch 8 --max_det 100 \
+  --val_every 2 --val_conf 0.05 --val_batch 8 --max_det 100 \
   --workers 8 --seed 0 --log_every 20
 ```
 
@@ -328,10 +328,18 @@ commit ở repo ngoài — git ghi lại commit mới của repo con.
   ```bash
   python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/block/f1 --imgsz 1024 --batch 16 --probe
   ```
-- Tốn giờ nhất trong bốn model dù chỉ chạy **50 epoch** (ba model kia 100):
-  đo được ~87 phút một fold ở `val_every 1`, batch 8, RTX 5090 — riêng nó
-  chiếm quá nửa tổng giờ máy của cả bảng. Chạy sau khi ba model kia đã xong
-  một fold để không chiếm GPU quá lâu.
+- Tốn giờ nhất trong bốn model dù chỉ chạy **50 epoch** (ba model kia 100),
+  và phần đắt là VAL chứ không phải train. Tách ra từ 5 lượt trên RTX 5090:
+
+      train   3300 vòng x 0.508 s            = 28 phút / fold
+      val     50/val_every x n_val x 1.194 s = 24 phút (f5, 48 ảnh val)
+                                               ... 4h39 (f6, 280 ảnh val)
+
+  Nên `val_every` là cần điều khiển giờ máy lớn nhất của cả bảng: 6 fold tốn
+  17.1 giờ ở mức 1 và 10.1 giờ ở mức 2. Config chọn **2**, và lý do đo được
+  nằm trong `configs/train/mask2former_r50_d2.yaml`. Riêng model này chiếm
+  quá nửa tổng giờ máy của cả bảng; chạy sau khi ba model kia đã xong một
+  fold để không chiếm GPU quá lâu.
 
   50 chứ không phải 100 là kết quả đo, không phải cắt bớt cho rẻ: lượt chạy
   thử 100 epoch cho thấy best epoch luôn rơi trước mốc 50, nên phần sau chỉ
