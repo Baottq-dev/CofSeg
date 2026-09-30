@@ -7,9 +7,10 @@ khối `train:` với hai trainer kia.
 
 Khác biệt có chủ đích với trainer torchvision/YOLO:
 - Vòng lặp là DefaultTrainer của detectron2 (hoặc Trainer trong train_net.py
-  của Mask2Former); ở đây chỉ dịch epoch/batch/imgsz/lr sang khoá config,
-  thêm hook giữ checkpoint tốt nhất theo mask AP trên val, và sau khi xong
-  chấm test rồi ghi predictions.json (COCO results) để chấm lại ở nhà.
+  của Mask2Former); ở đây chỉ dịch epoch/batch/imgsz/lr sang khoá config và
+  thêm hook giữ checkpoint tốt nhất theo mask AP trên val.
+- CHỈ train và val. Không đụng tới split test: chấm là việc của evaluate.py,
+  nơi có Boundary AP và chỉ số biên từng vùng mà bộ chấm của khung không có.
 - Mask2Former giữ tăng cường LSJ của recipe gốc; hai model R-CNN dùng lật
   ngang/dọc + xoay 90° như trainer torchvision (ảnh nadir không có chiều trên).
 
@@ -287,6 +288,10 @@ class Detectron2Trainer(Trainer):
                 self.started = None
                 self.trained = None      # giây train của epoch, chưa tính val
                 self.pending = False
+                # Cộng dồn cả lượt: train và val lệch nhau vài lần, nên khối
+                # cuối phải nói riêng từng cái thay vì gộp thành một số.
+                self.train_total = 0.0
+                self.val_total = 0.0
 
             def _open(self):
                 self.epoch += 1
@@ -331,6 +336,8 @@ class Detectron2Trainer(Trainer):
                 whole = None if self.started is None else time.time() - self.started
                 train_s = self.trained if self.trained is not None else whole
                 val_s = None if (whole is None or self.trained is None) else whole - self.trained
+                self.train_total += train_s or 0.0
+                self.val_total += val_s or 0.0
                 print(progress.epoch_line(
                     self.epoch, epochs, self.epoch * per_epoch, total,
                     loss=smoothed(st, "total_loss"), lr=value(st, "lr"),
@@ -385,6 +392,7 @@ class Detectron2Trainer(Trainer):
         base = m2f.Trainer if m2f is not None else DefaultTrainer
         quiet = not a.get("verbose")
         reporter = None if not quiet else self._epoch_reporter()
+        self._reporter = reporter
 
         class QuietCOCOEvaluator(COCOEvaluator):
             """Chấm im lặng, kèm thanh tiến trình riêng cho val/test.
@@ -610,10 +618,9 @@ class Detectron2Trainer(Trainer):
 
     # ----------------------------------------------------------------- huấn luyện
     def fit(self) -> dict:
-        from detectron2.checkpoint import DetectionCheckpointer
         from detectron2.engine import default_setup
 
-        cfg, m2f, names = self._cfg()
+        cfg, m2f, _ = self._cfg()
         quiet = not self.train_args.get("verbose")
         self._default_setup(default_setup, cfg, quiet)
         if quiet:
@@ -641,31 +648,9 @@ class Detectron2Trainer(Trainer):
         (weights_dir / "d2_config.yaml").write_text(cfg.dump(), encoding="utf-8")
         rows = self._results_csv(per_epoch)
 
-        # Chấm TEST bằng checkpoint tốt nhất -> predictions.json (COCO results,
-        # image_id là id gốc của bản xuất) để chấm lại ở nhà qua coco_predictions.
-        cfg2 = cfg.clone()
-        cfg2.defrost()
-        cfg2.DATASETS.TEST = (names["test"],)
-        cfg2.OUTPUT_DIR = str(self.run_dir / "test")
-        cfg2.MODEL.WEIGHTS = str(best)
-        cfg2.freeze()
-        n_test = (getattr(self, "dataset_counts", None) or {}).get("test")
-        where = f" trên {n_test} ảnh" if n_test else ""
-        print(f"\nChấm test bằng best.pth{where} ...", flush=True)
-        model = cls.build_model(cfg2)
-        DetectionCheckpointer(model, save_dir=cfg2.OUTPUT_DIR).resume_or_load(str(best), resume=False)
-        test_res = cls.test(cfg2, model)
-        preds = Path(cfg2.OUTPUT_DIR) / "inference" / "coco_instances_results.json"
-        pred_out = self.run_dir / "predictions.json"
-        if preds.exists():
-            shutil.copy2(preds, pred_out)
-        (self.run_dir / "test_metrics.json").write_text(
-            json.dumps(test_res, indent=2, ensure_ascii=False, default=float), encoding="utf-8")
-
         best_rows = [r for r in rows if r.get("segm/AP") not in (None, "")]
         best_row = max(best_rows, key=lambda r: float(r["segm/AP"])) if best_rows else None
-        segm = (test_res.get("segm") or {}) if isinstance(test_res, dict) else {}
-        self._print_summary(best_row, segm, train_seconds, best)
+        self._print_summary(best_row, train_seconds, best)
         return {
             "weights": {"best": str(best), "last": str(weights_dir / "last.pth")},
             "best_epoch": int(best_row["epoch"]) if best_row else -1,
@@ -673,15 +658,17 @@ class Detectron2Trainer(Trainer):
             "epochs_run": int(self.train_args["epochs"]),
             "train_seconds": train_seconds,
             "results_csv": str(self.run_dir / "results.csv"),
-            "predictions": str(pred_out) if pred_out.exists() else None,
-            "test": {k: v for k, v in (test_res.get("segm") or {}).items()
-                     if k in ("AP", "AP50", "AP75")} if isinstance(test_res, dict) else {},
             "args": dict(self.train_args),
         }
 
-    def _print_summary(self, best_row, test_segm: dict, seconds, weights) -> None:
+    def _print_summary(self, best_row, seconds, weights) -> None:
         """Khối cuối lượt chạy: số nào đáng nhớ thì nằm ở đây, không phải rải
         rác giữa mấy trăm dòng log của khung.
+
+        Chỉ có số của VAL. Test là việc của evaluate.py — chấm ở đây nữa thì
+        cùng một checkpoint ra hai con số hơi khác nhau (bộ chấm của khung chỉ
+        cho mAP, còn evaluate.py cho cả Boundary AP và chỉ số biên từng vùng)
+        mà không ai biết nên tin con nào.
 
         Dùng tên cột của YOLO (`mAP50-95`, `mAP50`) cho cả bốn model; xem
         cofseg/progress.py để biết vì sao.
@@ -694,10 +681,7 @@ class Detectron2Trainer(Trainer):
                  f"{best_row['epoch']}/{epochs}" if best_row else "—")]
         if best_row:
             rows.append(("val", pair(best_row.get("segm/AP"), best_row.get("segm/AP50"))))
-        fields = getattr(self, "test_fields", []) or []
-        label = f"test ({', '.join(fields)})" if fields else "test"
-        rows.append((label, pair(test_segm.get("AP"), test_segm.get("AP50"))))
-        rows.append(("thời gian", f"train {progress.fmt_time(seconds)}"))
+        rows.append(("thời gian", self._time_row(seconds)))
         seen = getattr(getattr(self, "warned", None), "seen", ())
         if seen:
             rows.append(("cảnh báo", f"{len(seen)} loại  ->  warnings.log"))

@@ -73,18 +73,17 @@ hoặc `f1` — có ba chỗ trong khối lệnh, sửa hết cả ba. Hai bộ 
 `scripts/make_fold.py`, xem `benchmark/README.md`.
 
 ```bash
-# 1. huấn luyện (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
+# 1. huấn luyện — chỉ train + val, không đụng tới split test
+#    (thêm --set data.limit=16 --epochs 1 để khói, kiểm đường chạy trước)
 python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/block/f1 --runs benchmark/mask2former/runs --name mask2former --workers 8
 
-# 2. dự đoán test do trainer ghi ra -> preds/ để cả nhóm dùng chung
+# 2. chấm test bằng trọng số tốt nhất
 RUN=$(ls -td benchmark/mask2former/runs/train/*_mask2former_block-f1_* | head -1)
-mkdir -p preds && cp "$RUN/predictions.json" preds/mask2former_block_f1.json
+python benchmark/mask2former/evaluate.py --config benchmark/mask2former/configs/eval/mask2former_r50_d2.yaml --set model.weights="$RUN/weights/best.pth" --data data/export/block/f1 --split test --runs benchmark/mask2former/runs --name mask2former
 
-# 3. chấm: Boundary AP, Boundary IoU, sai số diện tích, bảng từng vùng
-python benchmark/mask2former/evaluate.py --config benchmark/mask2former/configs/eval/_coco.yaml --file preds/mask2former_block_f1.json --data data/export/block/f1 --split test --runs benchmark/mask2former/runs --name mask2former
-
-# 4. chép file kết quả nhỏ vào results/ (runs/ không vào git)
+# 3. dự đoán + kết quả nhỏ
 EV=$(ls -td benchmark/mask2former/runs/eval/*_mask2former_block-f1_* | head -1)
+mkdir -p preds && cp "$EV/predictions.json" preds/mask2former_block_f1.json
 cp "$EV/metrics.json"   benchmark/mask2former/results/mask2former_block_f1_metrics.json
 cp "$EV/per_region.csv" benchmark/mask2former/results/mask2former_block_f1_per_region.csv
 
