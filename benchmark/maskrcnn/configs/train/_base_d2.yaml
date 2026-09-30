@@ -28,12 +28,14 @@ train:
   # imgsz là CẠNH DÀI sau khi thu, cùng nghĩa với YOLO/torchvision: 2560x1440
   # -> 1024x576 (detectron2 nhận cạnh ngắn 576 + trần cạnh dài 1024).
   imgsz: 1024
-  batch: 4
+  # 16 đo thật trên RTX 5090: 12.7 GB ở imgsz 1024. Card nhỏ hơn thì --batch 8.
+  batch: 16
   epochs: 50
   # lr trống = recipe gốc tỉ lệ theo batch: 0.02 x batch/16 với R-CNN, 1e-4
   # với Mask2Former (SGD/AdamW theo config zoo). Lịch: giảm 10x ở 70% và 90%.
   lr: null
-  warmup_iters: 200
+  # phần của lịch, không phải số vòng cứng: 200 vòng là 12.5% lịch ở batch 16
+  warmup_iters: 0.03
   amp: true
 
   # Ảnh nadir không có chiều "trên": lật dọc và xoay 90° đều hợp lệ.

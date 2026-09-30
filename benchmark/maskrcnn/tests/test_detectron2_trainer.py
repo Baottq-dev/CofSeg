@@ -30,7 +30,8 @@ def test_epochs_become_iterations_and_lr_scales_with_batch():
     assert d["SOLVER.STEPS"] == (5250, 6750)                # 70 % và 90 %
     assert d["SOLVER.CHECKPOINT_PERIOD"] == d["TEST.EVAL_PERIOD"] == 150
     assert d["SOLVER.BASE_LR"] == pytest.approx(0.02 * 4 / 16)
-    assert d["SOLVER.WARMUP_ITERS"] == 200
+    # warmup_iters < 1 là PHẦN của lịch: 0.03 x 7500 = 225.
+    assert d["SOLVER.WARMUP_ITERS"] == 225
     assert d["DATASETS.TRAIN"] == ("tr",) and d["DATASETS.TEST"] == ("va",)
     assert d["MODEL.ROI_HEADS.NUM_CLASSES"] == 1
     assert d["MODEL.ROI_HEADS.SCORE_THRESH_TEST"] == 0.05
@@ -41,6 +42,18 @@ def test_epochs_become_iterations_and_lr_scales_with_batch():
     d = _opts("cascade", 10, batch=4, epochs=1, warmup_iters=200)
     assert d["SOLVER.MAX_ITER"] == 3 and d["SOLVER.WARMUP_ITERS"] == 3
     assert iters_per_epoch(10, 4) == 3
+
+    # >= 1 vẫn là số vòng tuyệt đối, để cách viết cũ không bị đổi nghĩa ngầm.
+    assert _opts("maskrcnn", warmup_iters=500)["SOLVER.WARMUP_ITERS"] == 500
+    # Phần nhỏ tới mức ra 0 thì vẫn phải là 1 vòng.
+    assert _opts("maskrcnn", 10, batch=10, epochs=1,
+                 warmup_iters=0.001)["SOLVER.WARMUP_ITERS"] == 1
+
+    # Đầu mask của R-CNN: 14 -> 28x28 như recipe gốc, đổi được khi cần biên mịn hơn.
+    assert d["MODEL.ROI_MASK_HEAD.POOLER_RESOLUTION"] == 14
+    assert _opts("maskrcnn", mask_resolution=28)["MODEL.ROI_MASK_HEAD.POOLER_RESOLUTION"] == 28
+    # Mask2Former không có ROI head nên không được nhận khoá đó.
+    assert "MODEL.ROI_MASK_HEAD.POOLER_RESOLUTION" not in _opts("mask2former")
 
     # lr đặt tay thì thắng recipe.
     assert _opts("maskrcnn", lr=0.001)["SOLVER.BASE_LR"] == 0.001
@@ -81,7 +94,7 @@ def test_trainer_contract_and_run_tag():
     assert {"imgsz", "batch", "epochs", "lr", "num_queries", "workers"} <= names
     assert Detectron2Trainer.locked_params() == frozenset()
     assert Detectron2Trainer.run_tag({"train": {"imgsz": 2048, "batch": 1}}) == "i2048b1e50"
-    assert Detectron2Trainer.run_tag({}) == "i1024b4e50"
+    assert Detectron2Trainer.run_tag({}) == "i1024b16e50"
 
 
 def test_prepare_counts_train_images_without_detectron2(three_splits, tmp_path):

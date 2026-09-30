@@ -103,8 +103,9 @@ python benchmark/maskrcnn/train.py \
   --data data/export/field/f1 --runs benchmark/maskrcnn/runs --name maskrcnn \
   --imgsz 1024 --batch 16 --epochs 50 \
   --lr 0.02 --weight_decay 1e-4 --momentum 0.9 \
-  --lr_steps "[0.7,0.9]" --lr_gamma 0.1 --warmup_iters 200 --amp true \
+  --lr_steps "[0.7,0.9]" --lr_gamma 0.1 --warmup_iters 0.03 --amp true \
   --fliplr 0.5 --flipud 0.5 --rot90 true \
+  --mask_resolution 14 \
   --val_every 1 --val_conf 0.05 --val_batch 16 --max_det 100 \
   --workers 8 --seed 0 --log_every 20
 ```
