@@ -23,41 +23,26 @@ chỉnh biên".
 
 ## Dựng môi trường riêng
 
-Phần này dành cho trường hợp chạy **một mình model này**, env riêng, không dùng
-env chung của `benchmark/requirements.txt`. Lệnh ở đây đủ để chép chạy từ đầu
-đến cuối; phần *vì sao* (vì sao CUDA 12.8, vì sao mmcv không có wheel, vì sao
-mmcv dựng bản rỗng mà không báo lỗi) nằm ở `benchmark/README.md` mục
+Env riêng cho một mình model này, không dùng `benchmark/requirements.txt` của
+cả nhóm. Chép chạy từ trên xuống; phần chung nằm ở `benchmark/README.md` mục
 *Dựng môi trường*.
 
-Model **nặng cài nhất**: cần detectron2, cần repo con `upstream/`, và cần biên
-dịch op CUDA `MSDeformAttn` tại chỗ.
+Nặng cài nhất: cần detectron2, repo con `upstream/`, và biên dịch op CUDA
+`MSDeformAttn` tại chỗ.
 
 ```bash
 conda create -y -n cofseg-mask2former python=3.12 && conda activate cofseg-mask2former
-nvcc --version | tail -2
+conda install -y -c nvidia cuda-toolkit=12.8.1
+export CUDA_HOME=$CONDA_PREFIX
+export CPATH=$CONDA_PREFIX/targets/x86_64-linux/include:$CPATH
+export LIBRARY_PATH=$CONDA_PREFIX/targets/x86_64-linux/lib:$LIBRARY_PATH
 pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 --index-url https://download.pytorch.org/whl/cu128
 pip install -r benchmark/mask2former/requirements.txt
 pip install --no-build-isolation "detectron2 @ git+https://github.com/facebookresearch/detectron2.git@a2f4a8771ab77e8411c26b27f24f9489a28a2453"
 
-# repo con, nếu lúc clone chưa kèm --recurse-submodules
 git submodule update --init benchmark/mask2former/upstream
-
-# op CUDA của riêng model này
-export CUDA_HOME=$(dirname $(dirname $(which nvcc)))
 pip install --no-build-isolation --no-deps benchmark/mask2former/upstream/mask2former/modeling/pixel_decoder/ops
-```
 
-`nvcc --version` phải ra **12.x**. Lệch major với `torch.version.cuda` là gói
-biên dịch từ nguồn gãy ở `build_ext`, bằng một câu không hề nhắc tới torch.
-Máy có nvcc 13.x thì cài `cuda-toolkit=12.8.1` vào chính env — xem
-`benchmark/README.md` mục *Dựng môi trường*, bước 1.
-
-Dùng pip build thẳng thư mục `ops` chứ đừng chạy `make.sh` của repo gốc: nó gọi
-`setup.py install`, thứ setuptools mới đã bỏ.
-
-Kiểm:
-
-```bash
 python -c "
 import torch, torchvision, detectron2
 from detectron2 import model_zoo
@@ -68,16 +53,9 @@ print('detectron2', detectron2.__version__)"
 PYTHONPATH=benchmark/mask2former/upstream python -c "from mask2former.modeling.pixel_decoder.ops.modules import MSDeformAttn; print('MSDeformAttn OK')"
 ```
 
-**Bỏ bước biên dịch op thì vẫn chạy, nhưng tốn gấp nhiều lần VRAM.** Mã gốc bọc
-lời gọi op trong `try/except` trần rồi rơi xuống `ms_deform_attn_core_pytorch`,
-và đường lùi đó hiện vật hoá một tensor mà kernel CUDA không bao giờ dựng: 3.94
-GiB mỗi lớp ở imgsz 1024 batch 16, nhân 6 lớp encoder. Xem mục *Trạng thái* bên
-dưới. Buộc phải bỏ thì hạ `--batch` xuống 2–4 và xác nhận bằng `--probe` trước
-khi đặt lịch chạy dài.
-
-Torchvision có phần mở rộng C++ link vào `libtorch`: bản dựng cho CUDA khác sẽ
-`import` trót lọt rồi gãy lúc gọi op. Vì vậy cài torch và torchvision **trong
-cùng một lệnh**, đừng cài rời.
+Build thẳng thư mục `ops` chứ đừng chạy `make.sh` của repo gốc: nó gọi
+`setup.py install`, thứ setuptools mới đã bỏ. Bỏ bước đó thì model vẫn chạy
+nhưng rơi xuống đường Python tốn 3.94 GiB VRAM mỗi lớp encoder, nhân 6 lớp.
 
 ## Cách chạy
 

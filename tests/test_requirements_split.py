@@ -232,21 +232,6 @@ def test_commit_detectron2_trong_readme_khop_voi_script(setup_env):
             f"{path.relative_to(ROOT)} ghim commit detectron2 khác setup_env.py"
 
 
-def test_lenh_va_dong_ma_trong_readme_con_dung():
-    """README bảo người ta sed một dòng có thật; kiểm nó vẫn khớp nguồn.
-
-    Lệnh sed nhắm vào dòng raise trong submodule Mask2Former.
-    """
-    doc = (BENCH / "README.md").read_text(encoding="utf-8")
-
-    src = (BENCH / "mask2former" / "upstream" / "mask2former" / "modeling"
-           / "pixel_decoder" / "ops" / "functions" / "ms_deform_attn_func.py")
-    if src.exists():
-        assert "raise ModuleNotFoundError(info_string)" in src.read_text(encoding="utf-8"), \
-            "upstream đã đổi dòng raise; lệnh sed trong README thành vô hiệu"
-    assert "raise ModuleNotFoundError(info_string)" in doc
-
-
 # ------------------------------------------- mặc định phải chạy được trên 5090
 def test_mac_dinh_la_cuda_128(setup_env):
     """cu121 không có kernel sm_120, nên nó không thể là mặc định.
@@ -285,12 +270,18 @@ def test_lenh_mau_trong_header_dung_cu128(path):
     assert "whl/cu130" not in doc, f"{path.name}: còn lệnh cu130 đã bỏ"
 
 
-def test_readme_dat_cu128_len_truoc():
-    """Đọc từ trên xuống phải gặp cu128 trước cu121."""
-    for path in (ROOT / "README.md", BENCH / "README.md"):
+def test_readme_chi_con_mot_ban_cuda():
+    """Một bản CUDA, không hướng thứ hai.
+
+    cu121 (mmcv có wheel, nhưng không có kernel sm_120) và cu130 đều đã bỏ.
+    Còn lệnh của chúng trong tài liệu là còn đường dựng ra env thứ hai.
+    """
+    for path in (ROOT / "README.md", BENCH / "README.md",
+                 *(BENCH / m / "README.md" for m in MODELS)):
         doc = path.read_text(encoding="utf-8")
-        assert doc.index("cu128") < doc.index("cu121"), \
-            f"{path.name}: cu121 xuất hiện trước cu128"
+        assert "cu128" in doc, f"{path.name}: thiếu bản CUDA đang dùng"
+        for bo in ("cu121", "cu130"):
+            assert bo not in doc, f"{path.name}: còn nhắc {bo} đã bỏ"
 
 
 def test_solov2_khong_ghim_mmengine_tu_pypi():
@@ -317,9 +308,10 @@ def test_readme_bao_kiem_nvcc_truoc_khi_cai_torch():
     Gặp thật trên máy Vast RTX 5090, 28/09/2026.
     """
     doc = (BENCH / "README.md").read_text(encoding="utf-8")
+    assert doc.index("cuda-toolkit=12.8.1") < doc.index("pip install torch=="), \
+        "lệnh cài torch đứng trước bước dựng toolkit"
     assert doc.index("nvcc --version") < doc.index("pip install torch=="), \
         "lệnh cài torch đứng trước bước kiểm nvcc"
-    assert "mismatches the version" in doc, "thiếu câu báo lỗi để người ta tra ra"
 
 
 @pytest.mark.parametrize(
@@ -373,8 +365,9 @@ def test_readme_canh_bao_mmcv_build_rong_khi_thieu_torch():
     'Successfully installed mmcv-2.2.0'. Gặp thật trên Vast 28/09/2026.
     """
     doc = (BENCH / "README.md").read_text(encoding="utf-8")
-    assert "Skip building ext ops due to the absence of torch" in doc, \
-        "thiếu câu in ra của mmcv để người ta nhận mặt"
+    # Câu này hay bị ngắt dòng giữa chừng, nên so trên bản đã gộp khoảng trắng.
+    assert "xong trong vài giây" in " ".join(doc.split()), \
+        "thiếu dấu hiệu nhận mặt build rỗng (xong trong vài giây)"
     assert "from mmcv.ops import nms" in doc, \
         "thiếu phép kiểm op có thật; check_installation.py cần GPU nên không thay được"
     i_build = doc.index("pip install --no-build-isolation -e .")
@@ -386,7 +379,6 @@ def test_readme_noi_mmcv_keo_ve_mmengine_hong():
     """mmcv khai mmengine>=0.3.0 nên pip kéo bản 0.10.7 của PyPI về, đúng bản
     ném UnpicklingError trên torch >= 2.6. Bước lấy từ git phải đứng SAU."""
     doc = (BENCH / "README.md").read_text(encoding="utf-8")
-    assert "mmengine>=0.3.0" in doc, "không nói mmcv tự kéo mmengine về"
     i_mmcv = doc.index("pip install --no-build-isolation -e .")
     i_git = doc.index("git+https://github.com/open-mmlab/mmengine")
     assert i_git > i_mmcv, "bước mmengine-từ-git đứng trước bước cài mmcv thì bị đè"
@@ -467,7 +459,7 @@ def test_readme_solov2_neu_du_ba_cai_bay():
 
 # ------------------- benchmark/README.md: một đường cài, không chắp vá
 #: Phần hướng dẫn nằm giữa hai tiêu đề này.
-HUONG_DAN = ("## Dựng môi trường", "## Khi hỏng")
+HUONG_DAN = ("## Dựng môi trường", "## Chạy")
 
 
 def _phan_huong_dan() -> str:
@@ -526,14 +518,38 @@ def test_moi_buoc_build_deu_co_lenh_kiem_ngay_sau():
             f"lệnh kiểm không đứng sau bước build: {kiem}"
 
 
-def test_khi_hong_tra_duoc_theo_dong_bao_loi():
-    """Mục *Khi hỏng* là bảng tra: dán dòng lỗi vào là ra bước phải quay lại."""
-    doc = (BENCH / "README.md").read_text(encoding="utf-8")
-    khi_hong = doc[doc.index("## Khi hỏng"):doc.index("## Chạy")]
-    for dong in ("mismatches the version",
-                 "No module named 'mmcv._ext'",
-                 "UnpicklingError",
-                 "MMCV==2.2.0 is used but incompatible",
-                 "no kernel image is available",
-                 "cusparse.h"):
-        assert dong in khi_hong, f"bảng tra thiếu dòng lỗi: {dong}"
+def test_huong_dan_khong_dai_dong():
+    """Hướng dẫn cài là thứ người ta chép chạy, không phải bài đọc.
+
+    Trần này đặt theo bản đã rút gọn (khoảng 145 dòng cho tám bước). Vượt nó
+    thường nghĩa là một trường hợp thứ hai hoặc một mục sửa lỗi vừa bò vào.
+    """
+    n = len(_phan_huong_dan().splitlines())
+    assert n <= 170, f"phần hướng dẫn phình lên {n} dòng"
+
+
+@pytest.mark.parametrize("model", MODELS)
+def test_huong_dan_rieng_cung_khong_dai_dong(model):
+    doc = (BENCH / model / "README.md").read_text(encoding="utf-8")
+    dau = doc.index("## Dựng môi trường riêng")
+    n = len(doc[dau:doc.index("## Cách chạy")].splitlines())
+    assert n <= 55, f"{model}: mục dựng env riêng phình lên {n} dòng"
+
+
+def test_mmcv_clone_ra_ngoai_repo():
+    """Thư mục mmcv/ trong gốc repo che gói đã cài.
+
+    Python đặt thư mục làm việc lên đầu sys.path và coi mmcv/ là namespace
+    package rỗng, nên `import mmcv` từ gốc repo báo:
+
+        AttributeError: module 'mmcv' has no attribute '__version__'
+
+    Gặp thật trên máy Vast 30/09/2026, sau khi mmcv đã build xong và đúng.
+    Mọi lệnh train SOLOv2 đều chạy từ gốc repo nên chỗ clone là bắt buộc.
+    """
+    for path in (BENCH / "README.md", BENCH / "solov2" / "README.md"):
+        doc = path.read_text(encoding="utf-8")
+        assert "mmcv.git ~/mmcv" in doc, \
+            f"{path.relative_to(ROOT)}: clone mmcv vào thư mục hiện tại sẽ che gói đã cài"
+        assert "has no attribute" in doc, \
+            f"{path.relative_to(ROOT)}: thiếu câu báo lỗi để người ta nhận ra"

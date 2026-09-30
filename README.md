@@ -52,8 +52,8 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-SAM 2.1 cài riêng với `--no-deps`, vì `setup.py` của nó khai `torch>=2.5.1` —
-để nguyên mốc đó thì pip từ chối cài chung với torch 2.4.1 mà mmcv bắt buộc:
+SAM 2.1 cài riêng với `--no-deps`, vì `setup.py` của nó kéo theo một bản torch
+riêng và đè lên bản đã cài:
 
 ```
 pip install --no-deps --no-build-isolation \
@@ -64,64 +64,36 @@ Bỏ qua mốc đó an toàn: nó xuất hiện ở commit 11/12/2024 để `tor
 model cho nhánh video. `app/annotator.py` chỉ dùng nhánh ảnh và không gọi
 `torch.compile` ở đâu.
 
-**Bốn model benchmark** — torch cài trước, rồi gói của model, rồi ba gói build
-từ nguồn. Hướng dẫn đầy đủ, kể cả cách build `mmcv` cho GPU Blackwell:
+**Bốn model benchmark** — tám bước, chạy từ trên xuống. Hướng dẫn đầy đủ:
 [`benchmark/README.md`](benchmark/README.md) mục *Dựng môi trường*.
 
 ```
-# 0. hỏi máy đang có nvcc bản nào — torch phải khớp MAJOR với nó
-nvcc --version | tail -2
+# 1. env + CUDA toolkit 12.8 (cài vào env, không vào máy)
+conda create -y -n cofseg python=3.12 && conda activate cofseg
+conda install -y -c nvidia cuda-toolkit=12.8.1
 
-# 1. torch — một bản duy nhất, dựng bằng CUDA 12.8
+# 2. torch — một bản duy nhất cho cả nhóm
 pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 \
   --index-url https://download.pytorch.org/whl/cu128
 
-# 2. gói của model — cả bốn vào một env
+# 3. gói của model — cả bốn vào một env
 pip install -r benchmark/requirements.txt
 
-# 3. ba gói build từ nguồn: detectron2, mmcv, MSDeformAttn
+# 4-7. ba gói build từ nguồn: detectron2, mmcv, MSDeformAttn
 ```
 
-**Bước 0 không bỏ được.** Ba gói ở bước 3 đều biên dịch CUDA, và torch từ
-chối build khi major của nvcc lệch major của `torch.version.cuda` — báo lỗi
-ở `build_ext`, bằng một câu không hề nhắc tới torch:
-
-```
-RuntimeError: The detected CUDA version (12.8) mismatches the version
-that was used to compile PyTorch (13.0)
-```
-
-nvcc **12.x** thì không phải làm gì. nvcc **13.x hoặc chưa có** thì cài
-`cuda-toolkit=12.8.1` vào chính env — nó che nvcc của hệ thống. Điều chỉnh
-nvcc chứ đừng đổi torch: torch là thứ cả nhóm phải giống nhau.
-
-Không file requirements nào ghim torch: bản torch phụ thuộc **kiến trúc GPU**
-chứ không phụ thuộc model. Ghim trong từng file là cách chắc chắn để bốn file
-trôi ra xa nhau rồi không cài chung một env được nữa.
-
-| torch | GPU | mmcv |
-|---|---|---|
-| **2.11.0+cu128** (mặc định) | `sm_50`–`sm_120`: T4, V100, RTX 20/30/40, L4, L40S, A40, A6000, A100, H100, **RTX 5090**, RTX PRO 6000, B200 | **build từ nguồn**, 20–120 phút |
-| 2.4.1+cu121 | `sm_50`–`sm_90` — **không có Blackwell** | wheel dựng sẵn, vài giây |
-
-CUDA 12.8 là bản **đầu tiên** có `sm_120`, tức bản đầu tiên chạy được
-Blackwell, và nó vẫn giữ cả Maxwell/Pascal/Volta — không card nào trong kế
-hoạch rơi ra ngoài. `cu121` cài nhanh hơn vì mmcv có wheel ở đó, nhưng torch
-2.4/cu121 ra đời **trước** Blackwell nên thiếu kernel `sm_120`: trên RTX 5090
-nó chết ngay lời gọi kernel đầu tiên.
-
-`cu130` từng là mặc định, nay bỏ: nó phủ ít kiến trúc hơn (`sm_75` trở lên),
-lệch major với nvcc của phần lớn ảnh máy thuê, và **vẫn** phải biên dịch mmcv
-như cu128 — không đổi lại được gì.
+CUDA 12.8 là bản đầu tiên có `sm_120`, tức bản đầu tiên chạy được RTX 5090,
+mà vẫn phủ từ `sm_50` nên không card nào trong kế hoạch rơi ra ngoài. Không
+file requirements nào ghim torch: bản torch phụ thuộc kiến trúc GPU chứ không
+phụ thuộc model.
 
 Chạy benchmark **không cần** `pip install -e .`: mỗi thư mục tự chứa bản
 `cofseg/` riêng và `train.py` tự thêm thư mục của nó vào `sys.path`.
 
 ### Kiểm lại sau khi cài
 
-Hai gói phải kiểm bằng cách **gọi op**, không phải bằng `import`: torchvision
-và mmcv đều có phần mở rộng C++, và cả hai đều có kiểu hỏng mà `import` vẫn
-trót lọt.
+torchvision và mmcv đều có phần mở rộng C++ với kiểu hỏng mà `import` vẫn trót
+lọt, nên phải **gọi op**:
 
 ```
 python -c "
@@ -135,12 +107,6 @@ print('detectron2', detectron2.__version__, '| mmdet', mmdet.__version__,
       '| mmcv', mmcv.__version__, '| ultralytics', ultralytics.__version__)
 "
 ```
-
-| gãy ở dòng nào | nghĩa là |
-|---|---|
-| `tv_nms(...)` ném `undefined symbol` | torchvision dựng cho bản CUDA khác torch — cài lại **cả hai** cùng một lệnh |
-| `from mmcv.ops import` ném `ModuleNotFoundError: mmcv._ext` | mmcv build lúc chưa có torch nên không có op nào; xem *Khi hỏng* |
-| `torch.version.cuda` khác major của `nvcc --version` | ba gói build từ nguồn sẽ gãy ở `build_ext` |
 
 Bốn model đã cài được trên máy lab (2 × RTX 4090). **Chưa train thật lần nào**
 — khói một lượt mỗi model trước khi chạy cả sáu fold.
