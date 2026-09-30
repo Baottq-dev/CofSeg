@@ -91,7 +91,7 @@ hoặc `f1` — có ba chỗ trong khối lệnh, sửa hết cả ba. Hai bộ 
 #    (khói: --limit 64 --epochs 3 --warmup_iters 30. warmup_iters là PHẦN
 #     của lịch (0.03), nên lượt ngắn co nó về 1 vòng và lr 0.02 làm RPN
 #     nổ ngay — FloatingPointError ở vòng 13. Truyền số vòng tuyệt đối.)
-python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/block/f1 --runs benchmark/mask2former/runs --name mask2former --workers 8
+python benchmark/mask2former/train.py --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml --data data/export/block/f1 --runs benchmark/mask2former/runs --name mask2former --workers 2
 
 # 2. chấm test bằng trọng số tốt nhất
 RUN=$(ls -td benchmark/mask2former/runs/train/*_mask2former_block-f1_* | head -1)
@@ -128,7 +128,7 @@ python benchmark/mask2former/train.py \
   --num_queries 100 \
   --keep_ckpts 1 \
   --val_every 2 --val_conf 0.05 --val_batch 8 --max_det 100 \
-  --workers 8 --seed 0 --log_every 20
+  --workers 2 --seed 0 --log_every 20
 ```
 
 `--keep_ckpts 1` giữ đúng một checkpoint định kỳ trong `d2/`. Mặc định của
@@ -145,8 +145,17 @@ Mask2Former không có ROI head — nó sinh mask ở stride 4 của toàn ảnh
 Ba giá trị trong lệnh là **hiệu dụng**, còn config để trống cho trainer tự
 tính: `--lr 1e-4` là `1e-4 x batch/16`, `--weight_decay 0.05` là mặc định của
 AdamW trong recipe, `--val_batch 8` là "theo batch train". `--momentum` có
-trong danh sách nhưng AdamW không dùng tới nó. `--workers 8` là giá trị cho
-máy Linux; trên Windows trainer tự đặt 0 vì paging file.
+trong danh sách nhưng AdamW không dùng tới nó. `--workers 2` là giá trị cho
+máy Linux, thấp hơn ba model kia (8), và trên Windows trainer tự đặt 0 vì
+paging file.
+
+2 chứ không phải 8 là để không bị OOM killer giết. detectron2 dùng
+`DATALOADER.NUM_WORKERS` cho cả train loader lẫn test loader, và `EvalHook`
+dựng test loader mới mỗi lần chấm, nên trong lúc val có 16 tiến trình python
+cùng sống. Trên máy thuê 30 GB RAM điều đó giết cả ba lượt đầu, đúng trong
+val; lý do đo được nằm trong `configs/train/mask2former_r50_d2.yaml`. Con số
+này đổi chuỗi ngẫu nhiên của augmentation nên **mọi fold trong bảng phải
+dùng chung một giá trị** — đừng ghi đè bằng cờ dòng lệnh cho riêng một lượt.
 
 Bỏ `--lr` đi thì lr tự tính theo batch (`1e-4 x batch/16`); truyền tay là
 tắt phép tự tính đó. `--lr_steps` phải có nháy vì giá trị đọc bằng YAML.
@@ -199,7 +208,7 @@ config là đường dẫn **bên trong** `upstream/`, trainer tự ghép.
 python benchmark/mask2former/train.py \
   --config benchmark/mask2former/configs/train/mask2former_r50_d2.yaml \
   --data data/export/field/f1 --runs benchmark/mask2former/runs \
-  --backbone r101 --workers 8
+  --backbone r101 --workers 2
 ```
 
 Không cần `--name`: thiếu nó thì tên thư mục run lấy theo backbone

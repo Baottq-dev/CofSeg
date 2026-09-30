@@ -52,4 +52,28 @@ train:
   # `_base_d2.yaml` để 1 vì Mask R-CNN cần mức đó (best epoch của nó rải tới
   # 42/50); ghi đè ở đây chứ không sửa file dùng chung.
   val_every: 2
+  # 2, khác ba model kia (8). Không phải tinh chỉnh tốc độ — đây là cách sống
+  # với trần RAM. detectron2 dùng DATALOADER.NUM_WORKERS cho CẢ train loader
+  # lẫn test loader, mà EvalHook dựng test loader mới mỗi lần chấm, nên trong
+  # lúc val có 8 worker train nằm chờ CỘNG 8 worker val đang chạy = 16 tiến
+  # trình python, mỗi cái là một fork mang theo torch.
+  #
+  # Trên máy thuê 30 GB RAM (cgroup memory.max 29.25 GiB) điều đó giết thật:
+  # memory.events ghi oom_kill 5, memory.peak chạm 26.97 GiB, và CẢ BA lượt
+  # đều chết ĐÚNG trong val — f1 ở epoch 4, f3 ở epoch 11, f2 ở lượt val cuối
+  # cùng sau khi train đã ghi xong model_final.pth. Ba model kia không chết vì
+  # footprint host mỗi worker của chúng nhỏ hơn: chỉ mapper LSJ của model này
+  # mới phóng ảnh lên 2048x2048 rồi mới cắt, và dựng BitMasks ở độ phân giải
+  # đầy đủ.
+  #
+  # 2 là đủ chứ không phải dè dặt: model này chạy 0.508 s/vòng ở batch 8, tức
+  # chỉ cần 15.7 ảnh/giây, mà một worker giải mã + LSJ được vài chục ảnh/giây.
+  # Nó cũng là model ÍT phụ thuộc dataloader nhất trong bốn model.
+  #
+  # PHẢI biết: `workers` KHÔNG vô hại về kết quả. detectron2 seed lại RNG theo
+  # từng worker (worker_init_reset_seed: initial_seed + worker_id), nên đổi số
+  # worker là đổi chuỗi ngẫu nhiên của augmentation. Mọi fold trong bảng phải
+  # cùng một giá trị; lượt nào chạy ở 8 thì không so thẳng được với lượt chạy
+  # ở 2. Vì thế nó nằm trong config chứ không phải cờ dòng lệnh.
+  workers: 2
   # LSJ của recipe gốc tự lật ngang; flipud/rot90 không áp cho mapper này.
