@@ -172,3 +172,36 @@ def test_dau_mask_cua_rcnn_khai_ro_do_phan_giai(model):
     src = (BENCH / model / "cofseg" / "training" / "detectron2.py").read_text(encoding="utf-8")
     assert '"mask_resolution"' in src, f"{model}: độ phân giải đầu mask không lộ ra"
     assert "ROI_MASK_HEAD.POOLER_RESOLUTION" in src, f"{model}: không nối vào config d2"
+
+
+# ------------------------------------- thư mục run không được phình vô hạn
+@pytest.mark.parametrize("model", ("maskrcnn", "mask2former"))
+def test_d2_khong_giu_moi_checkpoint(model):
+    """DefaultTrainer dựng PeriodicCheckpointer KHÔNG truyền max_to_keep, nên
+    mặc định của detectron2 là giữ hết: một file mỗi epoch.
+
+    Mask R-CNN ~350 MB mỗi file (trọng số + buffer momentum) x 50 epoch là
+    17 GB; Mask2Former ~530 MB (AdamW giữ hai moment) x 100 epoch là 53 GB.
+    Nhân 18 lượt fold thì không đĩa nào chịu nổi.
+    """
+    src = (BENCH / model / "cofseg" / "training" / "detectron2.py").read_text(encoding="utf-8")
+    assert '"keep_ckpts"' in src, f"{model}: không khai số checkpoint giữ lại"
+    assert "max_to_keep=keep_ckpts" in src,         f"{model}: PeriodicCheckpointer vẫn dùng mặc định giữ hết"
+
+
+def test_solov2_da_gioi_han_checkpoint():
+    """mmdet có sẵn max_keep_ckpts; chỉ cần không ai gỡ nó ra."""
+    src = (BENCH / "solov2" / "cofseg" / "training" / "mmdet.py").read_text(encoding="utf-8")
+    assert "max_keep_ckpts=1" in src, "solov2: CheckpointHook không còn giới hạn"
+
+
+@pytest.mark.parametrize("model", ("maskrcnn", "mask2former"))
+def test_giu_du_de_resume_duoc(model):
+    """Giữ ÍT NHẤT một checkpoint định kỳ, không phải không giữ cái nào.
+
+    `model_final.pth` — và `weights/last.pth` mà trainer chép ra từ nó — chỉ
+    có khi train chạy hết. Lượt chạy bị ngắt giữa chừng chỉ còn checkpoint
+    định kỳ gần nhất và file `last_checkpoint` trỏ vào nó.
+    """
+    src = (BENCH / model / "cofseg" / "training" / "detectron2.py").read_text(encoding="utf-8")
+    assert "max(1, int(a[" in src and "keep_ckpts" in src,         f"{model}: keep_ckpts phải được kẹp về tối thiểu 1"
