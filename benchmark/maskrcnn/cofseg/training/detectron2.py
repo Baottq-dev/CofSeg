@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import contextlib
 import csv
+import os
 import pathlib
 import io
 import json
@@ -40,6 +41,12 @@ from ..registry import register
 from .. import progress
 from . import memory
 from .base import Trainer
+
+#: Số tiến trình nạp dữ liệu. Trên Windows mỗi worker spawn một tiến trình mới
+#: và nạp lại torch, mà paging file mặc định không đủ -> WinError 1455 giữa lúc
+#: quét nhãn. Trên Linux thì 8 là mức hợp lý cho máy thuê. Để một con số cứng
+#: rồi bắt lệnh mẫu ghi đè là cách chắc chắn để ai đó quên --workers.
+DEFAULT_WORKERS = 0 if os.name == "nt" else 8
 
 #: Cùng tên với trainer torchvision ở đâu có thể, để --imgsz/--batch/--epochs
 #: nghĩa như nhau trên mọi model. lr None = theo recipe gốc của từng arch,
@@ -77,7 +84,7 @@ D2_DEFAULTS: dict = {
     # imgsz. Đặt 28 (-> 56x56) hạ còn 2.3 px/ô; giữ 14 làm mặc định để mốc số 0
     # đúng recipe, nhưng đây là thí nghiệm đáng chạy cho dự án lấy biên làm trọng tâm.
     "mask_resolution": 14,
-    "workers": 0,
+    "workers": DEFAULT_WORKERS,
     "seed": 0,
     "log_every": 20,
     # verbose=True trả lại đúng cách detectron2 in mặc định: dump config, dump

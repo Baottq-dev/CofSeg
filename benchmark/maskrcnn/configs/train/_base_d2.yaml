@@ -49,6 +49,6 @@ train:
   val_conf: 0.05
   max_det: 100
 
-  # 0 trên Windows (paging file), 8 trên máy thuê: --workers 8
-  workers: 0
+  # workers không khai ở đây: trainer tự đặt 0 trên Windows (paging file không
+  # đủ cho mỗi worker nạp lại torch) và 8 trên Linux.
   seed: 0

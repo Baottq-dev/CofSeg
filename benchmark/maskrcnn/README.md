@@ -110,6 +110,12 @@ python benchmark/maskrcnn/train.py \
   --workers 8 --seed 0 --log_every 20
 ```
 
+Ba giá trị trong lệnh là **hiệu dụng**, còn config để trống cho trainer tự
+tính: `--lr 0.02` là `0.02 x batch/16`, `--weight_decay 1e-4` là mặc định của
+SGD trong recipe, `--val_batch 16` là "theo batch train". Bỏ cả ba đi thì kết
+quả y hệt, nhưng đổi `--batch` sẽ không phải tính lại. `--workers 8` là giá
+trị cho máy Linux; trên Windows trainer tự đặt 0 vì paging file.
+
 Bỏ `--lr` đi thì lr tự tính theo batch (`0.02 x batch/16`); truyền tay là
 tắt phép tự tính đó. `--lr_steps` phải có nháy vì giá trị đọc bằng YAML.
 
