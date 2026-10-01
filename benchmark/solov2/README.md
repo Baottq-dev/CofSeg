@@ -127,6 +127,11 @@ python benchmark/solov2/train.py \
 Không có `--rot90`: mmdet không có transform xoay cho mask + box. Đây là chênh
 lệch có chủ đích so với hai model detectron2, nhớ ghi chú khi đọc bảng.
 
+Ba giá trị trong lệnh là **hiệu dụng**, còn config để trống cho trainer tự
+tính: `--lr 0.01` là `0.01 x batch/16`, `--weight_decay 1e-4` theo recipe, và
+`--val_batch 16` là "theo batch train". `--workers 8` là giá trị cho máy
+Linux; trên Windows trainer tự đặt 0 vì paging file.
+
 Bỏ `--lr` đi thì lr tự tính theo batch (`0.01 x batch/16`); truyền tay là
 tắt phép tự tính đó. `--lr_steps` phải có nháy vì giá trị đọc bằng YAML.
 

@@ -26,6 +26,7 @@ import collections
 import contextlib
 import csv
 import importlib.util
+import os
 import io
 import json
 import logging
@@ -42,6 +43,12 @@ from ..registry import register
 from ..weights import local_for_url
 from . import memory
 from .base import Trainer
+
+#: Số tiến trình nạp dữ liệu. Trên Windows mỗi worker spawn một tiến trình mới
+#: và nạp lại torch, mà paging file mặc định không đủ -> WinError 1455 giữa lúc
+#: quét nhãn. Trên Linux thì 8 là mức hợp lý cho máy thuê. Để một con số cứng
+#: rồi bắt lệnh mẫu ghi đè là cách chắc chắn để ai đó quên --workers.
+DEFAULT_WORKERS = 0 if os.name == "nt" else 8
 
 #: Cùng tên với trainer detectron2/torchvision để --imgsz/--batch/--epochs
 #: nghĩa như nhau trên mọi model. lr None = recipe gốc tỉ lệ theo batch.
@@ -70,7 +77,7 @@ MM_DEFAULTS: dict = {
     # đo được 12.7 GB lúc train, 2.5 GB lúc val trên cùng card.
     "val_batch": None,
     "max_det": 100,
-    "workers": 0,
+    "workers": DEFAULT_WORKERS,
     "seed": 0,
     "log_every": 20,
     # verbose=True trả lại đúng cách mmengine in mặc định: dump toàn bộ config,

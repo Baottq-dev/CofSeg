@@ -33,8 +33,10 @@ data:
 train:
   # imgsz là CẠNH DÀI sau khi thu, cùng nghĩa với các trainer khác: 2560x1440
   # -> 1024x576. Lưới của SOLOv2 (40/36/24/16/12 ô) và dải cỡ vật thể theo
-  # recipe COCO; tán ~366 px ở ảnh gốc còn ~94 px ở 1024 -> rơi vào hai tầng
-  # đầu, mỗi ô ~26-28 px.
+  # recipe COCO. Đo trên 12138 vùng của dataset_v1: cạnh tương đương trung vị
+  # 324 px ở ảnh gốc, còn 129 px ở 1024 (p5 51 px, p95 248 px) -> phần lớn rơi
+  # vào hai tầng đầu. Lưới 40 ô trên ảnh 1024x576 là mỗi ô 25.6 x 14.4 px, nhỏ
+  # hơn tán nhiều lần nên hai tán chạm nhau vẫn hiếm khi cùng một ô.
   imgsz: 1024
   # 16 đo thật trên chính model này: 12.7 GB ở imgsz 1024, RTX 5090.
   batch: 16
@@ -57,6 +59,6 @@ train:
   val_conf: 0.05
   max_det: 100
 
-  # 0 trên Windows, 8 trên máy thuê: --workers 8
-  workers: 0
+  # workers không khai ở đây: trainer tự đặt 0 trên Windows (paging file không
+  # đủ cho mỗi worker nạp lại torch) và 8 trên Linux.
   seed: 0
