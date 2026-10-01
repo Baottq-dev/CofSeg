@@ -100,6 +100,10 @@ python benchmark/yolo11/train.py \
   --workers 8 --seed 0 --deterministic true --val true --plots true
 ```
 
+`--workers 8` là giá trị cho máy Linux; trên Windows trainer tự đặt 0 vì mỗi
+worker spawn một tiến trình mới và nạp lại torch, mà paging file mặc định
+không đủ cho việc đó.
+
 Trainer nhận **toàn bộ 114 tham số** của ultralytics, không chỉ những cái ở
 trên — `--list-params` in hết. Bốn khoá bị khoá (`data`, `project`, `name`,
 `exist_ok`) vì trainer tự đặt để kết quả rơi đúng thư mục run.

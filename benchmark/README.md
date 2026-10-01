@@ -215,6 +215,89 @@ thành **12.5% lịch** trong khi recipe COCO warmup chưa tới 1%. Lượt kh�
 `max_det` 100 và `num_queries` 100 giữ nguyên: ảnh dày nhất có 48 tán, nên cả
 hai đều dư gấp đôi.
 
+### Toàn bộ tham số, và nó đến từ đâu
+
+Nguyên tắc: **giữ recipe của tác giả**, chỉ đổi những gì bộ dữ liệu này bắt
+phải đổi, và đổi thì đổi cho cả bốn. Cột cuối nói ai quyết giá trị đó.
+
+#### Lịch học
+
+| | Mask R-CNN | SOLOv2 | Mask2Former | ai quyết |
+|---|---|---|---|---|
+| optimizer | SGD | SGD | AdamW | recipe |
+| `lr` @ batch 16 | 0.02 | 0.01 | 1e-4 | recipe |
+| `weight_decay` | 1e-4 | 1e-4 | 0.05 | recipe |
+| `momentum` | 0.9 | 0.9 | (AdamW không dùng) | recipe |
+| clip gradient | — | norm 35 | full_model 0.01 | recipe |
+| backbone lr x | — | — | 0.1 | recipe |
+| `lr_steps` | **0.7 / 0.9** | **0.7 / 0.9** | **0.7 / 0.9** | **ta** |
+| gốc là | 0.778 / 0.926 | 0.75 / 0.917 | 0.889 / 0.963 | |
+| `warmup_iters` | **0.03** | **0.03** | **0.03** | **ta** |
+| gốc là | 1000 vòng | 500 vòng | 10 vòng @factor 1.0 | |
+
+`lr` để trống trong config, trainer nhân `batch/16` — đúng luật scale tuyến
+tính mà cả ba recipe đều dùng. Truyền `--lr` tay là tắt phép nhân đó.
+
+Hai dòng **ta quyết** đều vì cùng một lý do: lịch của ta ngắn hơn COCO khoảng
+170 lần (1600 vòng so với 270000). Giữ `warmup 1000 vòng` là warmup dài hơn
+cả lần chạy; giữ đúng tỉ lệ gốc (0.37%) thì ra 6 vòng, quá ngắn để ổn định.
+3% (48 vòng, gần 1.5 epoch) nằm giữa. `lr_steps` 0.7/0.9 giảm lr sớm hơn recipe
+một chút, để lịch ngắn vẫn có đủ thời gian ở lr thấp.
+
+#### Suy luận và chấm
+
+| | giá trị | gốc | ghi chú |
+|---|---|---|---|
+| `val_conf` | **0.05** cả bốn | 0.05 / 0.1 / không có / 0.001 | bốn tác giả bốn kiểu; xem mục dưới |
+| `max_det` | 100 | 100 / 100 / 100 / 300 | ảnh dày nhất 48 tán, dư gấp đôi |
+| `num_queries` | 100 | 100 | chỉ Mask2Former |
+| NMS IoU | 0.5 (d2) / matrix NMS (SOLOv2) / 0.7 (YOLO) | recipe | cơ chế khác nhau, không ép giống được |
+| `mask_thr` | 0.5 | 0.5 | SOLOv2 |
+
+Ngưỡng điểm gốc của bốn tác giả: Mask R-CNN `SCORE_THRESH_TEST=0.05`, SOLOv2
+`score_thr=0.1`, YOLO `conf=0.001` khi val, còn Mask2Former **không có ngưỡng
+nào** — `instance_inference` lấy `topk(100)` trên 100 query rồi giữ hết. Ta
+đưa cả bốn về 0.05 vì `precision`, `false_positive` và sai số đếm trong
+`per_region.csv` đếm mọi dự đoán lọt vào; để nguyên thì Mask2Former ra 100 dự
+đoán trên ảnh có 14 tán.
+
+Cái giá phải biết: AP của COCO không phạt dự đoán điểm thấp, nên cắt ở 0.05
+làm AP **thấp hơn** so với ngưỡng 0.001 mà nhiều báo cáo YOLO dùng. Bốn model
+cùng chịu một mức nên so nội bộ vẫn đúng; so với số in trong bài báo thì không.
+
+#### Tăng cường — chỗ duy nhất không ép giống nhau được
+
+| | Mask R-CNN | SOLOv2 | Mask2Former | YOLO |
+|---|:---:|:---:|:---:|:---:|
+| lật ngang / dọc | 0.5 / 0.5 | 0.5 / 0.5 | LSJ tự lật ngang | 0.5 / 0.5 |
+| xoay 90° | ✓ | — | — | — |
+| co giãn | — | — | **LSJ 0.1–2.0** | 0.5 |
+| dịch | — | — | crop ô vuông | 0.1 |
+| màu (HSV) | — | — | — | ✓ |
+| mosaic | — | — | — | **tắt** |
+
+Hai ô đáng chú ý. **LSJ** là recipe gốc của Mask2Former, bỏ đi là bỏ recipe
+tác giả — giữ. **mosaic tắt** là ta lệch khỏi recipe YOLO có chủ đích: nó ghép
+4 ảnh thành 1 nên thu nhỏ tán, đi ngược mục tiêu giữ độ phân giải đường biên.
+(Lý do thứ hai trước đây — bộ nhớ vọt ngẫu nhiên trên card 8 GB — không còn
+hiệu lực trên máy thuê.)
+
+`degrees` và `copy_paste` của YOLO đã đưa về 0: hai tăng cường đó **chỉ YOLO
+có**, và chúng là thứ ta bật lên chứ không phải mặc định của ultralytics. Còn
+HSV, `scale`, `translate` thì giữ vì đó là mặc định của chính recipe YOLO —
+cùng lý do giữ LSJ cho Mask2Former.
+
+#### Dữ liệu và vận hành
+
+| | giá trị | vì sao |
+|---|---|---|
+| `min_area` | 50 px² | đo được: loại đúng **1 vùng** trên 12138 (một nhãn 1 px²) |
+| ảnh nền | giữ trong train | `filter_empty_gt=False` cả ba; chỉ có 2/850 ảnh nên ảnh hưởng nhỏ, nhưng bốn model phải ăn cùng một tập |
+| `amp` | bật cả bốn | Mask2Former có sẵn trong recipe; ba model kia ta bật, lượt khói SOLOv2 cho thấy loss giảm mượt |
+| `val_batch` | theo batch train | mặc định của detectron2 và mmdet là 1; đo được val tốn gấp đôi train vì thế |
+| `workers` | 0 trên Windows, 8 trên Linux | mỗi worker Windows nạp lại torch, paging file mặc định không đủ → `WinError 1455` |
+| `seed` | 0 | cả bốn |
+
 ### Hai trần độ phân giải không nằm ở imgsz
 
 Đáng biết trước khi đọc bảng kết quả, vì dự án lấy đường biên làm trọng tâm:

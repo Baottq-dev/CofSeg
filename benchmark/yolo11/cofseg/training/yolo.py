@@ -22,6 +22,7 @@ ultralytics không biết về dữ liệu này:
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import time
 from pathlib import Path
@@ -34,6 +35,12 @@ from ..registry import register
 from . import memory
 from .base import Trainer
 
+#: Số tiến trình nạp dữ liệu. Trên Windows mỗi worker spawn một tiến trình mới
+#: và nạp lại torch, mà paging file mặc định không đủ -> WinError 1455 giữa lúc
+#: quét nhãn. Trên Linux thì 8 là mức hợp lý cho máy thuê. Để một con số cứng
+#: rồi bắt lệnh mẫu ghi đè là cách chắc chắn để ai đó quên --workers.
+DEFAULT_WORKERS = 0 if os.name == "nt" else 8
+
 # Mặc định riêng cho ảnh UAV nadir, đè lên mặc định của ultralytics.
 # Chỉ liệt kê thứ CỐ Ý khác đi; còn lại để ultralytics quyết.
 AERIAL_DEFAULTS: dict = {
@@ -41,6 +48,7 @@ AERIAL_DEFAULTS: dict = {
     "fliplr": 0.5,
     "deterministic": True,
     "seed": 0,
+    "workers": DEFAULT_WORKERS,
 }
 
 #: Cột chỉ số mà ta chọn checkpoint theo. Ultralytics chọn best.pt theo
