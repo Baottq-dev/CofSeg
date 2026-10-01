@@ -114,9 +114,16 @@ python benchmark/mask2former/train.py \
   --workers 8 --seed 0 --log_every 20
 ```
 
-`--fliplr/--flipud/--rot90` **không có tác dụng** với model này: nó giữ mapper
-LSJ của recipe gốc (co giãn 0.1–2.0 rồi cắt ô vuông `imgsz`), và mapper đó tự
-lật ngang. Đừng truyền chúng rồi tưởng đã đổi được gì.
+Bốn cờ **không có tác dụng** với model này, đừng truyền rồi tưởng đã đổi được
+gì: `--fliplr`, `--flipud`, `--rot90` vì nó giữ mapper LSJ của recipe gốc (co
+giãn 0.1–2.0 rồi cắt ô vuông `imgsz`, tự lật ngang), và `--mask_resolution` vì
+Mask2Former không có ROI head — nó sinh mask ở stride 4 của toàn ảnh.
+
+Ba giá trị trong lệnh là **hiệu dụng**, còn config để trống cho trainer tự
+tính: `--lr 1e-4` là `1e-4 x batch/16`, `--weight_decay 0.05` là mặc định của
+AdamW trong recipe, `--val_batch 16` là "theo batch train". `--momentum` có
+trong danh sách nhưng AdamW không dùng tới nó. `--workers 8` là giá trị cho
+máy Linux; trên Windows trainer tự đặt 0 vì paging file.
 
 Bỏ `--lr` đi thì lr tự tính theo batch (`1e-4 x batch/16`); truyền tay là
 tắt phép tự tính đó. `--lr_steps` phải có nháy vì giá trị đọc bằng YAML.
