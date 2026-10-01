@@ -106,9 +106,16 @@ python benchmark/maskrcnn/train.py \
   --lr_steps "[0.7,0.9]" --lr_gamma 0.1 --warmup_iters 0.03 --amp true \
   --fliplr 0.5 --flipud 0.5 --rot90 true \
   --mask_resolution 14 \
+  --keep_ckpts 1 \
   --val_every 1 --val_conf 0.05 --val_batch 16 --max_det 100 \
   --workers 8 --seed 0 --log_every 20
 ```
+
+`--keep_ckpts 1` giữ đúng một checkpoint định kỳ trong `d2/`. Mặc định của
+detectron2 là giữ **hết** — một file mỗi epoch, ~350 MB mỗi file — nên ~17 GB
+cho một lượt 50 epoch. Một là đủ: thứ cứu lượt chạy bị ngắt giữa chừng là
+checkpoint định kỳ gần nhất, vì `model_final.pth` (và `weights/last.pth` chép
+ra từ nó) chỉ có khi train chạy hết.
 
 Ba giá trị trong lệnh là **hiệu dụng**, còn config để trống cho trainer tự
 tính: `--lr 0.02` là `0.02 x batch/16`, `--weight_decay 1e-4` là mặc định của
