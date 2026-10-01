@@ -79,6 +79,17 @@ D2_DEFAULTS: dict = {
     "val_batch": None,
     "max_det": 100,
     "num_queries": 100,   # chỉ Mask2Former; ảnh dày nhất có 48 tán
+    # Số checkpoint ĐỊNH KỲ giữ lại trong d2/. DefaultTrainer dựng
+    # PeriodicCheckpointer mà không truyền max_to_keep, nên mặc định của
+    # detectron2 là giữ HẾT: một file mỗi epoch, ~350 MB với Mask R-CNN
+    # (trọng số + buffer momentum) và ~530 MB với Mask2Former (AdamW giữ hai
+    # moment). 50 epoch là 17 GB, 100 epoch là 53 GB, nhân 18 lượt fold.
+    #
+    # 1 là đủ: thứ cứu một lượt chạy bị ngắt giữa chừng là checkpoint định kỳ
+    # gần nhất cộng file `last_checkpoint` trỏ vào nó — `model_final.pth`
+    # (và `weights/last.pth` mà trainer chép ra từ nó) chỉ có khi train chạy
+    # hết. `model_best.pth` do BestCheckpointer ghi riêng nên không bị đụng.
+    "keep_ckpts": 1,
     # Đầu mask của R-CNN dự đoán ở POOLER_RESOLUTION*2 rồi phóng lên bbox.
     # 14 (-> 28x28) là recipe gốc, và với tán trung vị 129 px ở imgsz 1024 thì
     # mỗi ô mask nuốt 4.6 px — đó là TRẦN đường biên của model này, không phải
@@ -417,6 +428,7 @@ class Detectron2Trainer(Trainer):
         a = self.train_args
         base = m2f.Trainer if m2f is not None else DefaultTrainer
         val_batch = max(1, int(a.get("val_batch") or a["batch"]))
+        keep_ckpts = max(1, int(a["keep_ckpts"]))
         quiet = not a.get("verbose")
         reporter = None if not quiet else self._epoch_reporter()
         self._reporter = reporter
@@ -528,6 +540,13 @@ class Detectron2Trainer(Trainer):
 
             def build_hooks(self):
                 ret = super().build_hooks()
+                # Giữ đúng `keep_ckpts` checkpoint định kỳ; xem D2_DEFAULTS.
+                for i, h in enumerate(ret):
+                    if isinstance(h, hooks.PeriodicCheckpointer):
+                        ret[i] = hooks.PeriodicCheckpointer(
+                            self.checkpointer, self.cfg.SOLVER.CHECKPOINT_PERIOD,
+                            max_to_keep=keep_ckpts)
+                        break
                 # Sau EvalHook (đọc segm/AP nó vừa ghi), trước PeriodicWriter.
                 ret.insert(-1, hooks.BestCheckpointer(
                     self.cfg.TEST.EVAL_PERIOD, self.checkpointer, "segm/AP",

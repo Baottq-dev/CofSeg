@@ -110,9 +110,16 @@ python benchmark/mask2former/train.py \
   --lr 1e-4 --weight_decay 0.05 --momentum 0.9 \
   --lr_steps "[0.7,0.9]" --lr_gamma 0.1 --warmup_iters 0.03 --amp true \
   --num_queries 100 \
+  --keep_ckpts 1 \
   --val_every 1 --val_conf 0.05 --val_batch 16 --max_det 100 \
   --workers 8 --seed 0 --log_every 20
 ```
+
+`--keep_ckpts 1` giữ đúng một checkpoint định kỳ trong `d2/`. Mặc định của
+detectron2 là giữ **hết** — một file mỗi epoch, ~530 MB mỗi file vì AdamW
+lưu hai moment, nên ~53 GB cho một lượt 100 epoch. Một là đủ: thứ cứu lượt
+chạy bị ngắt giữa chừng là checkpoint định kỳ gần nhất, vì `model_final.pth`
+(và `weights/last.pth` chép ra từ nó) chỉ có khi train chạy hết.
 
 Bốn cờ **không có tác dụng** với model này, đừng truyền rồi tưởng đã đổi được
 gì: `--fliplr`, `--flipud`, `--rot90` vì nó giữ mapper LSJ của recipe gốc (co
