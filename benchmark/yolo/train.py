@@ -10,7 +10,11 @@
 
 Truyền siêu tham số thẳng trên dòng lệnh — mọi tham số của trainer đều nhận:
 
-    python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo11s.yaml --epochs 100 --imgsz 640 --batch 16 
+    python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo11s.yaml --epochs 100 --imgsz 640 --batch 16
+
+Chạy khói dùng --fraction của ultralytics (tỉ lệ tập train), không có --limit:
+
+    python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --data data/export/field/f1 --epochs 2 --fraction 0.05
     
 Tên viết gạch nối cũng được (--cos-lr = --cos_lr). Cờ không kèm giá trị nghĩa
 là bật: --amp tương đương --amp true. Gõ sai tên thì script BÁO LỖI kèm gợi ý,
@@ -103,8 +107,9 @@ def main() -> int:
     ap.add_argument("--data", default=None, metavar="THƯ_MỤC_FOLD",
                     help="thư mục fold, vd data/export/block/f1 — viết thẳng ra để "
                          "nhìn lệnh là biết đang train fold nào")
-    ap.add_argument("--limit", type=int, default=None, metavar="N",
-                    help="chỉ dùng N ảnh đầu của mỗi split — để chạy khói, không để báo cáo")
+    # Không có --limit: trainer YOLO không đọc `data.limit`, nên cờ đó từng nhận
+    # giá trị rồi lặng lẽ train trên cả fold. Chạy khói thì dùng tham số của
+    # ultralytics: --fraction 0.05 (tỉ lệ tập train).
     ap.add_argument("--runs", default="runs", help="thư mục gốc chứa kết quả")
     ap.add_argument("--name", default=None, help="tên lần chạy (mặc định lấy từ config)")
     a, extra = ap.parse_known_args()
@@ -136,9 +141,7 @@ def main() -> int:
     # thư mục run — tên thư mục phải nói đúng thứ vừa chạy. Hai cờ này ghi vào
     # khối `model:`, không phải khối `train:`, nên chúng không đi qua
     # parse_overrides.
-    if a.limit is not None:
-        cfg.setdefault("data", {})["limit"] = int(a.limit)
-    goi_y = trainer_cls.apply_model(cfg, a.model) if a.model else None
+    goi_y =trainer_cls.apply_model(cfg, a.model) if a.model else None
     # Biến thể loss cũng phải xong trước khi đặt tên, vì nó vào tên thư mục.
     # Gọi cả khi không có cờ: trainer chặn `loss.*` lọt vào từ config/--set mà
     # thiếu --loss, thay vì để nó nằm im trong config.yaml như thể đã dùng.

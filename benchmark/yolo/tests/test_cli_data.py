@@ -58,3 +58,20 @@ def test_ordinary_values_keep_their_types():
     assert got == {"epochs": 60, "lr": 0.01, "amp": True,
                    "lr_steps": [0.7, 0.9], "optimizer": "auto"}
     assert isinstance(got["epochs"], int) and isinstance(got["amp"], bool)
+
+
+def test_train_khong_con_co_limit():
+    """--limit từng được nhận rồi bị trainer YOLO lờ đi: lệnh khói train cả
+    fold mà không báo gì. Giờ nó phải bị chặn ngay ở dòng lệnh."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[3]
+    r = subprocess.run(
+        [sys.executable, "benchmark/yolo/train.py",
+         "--config", "benchmark/yolo/configs/train/yolo26s.yaml", "--print-config", "--limit", "5"],
+        cwd=repo, capture_output=True, text=True, encoding="utf-8", timeout=300,
+    )
+    assert r.returncode != 0
+    assert "limit" in (r.stdout + r.stderr)
