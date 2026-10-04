@@ -205,6 +205,36 @@ Ba phiên bản đã có config sẵn: `configs/train/yolov8s.yaml`,
 phần phát hiện (v8/v11 dùng NMS, 26 đầu-cuối), nên giữ mỗi phiên bản một file;
 còn **cỡ** thì không cần file riêng, đã có `--model`.
 
+### Biến thể hàm loss (`--loss`)
+
+Không có `--loss` thì train bằng **loss gốc của ultralytics**, không một dòng
+nào khác — bảng benchmark luôn chạy như vậy. Biến thể chỉ bật bằng cờ; khối
+`loss:` trong config hay `--set loss.use=...` đều bị chặn, để lệnh train tự nói
+nó có dùng loss khác gốc hay không.
+
+```bash
+python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --list-losses
+python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --data data/export/field/f1 --loss mask_iou
+python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --data data/export/field/f1 --loss mask_iou --set loss.mask_iou.mix=0.5
+```
+
+| biến thể | làm gì | tham số (mặc định) |
+|---|---|---|
+| `mask_iou` | điểm phân loại học **IoU mặt nạ** (cắt bằng hộp dự đoán) thay cho CIoU của hộp | `mix` 1.0, `warmup_epochs` 5, `heads` both \| o2o |
+
+- Tên thư mục run mang hậu tố: `..._yolo26s-seg-mask-iou_field-f1_i1024b16e100`;
+  tham số khác mặc định cũng vào tên (`-mask-iou-mix0.5`). `--name` gõ tay thì
+  được giữ nguyên văn.
+- `config.yaml` và `summary.json` của lượt train ghi khối `loss`; `run.log` luôn
+  có một dòng `Loss: ...`, kể cả khi là loss gốc.
+- `loss_mask_iou.csv` cạnh `summary.json`: mỗi epoch, với từng đầu, số anchor
+  dương, IoU mặt nạ trung bình, điểm trung bình và tương quan điểm–IoU. Cột
+  `one2one_r` (YOLO26; model một đầu là `one_r`) tăng dần là dấu hiệu L1 đang
+  làm đúng việc.
+- Checkpoint vẫn là YOLO-seg chuẩn, chấm bằng đúng lệnh chấm cũ.
+- Viết cho ultralytics 8.4.143; phiên bản khác thì `--loss` dừng ngay.
+  Phân tích dẫn tới L1: `docs/reports/model/phan_tich_chuyen_sau_va_de_xuat_kien_truc_2026-10-04.md`.
+
 ## Trong thư mục này
 
 | | |

@@ -119,6 +119,23 @@ class Trainer(ABC):
             "và đổi backbone bằng --backbone."
         )
 
+    # ---------------------------------------------------------------------- loss
+    @classmethod
+    def apply_loss(cls, cfg: dict, spec: str | None) -> str:
+        """Bật biến thể hàm loss `spec` (cờ --loss), trả về hậu tố cho tên run.
+
+        Không có cờ thì trainer chạy đúng hàm loss gốc của framework, và
+        trả về "". Mặc định này hợp với họ không có biến thể loss nào: bật cờ
+        là báo lỗi thay vì lặng lẽ train bằng loss gốc dưới một tên khác.
+        """
+        if spec or cfg.get("loss"):
+            raise SystemExit("--loss chưa có biến thể nào cho họ model này.")
+        return ""
+
+    @classmethod
+    def describe_losses(cls) -> str:
+        return "Họ model này chưa có biến thể loss nào; nó luôn train bằng loss gốc."
+
     @classmethod
     def describe_backbones(cls, cfg: dict) -> str:
         bang = cls.backbones(cfg)

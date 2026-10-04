@@ -151,6 +151,20 @@ class YoloTrainer(Trainer):
         cfg["model"] = ten
         return Path(ten).stem
 
+    # ---------------------------------------------------------------------- loss
+    @classmethod
+    def apply_loss(cls, cfg: dict, spec: str | None) -> str:
+        """`--loss mask_iou`: xem losses.py. Không có cờ = loss gốc của ultralytics."""
+        from . import losses
+
+        return losses.apply(cfg, spec)
+
+    @classmethod
+    def describe_losses(cls) -> str:
+        from . import losses
+
+        return losses.describe()
+
     # -------------------------------------------------------------------- đặt tên
     #: Tham số đưa vào tên thư mục, kèm tiền tố ngắn. Ba cái này quyết định cả
     #: chất lượng lẫn chi phí của lần chạy, và cũng chính là ba cái hay bị ghi
@@ -295,6 +309,12 @@ class YoloTrainer(Trainer):
         )
         self.warned = progress.warnings_to_file(self.run_dir / "warnings.log")
         picked = self._best_by_mask_ap(model)
+        from . import losses
+
+        loss_block = self.cfg.get("loss")
+        print(losses.describe_active(loss_block), flush=True)
+        if loss_block:
+            losses.install(model, loss_block, self.run_dir / "loss_mask_iou.csv")
         t0 = time.time()
         results = model.train(**args)
         train_seconds = round(time.time() - t0, 1)
@@ -336,6 +356,9 @@ class YoloTrainer(Trainer):
             "best_val_AP": round(picked.value * 100, 4) if picked.value is not None else -1.0,
             "save_dir": str(save_dir),
             "args": {k: v for k, v in args.items() if not k.startswith("_")},
+            # evaluate.py đọc khoá này để gắn đúng hậu tố vào tên lượt chấm.
+            # None = loss gốc: các lượt train cũ không có khoá cũng hiểu như vậy.
+            "loss": loss_block or None,
         }
         metrics = getattr(results, "results_dict", None)
         if metrics:
