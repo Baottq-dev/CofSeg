@@ -104,10 +104,15 @@ def run_config(a, extra: list[str]) -> int:
             ev[k] = float(v)
     limit = a.limit if a.limit is not None else ev.get("limit")
 
-    run_name = a.name or cfg.get("name") or Path(a.config).stem
+    run_name, train_loss = artifacts.eval_run_name(
+        a.name or cfg.get("name") or Path(a.config).stem,
+        cfg["model"].get("weights"), explicit=bool(a.name),
+    )
     # config.yaml của lần chấm phải ghi đúng tên đã dùng (--name thắng file),
     # vì summarize_folds.py đọc tên "<model>_<fold>" từ đó.
     cfg["name"] = run_name
+    if train_loss:
+        cfg["train_loss"] = train_loss
     # Độ phân giải vào TÊN thư mục. Sáu lượt chấm Mask R-CNN chạy ở 1333 thay
     # vì 1024 mà không ai nhận ra, một phần vì tên thư mục không nói gì —
     # thư mục của YOLO có `_i1024`, của detectron2 thì không có gì cả. Với
@@ -130,6 +135,7 @@ def run_config(a, extra: list[str]) -> int:
             print("Bộ dữ liệu:", json.dumps(ds.summary(), ensure_ascii=False))
             model = build_model(cfg["model"])
             print("Model:", json.dumps(model.describe, ensure_ascii=False, default=str))
+            print("Loss lúc train:", train_loss["tag"] if train_loss else "gốc của framework")
             print(artifacts.check_imgsz(cfg["model"].get("weights"),
                                         model.describe.get("imgsz"),
                                         explicit=a.imgsz is not None))

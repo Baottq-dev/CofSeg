@@ -248,6 +248,37 @@ def train_args(weights) -> dict | None:
     return args if isinstance(args, dict) else None
 
 
+def train_loss(weights) -> dict | None:
+    """Khối `loss` của lượt train đã sinh ra `weights` (cờ --loss).
+
+    None nghĩa là loss gốc — kể cả lượt train cũ, có từ trước khi summary.json
+    có khoá này, và trọng số không tra ngược được lượt train nào.
+    """
+    d = train_run_dir(weights)
+    if d is None:
+        return None
+    try:
+        doc = json.loads((d / "summary.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    loss = doc.get("loss")
+    return loss if isinstance(loss, dict) and loss.get("tag") else None
+
+
+def eval_run_name(name: str, weights, explicit: bool) -> tuple[str, dict | None]:
+    """Tên lượt chấm, mang hậu tố loss của lượt train như chính lượt train.
+
+    Config chấm chỉ biết tên model (`yolo26s-seg`), còn biến thể loss nằm
+    trong trọng số. Không gắn hậu tố thì lượt chấm L1 ra đúng tên của lượt
+    chấm baseline cùng fold, và mọi phép gộp theo tên sẽ trộn hai thứ làm một.
+    `--name` gõ tay thì giữ nguyên văn, như ở train.py.
+    """
+    loss = train_loss(weights)
+    if loss and not explicit and not name.endswith("-" + loss["tag"]):
+        name = f"{name}-{loss['tag']}"
+    return name, loss
+
+
 def train_imgsz(weights) -> int | None:
     """imgsz của lượt train đã sinh ra `weights`; None nếu không tra được."""
     try:

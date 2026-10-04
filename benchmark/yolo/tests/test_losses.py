@@ -197,3 +197,42 @@ def test_cli_list_losses():
     r = _train_py("--list-losses")
     assert r.returncode == 0, r.stderr
     assert "mask_iou" in r.stdout
+
+
+# --------------------------------------------------------------- chấm
+def _train_run(tmp_path, loss):
+    import json
+
+    run = tmp_path / "2026-10-05_101500_yolo26s-seg-mask-iou_field-f1_i1024b16e100"
+    (run / "weights").mkdir(parents=True)
+    (run / "ultralytics" / "weights").mkdir(parents=True)
+    doc = {"weights": {}, "args": {"imgsz": 1024}}
+    if loss != "thieu-khoa":  # lượt train cũ: summary.json chưa có khoá loss
+        doc["loss"] = loss
+    (run / "summary.json").write_text(json.dumps(doc), encoding="utf-8")
+    return run
+
+
+@pytest.mark.parametrize("layout", ["weights/best.pt", "ultralytics/weights/best.pt"])
+def test_cham_gan_hau_to_loss_cua_luot_train(tmp_path, layout):
+    from cofseg import artifacts
+
+    cfg = _cfg()
+    YoloTrainer.apply_loss(cfg, "mask_iou")
+    run = _train_run(tmp_path, cfg["loss"])
+    name, loss = artifacts.eval_run_name("yolo26s-seg", run / layout, explicit=False)
+    assert name == "yolo26s-seg-mask-iou"
+    assert loss["use"] == ["mask_iou"]
+    # tên đã mang hậu tố thì không gắn lần hai; --name gõ tay giữ nguyên văn
+    assert artifacts.eval_run_name("yolo26s-seg-mask-iou", run / layout, explicit=False)[0] == "yolo26s-seg-mask-iou"
+    assert artifacts.eval_run_name("ten-tu-dat", run / layout, explicit=True)[0] == "ten-tu-dat"
+
+
+@pytest.mark.parametrize("loss", [None, "thieu-khoa"])
+def test_cham_luot_loss_goc_giu_ten(tmp_path, loss):
+    from cofseg import artifacts
+
+    run = _train_run(tmp_path, loss)
+    assert artifacts.eval_run_name("yolo26s-seg", run / "weights/best.pt", explicit=False) == ("yolo26s-seg", None)
+    # trọng số không tra ngược được lượt train nào (vd tải về): cũng là tên gốc
+    assert artifacts.eval_run_name("yolo26s-seg", tmp_path / "x.pt", explicit=False) == ("yolo26s-seg", None)
