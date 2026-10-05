@@ -28,9 +28,14 @@ class YoloSegModel(SegmentationModel):
         max_det: int = 300,
         device: str | int | None = None,
         retina_masks: bool = True,
+        crop_expand: float = 1.0,
     ):
         from ultralytics import YOLO
 
+        # Kiểm trước khi nạp trọng số: gõ sai thì báo ngay, không chờ nạp model.
+        if not (isinstance(crop_expand, (int, float)) and not isinstance(crop_expand, bool)
+                and crop_expand >= 1.0):
+            raise SystemExit(f"crop_expand phải là số >= 1.0, nhận {crop_expand!r}")
         self.weights = weights
         self.model = YOLO(weights)
         # Checkpoint A1 (đầu mặt nạ động, cofseg/training/dyn_head.py) cần
@@ -38,11 +43,23 @@ class YoloSegModel(SegmentationModel):
         # cắt sát box, còn đầu A1 xuất tham số của một mạng nhỏ cho từng tán.
         self.mask_head = "gốc"
         self._predict_kw: dict = {}
-        if type(self.model.model.model[-1]).__name__ == "Segment26Dyn":
+        head = type(self.model.model.model[-1]).__name__
+        if head == "Segment26Dyn":
             from ..training.dyn_head import DynSegPredictor
 
             self.mask_head = "dyn"
             self._predict_kw["predictor"] = DynSegPredictor
+        # crop_expand > 1: cắt mặt nạ bằng box dự đoán NỚI theo hệ số này thay
+        # vì box sát. Box sát cắt thẳng 21% số tán của R2 (báo cáo 2026-10-04,
+        # mục 3.3). Box trả về vẫn là box gốc; chỉ phép cắt mặt nạ đổi. Mặc
+        # định 1.0 = đúng đường của ultralytics, nên bảng benchmark không đổi.
+        self.crop_expand = float(crop_expand)
+        if self.crop_expand != 1.0:
+            if self.mask_head == "dyn":
+                raise SystemExit("crop_expand không dùng với đầu A1: đầu đó đã cắt bằng cửa sổ riêng.")
+            if not retina_masks:
+                raise SystemExit("crop_expand chỉ có ở đường retina_masks=True (đường chấm của benchmark).")
+            self._predict_kw["predictor"] = _crop_expand_predictor(self.crop_expand)
         # retina_masks: xuất mặt nạ ở độ phân giải ảnh thay vì lưới proto.
         # Với dự án lấy đường biên làm trọng tâm thì không có lý do tắt.
         self.kw = dict(
@@ -132,4 +149,41 @@ class YoloSegModel(SegmentationModel):
 
     @property
     def describe(self) -> dict:
-        return {**super().describe, "weights": self.weights, "mask_head": self.mask_head, **self.kw}
+        return {**super().describe, "weights": self.weights, "mask_head": self.mask_head,
+                "crop_expand": self.crop_expand, **self.kw}
+
+
+def expand_boxes(boxes, factor: float, shape: tuple[int, int]):
+    """Nới box xyxy quanh tâm theo `factor`, kẹp trong ảnh (h, w)."""
+    import torch
+
+    c = (boxes[:, :2] + boxes[:, 2:4]) / 2
+    half = (boxes[:, 2:4] - boxes[:, :2]) * (factor / 2)
+    h, w = shape
+    lo = torch.stack([(c[:, 0] - half[:, 0]).clamp(0, w), (c[:, 1] - half[:, 1]).clamp(0, h)], 1)
+    hi = torch.stack([(c[:, 0] + half[:, 0]).clamp(0, w), (c[:, 1] + half[:, 1]).clamp(0, h)], 1)
+    return torch.cat([lo, hi], 1)
+
+
+def _crop_expand_predictor(factor: float):
+    """SegmentationPredictor cắt mặt nạ bằng box nới `factor` lần."""
+    from ultralytics.engine.results import Results
+    from ultralytics.models.yolo.segment import SegmentationPredictor
+    from ultralytics.utils import ops
+
+    class CropExpandPredictor(SegmentationPredictor):
+        def construct_result(self, pred, img, orig_img, img_path, proto):
+            # Chép SegmentationPredictor.construct_result (8.4.143), nhánh
+            # retina_masks; chỉ đổi box đưa vào phép cắt mặt nạ.
+            if pred.shape[0] == 0:
+                return super().construct_result(pred, img, orig_img, img_path, proto)
+            pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
+            crop = expand_boxes(pred[:, :4], factor, orig_img.shape[:2])
+            masks = ops.process_mask_native(proto, pred[:, 6:], crop, orig_img.shape[:2])
+            keep = masks.amax((-2, -1)) > 0
+            if not all(keep):
+                pred, masks = pred[keep], masks[keep]
+            return Results(orig_img, path=img_path, names=self.model.names, boxes=pred[:, :6], masks=masks)
+
+    CropExpandPredictor.__name__ = f"CropExpandPredictor_{factor:g}"
+    return CropExpandPredictor
