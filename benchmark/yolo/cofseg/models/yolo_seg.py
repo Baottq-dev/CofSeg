@@ -49,6 +49,12 @@ class YoloSegModel(SegmentationModel):
 
             self.mask_head = "dyn"
             self._predict_kw["predictor"] = DynSegPredictor
+        elif head == "Segment26GPR":
+            # Checkpoint T1 (cofseg/training/gpr_head.py): prototype ở stride 2
+            # thay vì 4. Predictor gốc dùng được nguyên: process_mask_native
+            # phóng prototype về ảnh gốc theo tỉ lệ cỡ thật của nó, không giả
+            # định stride 4 như validator.
+            self.mask_head = "gpr"
         # crop_expand > 1: cắt mặt nạ bằng box dự đoán NỚI theo hệ số này thay
         # vì box sát. Box sát cắt thẳng 21% số tán của R2 (báo cáo 2026-10-04,
         # mục 3.3). Box trả về vẫn là box gốc; chỉ phép cắt mặt nạ đổi. Mặc

@@ -1,0 +1,42 @@
+# YOLO26s-seg cho T1: M1 (GPR, lấy mẫu lại prototype có dẫn hướng) + L3 (NCB,
+# loss biên hiệu chỉnh theo nhiễu nhãn).
+#
+# Mọi thứ khác — trọng số khởi đầu COCO, imgsz, batch, lịch học, tăng cường —
+# lấy nguyên từ yolo26s.yaml, nên khác biệt với R2 chỉ là nhánh mặt nạ và loss
+# của nó. Thiết kế và số đo dẫn tới nó: cofseg/training/gpr_head.py,
+# cofseg/training/gpr_train.py và docs/reports/model/de_xuat_module_yolo26_2026-10-05.md.
+#
+#     python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s-gpr.yaml --data data/export/field/f1
+#
+# Chấm bằng đúng config chấm của yolo26s; lượt chấm tự nhận ra checkpoint GPR
+# và mang hậu tố -gpr.
+base: yolo26s.yaml
+name: yolo26s-seg-gpr
+
+train:
+  # NCB tính TỈ LỆ PHỦ của từng ô proto từ nhãn ở đủ độ phân giải đầu vào, nên
+  # nhãn phải raster ở 1024 thay vì 256 (R2: mask_ratio 4). Bắt buộc với GPR.
+  mask_ratio: 1
+
+mask_head:
+  type: gpr
+  # 1 = GPR-1 thay ConvTranspose2d (s8 -> s4), dẫn hướng bằng layer 2 của backbone.
+  # 2 = GPR-2 đưa 32 prototype lên s2 (lưới 5 px ảnh gốc), dẫn hướng bằng layer 0.
+  # Ablation: [2] giữ ConvTranspose; [] giữ Proto gốc, chỉ còn loss NCB (L3 riêng).
+  stages: [1, 2]
+  # Bản đồ dẫn hướng không truyền gradient ngược vào backbone: backbone nhận
+  # đúng những tín hiệu như R2. L1 và A1 cho thấy tín hiệu mới chảy vào phần
+  # dùng chung làm lệch thang điểm trên ruộng lạ.
+  detach_guide: true
+  # GPR-1: 128 kênh chia 4 nhóm, mỗi nhóm một trường độ lệch (như DySample).
+  # GPR-2 luôn một trường cho cả 32 prototype.
+  groups: 4
+  # Độ lệch tối đa ±1 ô lưới thô (tanh). Khởi tạo 0 = phóng song tuyến.
+  scope: 1.0
+  # σ của nhãn mềm theo px ảnh đầu vào: nhãn cùng tán ở hai ảnh chồng nhau
+  # chỉ khớp IoU 0,87-0,90, tức ~6 px ảnh gốc mỗi lần vẽ = 2,4 px ở imgsz 1024.
+  # 0 = chỉ tỉ lệ phủ, không làm mềm.
+  sigma: 2.4
+  # Mỗi nhãn mềm là một bản đồ cả lưới proto (512² ở s2), nên mỗi ảnh lấy tối
+  # đa 64 anchor dương để tính loss mặt nạ, như A1.
+  max_pos: 64

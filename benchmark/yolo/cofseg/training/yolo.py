@@ -156,10 +156,10 @@ class YoloTrainer(Trainer):
     def apply_loss(cls, cfg: dict, spec: str | None) -> str:
         """`--loss mask_iou`: xem losses.py. Không có cờ = loss gốc của ultralytics.
 
-        Khối `mask_head:` (A1, xem mask_head.py) cũng được kiểm ở đây: train.py
-        gọi bước này cho MỌI lượt chạy trước khi tạo thư mục run, nên config
-        sai bị chặn trước khi để lại một thư mục rỗng. A1 có loss mặt nạ riêng
-        nên không đi chung với --loss.
+        Khối `mask_head:` (A1 hoặc GPR, xem mask_head.py) cũng được kiểm ở đây:
+        train.py gọi bước này cho MỌI lượt chạy trước khi tạo thư mục run, nên
+        config sai bị chặn trước khi để lại một thư mục rỗng. Cả hai có loss mặt
+        nạ riêng nên không đi chung với --loss.
         """
         from . import losses, mask_head
 
@@ -168,9 +168,10 @@ class YoloTrainer(Trainer):
         if mh is not None:
             if tag:
                 raise SystemExit(
-                    "Config này bật đầu mặt nạ A1 (mask_head), vốn có loss mặt nạ riêng; "
-                    "--loss sửa loss của đầu gốc nên không dùng chung được."
+                    f"Config này bật nhánh mặt nạ {mask_head.tag(mh)} (mask_head), vốn có loss mặt nạ "
+                    "riêng; --loss sửa loss của đầu gốc nên không dùng chung được."
                 )
+            mask_head.check_train(mh, cfg.get("train") or {})
             cfg["mask_head"] = mh
         return tag
 
@@ -334,10 +335,14 @@ class YoloTrainer(Trainer):
         print(mask_head.describe_active(mh_block), flush=True)
         extra = {}
         if mh_block:
-            from .dyn_train import install_log, make_trainer
+            if mh_block["type"] == "gpr":
+                from .gpr_train import install_log, make_trainer
+            else:
+                from .dyn_train import install_log, make_trainer
 
             # Model.train() tự khởi tạo trainer từ lớp được truyền vào; lớp đó
-            # dựng YOLO26 chuẩn, chuyển đầu sang A1 rồi mới nạp trọng số COCO.
+            # dựng YOLO26 chuẩn, chuyển đầu (A1) hoặc Proto (GPR) rồi mới nạp
+            # trọng số COCO.
             extra["trainer"] = make_trainer(mh_block)
             install_log(model, self.run_dir)
         t0 = time.time()
