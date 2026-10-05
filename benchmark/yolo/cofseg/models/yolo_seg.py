@@ -33,6 +33,16 @@ class YoloSegModel(SegmentationModel):
 
         self.weights = weights
         self.model = YOLO(weights)
+        # Checkpoint A1 (đầu mặt nạ động, cofseg/training/dyn_head.py) cần
+        # predictor riêng: predictor gốc dựng mặt nạ bằng hệ số x prototype rồi
+        # cắt sát box, còn đầu A1 xuất tham số của một mạng nhỏ cho từng tán.
+        self.mask_head = "gốc"
+        self._predict_kw: dict = {}
+        if type(self.model.model.model[-1]).__name__ == "Segment26Dyn":
+            from ..training.dyn_head import DynSegPredictor
+
+            self.mask_head = "dyn"
+            self._predict_kw["predictor"] = DynSegPredictor
         # retina_masks: xuất mặt nạ ở độ phân giải ảnh thay vì lưới proto.
         # Với dự án lấy đường biên làm trọng tâm thì không có lý do tắt.
         self.kw = dict(
@@ -48,7 +58,7 @@ class YoloSegModel(SegmentationModel):
 
     def warmup(self) -> None:
         self.model.predict(
-            np.zeros((self.kw["imgsz"], self.kw["imgsz"], 3), np.uint8), **self.kw
+            np.zeros((self.kw["imgsz"], self.kw["imgsz"], 3), np.uint8), **self.kw, **self._predict_kw
         )
 
     def predict(
@@ -91,7 +101,7 @@ class YoloSegModel(SegmentationModel):
 
         RLE của hai đường trùng khớp trên 122 dự đoán thật của hai ảnh f6.
         """
-        res = self.model.predict(image, **self.kw)[0]
+        res = self.model.predict(image, **self.kw, **self._predict_kw)[0]
         if res.masks is None:
             return []
         h, w = image.shape[:2]
@@ -122,4 +132,4 @@ class YoloSegModel(SegmentationModel):
 
     @property
     def describe(self) -> dict:
-        return {**super().describe, "weights": self.weights, **self.kw}
+        return {**super().describe, "weights": self.weights, "mask_head": self.mask_head, **self.kw}

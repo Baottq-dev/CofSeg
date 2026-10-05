@@ -1,0 +1,29 @@
+# YOLO26s-seg với đầu mặt nạ A1: mạng 1x1 động cho từng tán, không cắt sát box.
+#
+# Mọi thứ khác — trọng số khởi đầu COCO, imgsz, batch, lịch học, tăng cường —
+# lấy nguyên từ yolo26s.yaml, nên khác biệt với lượt baseline chỉ là đầu mặt
+# nạ. Thiết kế và số đo dẫn tới nó: cofseg/training/dyn_head.py và
+# docs/reports/model/phan_tich_chuyen_sau_va_de_xuat_kien_truc_2026-10-04.md.
+#
+#     python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s-dyn.yaml --data data/export/field/f1
+#
+# Chấm bằng đúng config chấm của yolo26s; lượt chấm tự nhận ra checkpoint A1
+# và mang hậu tố -dyn.
+base: yolo26s.yaml
+name: yolo26s-seg-dyn
+
+mask_head:
+  type: dynamic
+  # Kênh các lớp ẩn: (32 prototype + 2 toạ độ) -> 8 -> 8 -> 1, 361 tham số
+  # mỗi tán như CondInst. [] = một lớp tuyến tính, tức cách dựng của đầu gốc.
+  dims: [8, 8]
+  # Toạ độ tương đối so với anchor (chia stride x 8 như RTMDet-Ins): cho mạng
+  # biết đang tô TÁN NÀO, thứ 32 hệ số trên prototype chung không phân biệt được.
+  coords: true
+  # Mặt nạ giữ trong box x 1.5 thay vì cắt sát box: tán bị box cụt hiện mất
+  # trung bình 5.5% diện tích ngoài box, biên nới 25% mỗi phía phủ dư. Cửa sổ
+  # cũng chặn chi phí theo số tán — hợp với mục tiêu chạy trên thiết bị biên.
+  window: 1.5
+  # Mỗi mặt nạ là cả lưới 256x256, nên mỗi ảnh lấy tối đa 64 anchor dương để
+  # tính loss mặt nạ (đầu one-to-many có tới 10 anchor dương mỗi tán).
+  max_pos: 64

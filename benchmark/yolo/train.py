@@ -168,6 +168,8 @@ def main() -> int:
             print(f"  {k:<18} {merged[k]!r}{src}")
         print("\nloss:", json.dumps(cfg["loss"], ensure_ascii=False) if cfg.get("loss")
               else "gốc của framework (không có --loss)")
+        if cfg.get("mask_head"):
+            print("mask_head:", json.dumps(cfg["mask_head"], ensure_ascii=False))
         return 0
 
     name = a.name or goi_y or cfg.get("name") or Path(a.config).stem

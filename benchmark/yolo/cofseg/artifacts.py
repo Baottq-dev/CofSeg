@@ -248,11 +248,11 @@ def train_args(weights) -> dict | None:
     return args if isinstance(args, dict) else None
 
 
-def train_loss(weights) -> dict | None:
-    """Khối `loss` của lượt train đã sinh ra `weights` (cờ --loss).
+def _summary_block(weights, key: str) -> dict | None:
+    """Khối `key` (có `tag`) trong summary.json của lượt train sinh ra `weights`.
 
-    None nghĩa là loss gốc — kể cả lượt train cũ, có từ trước khi summary.json
-    có khoá này, và trọng số không tra ngược được lượt train nào.
+    None khi lượt train không có khối đó — kể cả lượt cũ, có từ trước khi
+    summary.json có khoá này — hoặc trọng số không tra ngược được lượt nào.
     """
     d = train_run_dir(weights)
     if d is None:
@@ -261,21 +261,33 @@ def train_loss(weights) -> dict | None:
         doc = json.loads((d / "summary.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    loss = doc.get("loss")
-    return loss if isinstance(loss, dict) and loss.get("tag") else None
+    block = doc.get(key)
+    return block if isinstance(block, dict) and block.get("tag") else None
+
+
+def train_loss(weights) -> dict | None:
+    """Khối `loss` của lượt train đã sinh ra `weights` (cờ --loss); None = loss gốc."""
+    return _summary_block(weights, "loss")
+
+
+def train_mask_head(weights) -> dict | None:
+    """Khối `mask_head` (A1) của lượt train đã sinh ra `weights`; None = đầu gốc."""
+    return _summary_block(weights, "mask_head")
 
 
 def eval_run_name(name: str, weights, explicit: bool) -> tuple[str, dict | None]:
-    """Tên lượt chấm, mang hậu tố loss của lượt train như chính lượt train.
+    """Tên lượt chấm, mang hậu tố đầu mặt nạ và loss của lượt train.
 
-    Config chấm chỉ biết tên model (`yolo26s-seg`), còn biến thể loss nằm
-    trong trọng số. Không gắn hậu tố thì lượt chấm L1 ra đúng tên của lượt
+    Config chấm chỉ biết tên model (`yolo26s-seg`), còn biến thể nằm trong
+    trọng số. Không gắn hậu tố thì lượt chấm L1 hay A1 ra đúng tên của lượt
     chấm baseline cùng fold, và mọi phép gộp theo tên sẽ trộn hai thứ làm một.
     `--name` gõ tay thì giữ nguyên văn, như ở train.py.
     """
     loss = train_loss(weights)
-    if loss and not explicit and not name.endswith("-" + loss["tag"]):
-        name = f"{name}-{loss['tag']}"
+    if not explicit:
+        for block in (train_mask_head(weights), loss):
+            if block and not name.endswith("-" + block["tag"]):
+                name = f"{name}-{block['tag']}"
     return name, loss
 
 

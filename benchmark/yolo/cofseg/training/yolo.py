@@ -154,10 +154,25 @@ class YoloTrainer(Trainer):
     # ---------------------------------------------------------------------- loss
     @classmethod
     def apply_loss(cls, cfg: dict, spec: str | None) -> str:
-        """`--loss mask_iou`: xem losses.py. Không có cờ = loss gốc của ultralytics."""
-        from . import losses
+        """`--loss mask_iou`: xem losses.py. Không có cờ = loss gốc của ultralytics.
 
-        return losses.apply(cfg, spec)
+        Khối `mask_head:` (A1, xem mask_head.py) cũng được kiểm ở đây: train.py
+        gọi bước này cho MỌI lượt chạy trước khi tạo thư mục run, nên config
+        sai bị chặn trước khi để lại một thư mục rỗng. A1 có loss mặt nạ riêng
+        nên không đi chung với --loss.
+        """
+        from . import losses, mask_head
+
+        tag = losses.apply(cfg, spec)
+        mh = mask_head.check(cfg.get("mask_head"))
+        if mh is not None:
+            if tag:
+                raise SystemExit(
+                    "Config này bật đầu mặt nạ A1 (mask_head), vốn có loss mặt nạ riêng; "
+                    "--loss sửa loss của đầu gốc nên không dùng chung được."
+                )
+            cfg["mask_head"] = mh
+        return tag
 
     @classmethod
     def describe_losses(cls) -> str:
@@ -309,14 +324,24 @@ class YoloTrainer(Trainer):
         )
         self.warned = progress.warnings_to_file(self.run_dir / "warnings.log")
         picked = self._best_by_mask_ap(model)
-        from . import losses
+        from . import losses, mask_head
 
         loss_block = self.cfg.get("loss")
         print(losses.describe_active(loss_block), flush=True)
         if loss_block:
             losses.install(model, loss_block, self.run_dir)
+        mh_block = mask_head.check(self.cfg.get("mask_head"))
+        print(mask_head.describe_active(mh_block), flush=True)
+        extra = {}
+        if mh_block:
+            from .dyn_train import install_log, make_trainer
+
+            # Model.train() tự khởi tạo trainer từ lớp được truyền vào; lớp đó
+            # dựng YOLO26 chuẩn, chuyển đầu sang A1 rồi mới nạp trọng số COCO.
+            extra["trainer"] = make_trainer(mh_block)
+            install_log(model, self.run_dir)
         t0 = time.time()
-        results = model.train(**args)
+        results = model.train(**extra, **args)
         train_seconds = round(time.time() - t0, 1)
 
         # train() trả về SegmentMetrics, và thực thể đó KHÔNG có save_dir (đã
@@ -359,6 +384,8 @@ class YoloTrainer(Trainer):
             # evaluate.py đọc khoá này để gắn đúng hậu tố vào tên lượt chấm.
             # None = loss gốc: các lượt train cũ không có khoá cũng hiểu như vậy.
             "loss": loss_block or None,
+            # Như `loss`: evaluate.py đọc `tag` để lượt chấm mang hậu tố -dyn.
+            "mask_head": {**mh_block, "tag": mask_head.tag(mh_block)} if mh_block else None,
         }
         metrics = getattr(results, "results_dict", None)
         if metrics:

@@ -243,6 +243,41 @@ python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yam
 - Viết cho ultralytics 8.4.143; phiên bản khác thì `--loss` dừng ngay.
   Phân tích dẫn tới L1, L2: `docs/reports/model/phan_tich_chuyen_sau_va_de_xuat_kien_truc_2026-10-04.md`.
 
+### Đầu mặt nạ A1 (`configs/train/yolo26s-dyn.yaml`)
+
+Đầu gốc dựng mặt nạ mỗi tán bằng tổ hợp tuyến tính 32 prototype dùng chung cả
+ảnh rồi cắt sát bằng box dự đoán. A1 giữ 32 prototype đó (cả trọng số COCO)
+làm đặc trưng, nhưng mỗi anchor sinh 361 tham số của một mạng 1x1 nhỏ kiểu
+CondInst, chạy trên [prototype, toạ độ tương đối so với anchor]:
+`(32+2) -> 8 -> 8 -> 1`. Mặt nạ được giữ trong cửa sổ box x 1.5 thay vì cắt
+sát box. Thêm khoảng 0,07 M tham số; mọi thứ khác lấy nguyên từ `yolo26s.yaml`.
+
+A1 bật bằng file config riêng, không bằng cờ:
+
+```bash
+python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s-dyn.yaml --data data/export/field/f1
+python benchmark/yolo/evaluate.py --config benchmark/yolo/configs/eval/yolo26s.yaml --weights runs/train/<...>_yolo26s-seg-dyn_field-f1_i1024b16e100/weights/best.pt --data data/export/field/f1 --split test
+```
+
+| khoá `mask_head` | mặc định | nghĩa |
+|---|---|---|
+| `dims` | `[8, 8]` | kênh các lớp ẩn; `[]` = một lớp tuyến tính như đầu gốc |
+| `coords` | `true` | thêm toạ độ tương đối (chia stride x 8 như RTMDet-Ins) |
+| `window` | `1.5` | mặt nạ giữ trong box x window; `1.0` = cắt sát box như gốc |
+| `max_pos` | `64` | số anchor dương tối đa mỗi ảnh được tính loss mặt nạ |
+
+- Loss mặt nạ cùng loại với gốc (BCE từng pixel), chỉ đổi vùng: cửa sổ box GT
+  x window thay cho box GT. Không dùng chung với `--loss`.
+- Lượt chấm tự nhận ra checkpoint A1, dùng predictor A1 và mang hậu tố `-dyn`
+  (tham số khác mặc định cũng vào tên, vd `-dyn-d0-nocoord`); `run.log` của
+  lượt chấm có dòng `Đầu mặt nạ lúc train: ...`.
+- `mask_head_dyn.csv` cạnh `summary.json`: mỗi epoch, với từng đầu, số tán đã
+  tính loss, BCE trung bình và IoU cứng của mặt nạ trong cửa sổ.
+- Checkpoint A1 chứa lớp của `cofseg/training/dyn_head.py`, nên phải nạp từ
+  thư mục này (evaluate.py lo việc đó). Chưa hỗ trợ export ONNX/TensorRT.
+- Chỉ dùng được với YOLO26-seg (đầu `Segment26`). Phần train ở
+  `cofseg/training/dyn_train.py`.
+
 ## Trong thư mục này
 
 | | |
