@@ -314,7 +314,7 @@ class YoloTrainer(Trainer):
         loss_block = self.cfg.get("loss")
         print(losses.describe_active(loss_block), flush=True)
         if loss_block:
-            losses.install(model, loss_block, self.run_dir / "loss_mask_iou.csv")
+            losses.install(model, loss_block, self.run_dir)
         t0 = time.time()
         results = model.train(**args)
         train_seconds = round(time.time() - t0, 1)

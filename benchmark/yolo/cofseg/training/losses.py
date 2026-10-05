@@ -12,12 +12,17 @@ thì chỉnh bằng `--set loss.<tên>.<tham số>=<giá trị>`.
 
 File này chỉ chứa bảng tra và phần kiểm tham số, không import torch hay
 ultralytics: `--list-losses` và `--print-config` phải chạy được tức thì. Phần
-tính loss nằm ở mask_iou_loss.py và chỉ được nạp trong install().
+tính loss của mỗi biến thể nằm ở module khai trong khoá `module` của nó
+(vd mask_iou_loss.py) và chỉ được nạp trong install().
+
+Module đó phải có `build_criterion(model, params)` và `EpochLog(path)`; có
+thể có thêm `check_model(model, params)` để chặn tổ hợp model không hợp.
 """
 
 from __future__ import annotations
 
 import difflib
+import importlib
 from pathlib import Path
 
 #: Phần lõi của mask_iou chép ~25 dòng từ `v8DetectionLoss.get_assigned_targets
@@ -49,6 +54,7 @@ LOSSES: dict = {
             "heads": ("both", "h", "both = cả hai đầu của YOLO26; o2o = chỉ đầu one-to-one (đầu dùng lúc suy luận)"),
         },
         "check": _check_mask_iou,
+        "module": "mask_iou_loss",
     },
 }
 
@@ -136,7 +142,7 @@ def describe_active(block: dict | None) -> str:
     )
 
 
-def install(yolo_model, block: dict, log_path: str | Path) -> None:
+def install(yolo_model, block: dict, run_dir: str | Path) -> None:
     """Gắn biến thể loss vào lượt train sắp chạy của `yolo_model`.
 
     Ultralytics chỉ tạo hàm loss khi lần đầu cần tới (`BaseModel.loss`), và
@@ -145,30 +151,30 @@ def install(yolo_model, block: dict, log_path: str | Path) -> None:
     sống trên model đang train: checkpoint lưu bản EMA và gỡ `criterion` ra
     trước khi lưu (`trainer.py`, save_model), nên best.pt vẫn là
     SegmentationModel chuẩn, `YOLO(best.pt)` nạp được ở mọi nơi.
+
+    Nhật ký từng epoch ghi vào `run_dir/loss_<tên>.csv`.
     """
     import ultralytics
 
     if ultralytics.__version__ != ULTRALYTICS_VERSION:
         raise SystemExit(
             f"--loss viết cho ultralytics {ULTRALYTICS_VERSION}, môi trường đang có "
-            f"{ultralytics.__version__}. Phần gán nhãn được chép từ thư viện nên phải "
-            "đối chiếu lại trước khi chạy."
+            f"{ultralytics.__version__}. Biến thể loss dựa vào nội bộ của thư viện "
+            "(đoạn chép, chữ ký hàm) nên phải đối chiếu lại trước khi chạy."
         )
-    from .mask_iou_loss import build_criterion, is_end2end, EpochLog
-
-    p = block["mask_iou"]
-    if p["heads"] == "o2o" and not is_end2end(yolo_model.model):
-        raise SystemExit(
-            "loss.mask_iou.heads=o2o chỉ có nghĩa với model đầu-cuối (YOLO26). "
-            "YOLOv8/11 chỉ có một đầu, dùng heads=both."
-        )
-    log = EpochLog(log_path)
+    (name,) = block["use"]  # apply() chỉ cho một biến thể mỗi lượt
+    mod = importlib.import_module(f".{LOSSES[name]['module']}", __package__)
+    p = block[name]
+    check = getattr(mod, "check_model", None)
+    if check is not None:
+        check(yolo_model.model, p)
+    log = mod.EpochLog(Path(run_dir) / f"loss_{name}.csv")
 
     def on_train_start(trainer):
         from ultralytics.utils.torch_utils import unwrap_model
 
         m = unwrap_model(trainer.model)
-        m.criterion = build_criterion(m, p)
+        m.criterion = mod.build_criterion(m, p)
 
     def on_train_epoch_start(trainer):
         from ultralytics.utils.torch_utils import unwrap_model

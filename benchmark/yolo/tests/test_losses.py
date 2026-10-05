@@ -118,7 +118,7 @@ def test_install_gan_loss_vao_dung_model_dang_train(tmp_path):
     y = _yolo("yolo26n-seg.yaml")
     cfg = _cfg()
     YoloTrainer.apply_loss(cfg, "mask_iou")
-    losses.install(y, cfg["loss"], tmp_path / "loss_mask_iou.csv")
+    losses.install(y, cfg["loss"], tmp_path)
 
     from ultralytics.cfg import get_cfg
 
@@ -136,6 +136,10 @@ def test_install_gan_loss_vao_dung_model_dang_train(tmp_path):
     for cb in y.callbacks["on_train_epoch_start"]:
         cb(trainer)
     assert model.criterion.one2one.epoch == 3 and model.criterion.one2many.epoch == 3
+
+    for cb in y.callbacks["on_train_epoch_end"]:
+        cb(trainer)
+    assert (tmp_path / "loss_mask_iou.csv").exists()  # tên file theo biến thể
 
     snap = copy.deepcopy(model)
     snap.criterion = None  # đúng việc trainer.save_model làm trước khi lưu
@@ -159,14 +163,14 @@ def test_sai_phien_ban_ultralytics_thi_dung(monkeypatch, tmp_path):
     YoloTrainer.apply_loss(cfg, "mask_iou")
     monkeypatch.setattr(ultralytics, "__version__", "8.5.0")
     with pytest.raises(SystemExit, match="8.4.143"):
-        losses.install(_yolo("yolo26n-seg.yaml"), cfg["loss"], tmp_path / "x.csv")
+        losses.install(_yolo("yolo26n-seg.yaml"), cfg["loss"], tmp_path)
 
 
 def test_heads_o2o_voi_model_mot_dau_bi_chan(tmp_path):
     cfg = _cfg(loss={"mask_iou": {"heads": "o2o"}})
     YoloTrainer.apply_loss(cfg, "mask_iou")
     with pytest.raises(SystemExit, match="o2o"):
-        losses.install(_yolo("yolov8n-seg.yaml"), cfg["loss"], tmp_path / "x.csv")
+        losses.install(_yolo("yolov8n-seg.yaml"), cfg["loss"], tmp_path)
 
 
 # --------------------------------------------------------------- dòng lệnh

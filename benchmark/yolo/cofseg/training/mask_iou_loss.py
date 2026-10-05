@@ -201,6 +201,15 @@ class MaskIoUSegLoss(v8SegmentationLoss):
         return loss / fg_mask.sum(), q
 
 
+def check_model(model, p: dict) -> None:
+    """Chặn trước khi train: heads=o2o cần model có đầu one-to-one."""
+    if p["heads"] == "o2o" and not is_end2end(model):
+        raise SystemExit(
+            "loss.mask_iou.heads=o2o chỉ có nghĩa với model đầu-cuối (YOLO26). "
+            "YOLOv8/11 chỉ có một đầu, dùng heads=both."
+        )
+
+
 def build_criterion(model, p: dict):
     """Hàm loss thay cho `model.init_criterion()` của ultralytics."""
     make = partial(MaskIoUSegLoss, mix=p["mix"], warmup_epochs=p["warmup_epochs"])
