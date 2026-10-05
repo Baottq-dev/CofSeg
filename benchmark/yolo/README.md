@@ -214,26 +214,34 @@ nó có dùng loss khác gốc hay không.
 
 ```bash
 python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --list-losses
-python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --data data/export/field/f1 --loss mask_iou
+python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --data data/export/field/f1 --loss dice
+python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --data data/export/field/f1 --loss dice --set loss.dice.weight=2
 python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --data data/export/field/f1 --loss mask_iou --set loss.mask_iou.mix=0.5
 ```
 
 | biến thể | làm gì | tham số (mặc định) |
 |---|---|---|
-| `mask_iou` | điểm phân loại học **IoU mặt nạ** (cắt bằng hộp dự đoán) thay cho CIoU của hộp | `mix` 1.0, `warmup_epochs` 5, `heads` both \| o2o |
+| `mask_iou` (L1) | điểm phân loại học **IoU mặt nạ** (cắt bằng hộp dự đoán) thay cho CIoU của hộp | `mix` 1.0, `warmup_epochs` 5, `heads` both \| o2o |
+| `dice` (L2) | cộng **Dice** vào BCE của mặt nạ từng tán, cùng vùng giám sát (trong box GT) | `weight` 1.0 (Dice nặng ngang BCE; 0 = y hệt gốc) |
 
-- Tên thư mục run mang hậu tố: `..._yolo26s-seg-mask-iou_field-f1_i1024b16e100`;
-  tham số khác mặc định cũng vào tên (`-mask-iou-mix0.5`). `--name` gõ tay thì
-  được giữ nguyên văn.
+- Mỗi lượt một biến thể: `--loss mask_iou,dice` bị chặn. mask_iou tự tính BCE
+  mặt nạ trong bản chép riêng, không đi qua chỗ dice cài đè, nên ghép thẳng thì
+  Dice không chạy mà tên run vẫn ghi là có.
+- Tên thư mục run mang hậu tố: `..._yolo26s-seg-dice_field-f1_i1024b16e100`;
+  tham số khác mặc định cũng vào tên (`-dice-w2`, `-mask-iou-mix0.5`). `--name`
+  gõ tay thì được giữ nguyên văn. Lượt chấm tự mang cùng hậu tố.
 - `config.yaml` và `summary.json` của lượt train ghi khối `loss`; `run.log` luôn
   có một dòng `Loss: ...`, kể cả khi là loss gốc.
-- `loss_mask_iou.csv` cạnh `summary.json`: mỗi epoch, với từng đầu, số anchor
-  dương, IoU mặt nạ trung bình, điểm trung bình và tương quan điểm–IoU. Cột
-  `one2one_r` (YOLO26; model một đầu là `one_r`) tăng dần là dấu hiệu L1 đang
-  làm đúng việc.
+- `loss_<tên>.csv` cạnh `summary.json`, mỗi epoch một dòng, với từng đầu
+  (YOLO26: `one2one_`, `one2many_`; model một đầu: `one_`):
+  - `loss_mask_iou.csv`: số anchor dương, IoU mặt nạ trung bình, điểm trung
+    bình và tương quan điểm–IoU (`_r`). `one2one_r` tăng dần là dấu hiệu L1
+    đang làm đúng việc.
+  - `loss_dice.csv`: số anchor dương, BCE và 1 − Dice trung bình, IoU cứng của
+    mặt nạ trong box GT (`_iou`).
 - Checkpoint vẫn là YOLO-seg chuẩn, chấm bằng đúng lệnh chấm cũ.
 - Viết cho ultralytics 8.4.143; phiên bản khác thì `--loss` dừng ngay.
-  Phân tích dẫn tới L1: `docs/reports/model/phan_tich_chuyen_sau_va_de_xuat_kien_truc_2026-10-04.md`.
+  Phân tích dẫn tới L1, L2: `docs/reports/model/phan_tich_chuyen_sau_va_de_xuat_kien_truc_2026-10-04.md`.
 
 ## Trong thư mục này
 

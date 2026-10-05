@@ -69,6 +69,24 @@ def test_tham_so_khac_mac_dinh_vao_ten():
     assert YoloTrainer.apply_loss(cfg, "mask_iou") == "mask-iou"
 
 
+def test_dice_mac_dinh_va_ten():
+    cfg = _cfg()
+    assert YoloTrainer.apply_loss(cfg, "dice") == "dice"
+    assert cfg["loss"] == {"use": ["dice"], "tag": "dice", "dice": {"weight": 1.0}}
+    assert losses.describe_active(cfg["loss"]) == "Loss: dice (weight 1)"
+    assert YoloTrainer.apply_loss(_cfg(loss={"dice": {"weight": 2}}), "dice") == "dice-w2"
+    assert YoloTrainer.apply_loss(_cfg(loss={"dice": {"weight": 0.5}}), "dice") == "dice-w0.5"
+    assert YoloTrainer.apply_loss(_cfg(loss={"dice": {"weight": 1}}), "dice") == "dice"
+
+
+@pytest.mark.parametrize("spec", ["mask_iou,dice", "dice,mask_iou"])
+def test_ghep_hai_bien_the_bi_chan(spec):
+    """mask_iou tự tính BCE mặt nạ, không đi qua chỗ dice cài đè: ghép thẳng thì
+    Dice không chạy mà tên run vẫn ghi `mask-iou-dice`."""
+    with pytest.raises(SystemExit, match="một biến thể"):
+        YoloTrainer.apply_loss(_cfg(), spec)
+
+
 def test_lap_ten_va_khoang_trang():
     cfg = _cfg()
     assert YoloTrainer.apply_loss(cfg, " mask_iou , mask_iou ") == "mask-iou"
@@ -84,6 +102,10 @@ def test_lap_ten_va_khoang_trang():
     ("mask_iou", {"mask_iou": {"warmup_epochs": 2.5}}, ">= 0"),
     ("mask_iou", {"mask_iou": {"heads": "o2m"}}, "o2o"),
     ("mask_iou", {"dice": {"weight": 1}}, "không bật"),   # tham số cho biến thể chưa bật
+    ("dice", {"dice": {"weight": -1}}, ">= 0"),
+    ("dice", {"dice": {"weight": True}}, ">= 0"),
+    ("dice", {"dice": {"weight": "1"}}, ">= 0"),
+    ("dice", {"dice": {"weigth": 1}}, "weight"),          # gõ sai tham số: gợi ý
 ])
 def test_gia_tri_sai_bi_chan(spec, block, match):
     cfg = _cfg(**({"loss": block} if block else {}))
@@ -93,7 +115,8 @@ def test_gia_tri_sai_bi_chan(spec, block, match):
 
 def test_list_losses_liet_ke_tham_so():
     out = YoloTrainer.describe_losses()
-    for s in ("mask_iou", "mask_iou.mix", "mask_iou.warmup_epochs", "mask_iou.heads", "--loss mask_iou"):
+    for s in ("mask_iou", "mask_iou.mix", "mask_iou.warmup_epochs", "mask_iou.heads",
+              "dice", "dice.weight", "--loss dice"):
         assert s in out
 
 
@@ -146,6 +169,30 @@ def test_install_gan_loss_vao_dung_model_dang_train(tmp_path):
     assert type(snap) is SegmentationModel
 
 
+def test_install_dice_gan_dung_lop_va_ten_nhat_ky(tmp_path):
+    from ultralytics.cfg import get_cfg
+    from ultralytics.utils.loss import E2ELoss
+
+    from cofseg.training.dice_loss import DiceSegLoss
+
+    y = _yolo("yolo26n-seg.yaml")
+    cfg = _cfg()
+    YoloTrainer.apply_loss(cfg, "dice")
+    losses.install(y, cfg["loss"], tmp_path)
+    model = y.model
+    model.args = get_cfg()
+    trainer = SimpleNamespace(model=model, epoch=0)
+    for event in ("on_train_start", "on_train_epoch_start", "on_train_epoch_end"):
+        for cb in y.callbacks[event]:
+            cb(trainer)
+    assert isinstance(model.criterion, E2ELoss)
+    assert isinstance(model.criterion.one2one, DiceSegLoss)
+    assert isinstance(model.criterion.one2many, DiceSegLoss)
+    assert model.criterion.one2one.weight == 1.0
+    assert (tmp_path / "loss_dice.csv").exists()
+    assert not (tmp_path / "loss_mask_iou.csv").exists()
+
+
 def test_khong_co_co_thi_khong_gan_callback():
     """Đường mặc định không đụng vào callback nào của ultralytics."""
     y = _yolo("yolo26n-seg.yaml")
@@ -189,6 +236,15 @@ def test_cli_print_config_hien_khoi_loss():
     moi = _train_py("--print-config", "--loss", "mask_iou", "--set", "loss.mask_iou.mix=0.5")
     assert moi.returncode == 0, moi.stderr
     assert '"tag": "mask-iou-mix0.5"' in moi.stdout
+
+
+def test_cli_dice_va_chan_ghep():
+    r = _train_py("--print-config", "--loss", "dice", "--set", "loss.dice.weight=2")
+    assert r.returncode == 0, r.stderr
+    assert '"tag": "dice-w2"' in r.stdout
+    r = _train_py("--print-config", "--loss", "mask_iou,dice")
+    assert r.returncode != 0
+    assert "một biến thể" in (r.stdout + r.stderr)
 
 
 def test_cli_set_loss_thieu_co_bao_loi():

@@ -42,6 +42,12 @@ def _check_mask_iou(p: dict) -> None:
         raise SystemExit(f"loss.mask_iou.heads phải là 'both' hoặc 'o2o', nhận được {p['heads']!r}")
 
 
+def _check_dice(p: dict) -> None:
+    w = p["weight"]
+    if isinstance(w, bool) or not isinstance(w, (int, float)) or float(w) < 0.0:
+        raise SystemExit(f"loss.dice.weight phải là số >= 0, nhận được {w!r}")
+
+
 #: tên -> mô tả, tham số (mặc định, nhãn ngắn trong tên thư mục, giải thích), hàm kiểm.
 #: Thứ tự khai ở đây là thứ tự trong tên thư mục, nên `--loss b,a` và
 #: `--loss a,b` ra cùng một tên.
@@ -55,6 +61,14 @@ LOSSES: dict = {
         },
         "check": _check_mask_iou,
         "module": "mask_iou_loss",
+    },
+    "dice": {
+        "doc": "L2: cộng Dice vào BCE của mặt nạ từng tán, cùng vùng giám sát (trong box GT)",
+        "params": {
+            "weight": (1.0, "w", "hệ số của Dice so với BCE: 0 = y hệt gốc, 1 = nặng ngang BCE"),
+        },
+        "check": _check_dice,
+        "module": "dice_loss",
     },
 }
 
@@ -94,6 +108,17 @@ def apply(cfg: dict, spec: str | None) -> str:
             hint = f" Ý bạn là: {', '.join(near)}?" if near else ""
             raise SystemExit(f"--loss {name!r} không có.{hint} Xem --list-losses")
     use = [n for n in LOSSES if n in asked]
+    if len(use) > 1:
+        # Không phải luật cấm, mà vì ghép thẳng sẽ chạy sai trong im lặng: mỗi
+        # biến thể thay một chỗ khác của hàm loss, và mask_iou tự tính BCE
+        # mặt nạ trong bản chép riêng, không gọi single_mask_loss mà dice cài
+        # đè. Lượt chạy sẽ mang tên `mask-iou-dice` trong khi Dice không hề
+        # được tính. Muốn ghép thì phải cho mask_iou đi qua cùng một hàm mặt
+        # nạ, kèm test chứng minh cả hai tác dụng cùng có mặt.
+        raise SystemExit(
+            f"--loss {','.join(use)}: mỗi lượt chỉ bật được một biến thể loss. "
+            "Ghép thẳng thì biến thể sau không chạy mà tên run vẫn ghi là có."
+        )
     for extra in set(block or {}) - set(use):
         raise SystemExit(f"Có tham số cho `loss.{extra}` nhưng --loss không bật {extra!r}.")
 
@@ -126,9 +151,9 @@ def describe() -> str:
     for name, spec_ in LOSSES.items():
         lines.append(f"  {name}: {spec_['doc']}")
         for k, (default, _tag, doc) in spec_["params"].items():
-            lines.append(f"      {name}.{k:<14} mặc định {default!r:<7} {doc}")
-    lines += ["", "Bật:       --loss mask_iou",
-              "Chỉnh:     --loss mask_iou --set loss.mask_iou.mix=0.5"]
+            lines.append(f"      {name + '.' + k:<24} mặc định {default!r:<7} {doc}")
+    lines += ["", "Bật:       --loss dice           (mỗi lượt một biến thể)",
+              "Chỉnh:     --loss dice --set loss.dice.weight=2"]
     return "\n".join(lines)
 
 

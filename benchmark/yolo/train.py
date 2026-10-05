@@ -23,9 +23,9 @@ thay vì im lặng bỏ qua rồi để bạn chờ ba tiếng mới biết tham
 Vẫn giữ --set làm lối thoát cho khoá lồng nhau chưa có cờ riêng.
 
 Hàm loss mặc định là loss gốc của framework. Biến thể chỉ bật bằng cờ, và tên
-thư mục run mang hậu tố của nó (yolo26s-seg-mask-iou_...):
+thư mục run mang hậu tố của nó (yolo26s-seg-dice_...):
 
-    python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --data data/export/field/f1 --loss mask_iou
+    python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --data data/export/field/f1 --loss dice
     python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --list-losses
 
 Script này KHÔNG biết YOLO tồn tại. Nó đọc khoá `trainer` trong config, tra sổ
@@ -99,9 +99,9 @@ def main() -> int:
                     help="đổi phiên bản/cỡ model, vd yolo11m-seg — xem --list-models")
     ap.add_argument("--list-models", dest="list_models", action="store_true",
                     help="liệt kê phiên bản và cỡ có trọng số COCO rồi dừng")
-    ap.add_argument("--loss", default=None, metavar="TÊN[,TÊN]",
-                    help="biến thể hàm loss, vd --loss mask_iou. Bỏ trống = loss gốc "
-                         "của framework — bảng benchmark luôn train như vậy. Xem --list-losses")
+    ap.add_argument("--loss", default=None, metavar="TÊN",
+                    help="biến thể hàm loss, vd --loss dice (mỗi lượt một biến thể). Bỏ trống "
+                         "= loss gốc của framework — bảng benchmark luôn train như vậy. Xem --list-losses")
     ap.add_argument("--list-losses", dest="list_losses", action="store_true",
                     help="liệt kê biến thể loss và tham số của chúng rồi dừng")
     ap.add_argument("--data", default=None, metavar="THƯ_MỤC_FOLD",
