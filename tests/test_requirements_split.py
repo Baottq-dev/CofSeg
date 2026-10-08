@@ -92,16 +92,22 @@ def test_moi_file_khai_du_goi_cofseg_dung_chung(model):
 
 
 def test_goc_khong_con_goi_cua_benchmark():
-    """app/ và canopyseg/ không import gói nào trong số này — đã kiểm cả repo."""
+    """app/ và canopyseg/ không import gói nào trong số này — đã kiểm cả repo.
+
+    ultralytics không nằm trong danh sách: file gốc ghim nó để đọc/kiểm bộ
+    YOLO-seg do annotator xuất ra, cùng bản với benchmark/yolo.
+    """
     pins = _pins(_lines(ROOT / "requirements.txt"))
-    for goi in ("mmcv", "mmdet", "mmengine", "ultralytics", "timm", "shapely"):
+    for goi in ("mmcv", "mmdet", "mmengine", "timm", "shapely"):
         assert goi not in pins, f"{goi} là của benchmark, không phải của app/"
 
 
 def test_goc_van_du_cho_annotator():
+    """Gói annotator import thẳng. pydantic đi theo fastapi; hydra-core và
+    iopath đi theo SAM 2, cài từ git kèm phụ thuộc như README gốc ghi."""
     pins = _pins(_lines(ROOT / "requirements.txt"))
-    for goi in ("fastapi", "uvicorn", "pydantic", "hydra-core", "iopath",
-                "pycocotools", "opencv-python", "numpy", "torch"):
+    for goi in ("fastapi", "uvicorn", "pycocotools", "opencv-python", "numpy",
+                "pyyaml", "torch"):
         assert goi in pins, f"app/ cần {goi}"
 
 
@@ -274,10 +280,11 @@ def test_readme_chi_con_mot_ban_cuda():
     """Một bản CUDA, không hướng thứ hai.
 
     cu121 (mmcv có wheel, nhưng không có kernel sm_120) và cu130 đều đã bỏ.
-    Còn lệnh của chúng trong tài liệu là còn đường dựng ra env thứ hai.
+    Còn lệnh của chúng trong tài liệu benchmark là còn đường dựng ra env thứ
+    hai. README gốc chỉ lo env annotator (SAM chạy trên torch cu121), không
+    dựng env benchmark, nên không nằm trong danh sách.
     """
-    for path in (ROOT / "README.md", BENCH / "README.md",
-                 *(BENCH / m / "README.md" for m in MODELS)):
+    for path in (BENCH / "README.md", *(BENCH / m / "README.md" for m in MODELS)):
         doc = path.read_text(encoding="utf-8")
         assert "cu128" in doc, f"{path.name}: thiếu bản CUDA đang dùng"
         for bo in ("cu121", "cu130"):
@@ -325,13 +332,12 @@ def test_header_khong_con_nhac_cu130(path):
     assert "cu130" not in doc, f"{path.name}: header còn nhắc cu130 đã bỏ"
 
 
-def test_ca_hai_readme_ghim_cung_mot_lenh_torch():
-    """Hai README phải nêu đúng cùng một lệnh cài torch. Lệch nhau là hai
-    người trong nhóm chạy hai bản mà tưởng là cùng."""
-    for path in (ROOT / "README.md", BENCH / "README.md"):
-        doc = path.read_text(encoding="utf-8")
-        assert "torch==2.11.0+cu128" in doc, f"{path.name}: thiếu lệnh cài torch"
-        assert "torch==2.11.0+cu130" not in doc, f"{path.name}: còn lệnh cu130 đã bỏ"
+def test_readme_benchmark_ghim_mot_lenh_torch():
+    """README benchmark phải nêu đúng lệnh cài torch chung, không còn bản cu130.
+    README gốc chỉ lo env annotator nên không phải nêu lệnh này."""
+    doc = (BENCH / "README.md").read_text(encoding="utf-8")
+    assert "torch==2.11.0+cu128" in doc, "benchmark/README.md: thiếu lệnh cài torch"
+    assert "torch==2.11.0+cu130" not in doc, "benchmark/README.md: còn lệnh cu130 đã bỏ"
 
 
 def test_huong_dan_toolkit_dung_ban_12_8():
@@ -392,10 +398,10 @@ def test_readme_kiem_ca_torchvision():
     Ngày 29/09/2026 trên Vast, lệnh cài chỉ có torch nên torchvision ở lại bản
     cũ mà không ai thấy.
     """
-    for path in (ROOT / "README.md", BENCH / "README.md"):
-        doc = path.read_text(encoding="utf-8")
-        assert "torchvision.ops import nms" in doc, f"{path.name}: thiếu phép gọi op thật"
-        assert "torchvision==0.26.0+cu128" in doc,             f"{path.name}: lệnh cài không kèm torchvision"
+    doc = (BENCH / "README.md").read_text(encoding="utf-8")
+    assert "torchvision.ops import nms" in doc, "benchmark/README.md: thiếu phép gọi op thật"
+    assert "torchvision==0.26.0+cu128" in doc, \
+        "benchmark/README.md: lệnh cài không kèm torchvision"
 
 
 # --------------------- README của từng model phải tự dựng được env riêng
@@ -422,10 +428,9 @@ def test_readme_model_tu_dung_duoc_env(model):
 
 
 def test_lenh_cai_torch_giong_nhau_o_moi_noi():
-    """Sáu README cộng năm header requirements. Một chỗ trôi là hai người
-    trong nhóm dựng ra hai env khác nhau mà không ai thấy."""
-    for path in (ROOT / "README.md", BENCH / "README.md",
-                 *(BENCH / m / "README.md" for m in MODELS)):
+    """Năm README benchmark. Một chỗ trôi là hai người trong nhóm dựng ra hai
+    env khác nhau mà không ai thấy. README gốc chỉ lo env annotator."""
+    for path in (BENCH / "README.md", *(BENCH / m / "README.md" for m in MODELS)):
         doc = path.read_text(encoding="utf-8")
         assert "torch==2.11.0+cu128" in doc and "torchvision==0.26.0+cu128" in doc, \
             f"{path.relative_to(ROOT)}: lệnh cài torch trôi khỏi bản chung"
