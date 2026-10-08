@@ -49,6 +49,7 @@ conda create -y -n cofseg python=3.12 && conda activate cofseg
 
 ```
 pip install -r requirements.txt
+pip install scikit-learn==1.9.1 pytest==9.1.1
 pip install -e .
 ```
 
