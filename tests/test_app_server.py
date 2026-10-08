@@ -7,6 +7,7 @@ thư mục tạm ngay sau đó; SAM không bị nạp (chỉ nạp lười khi b
 
 import json
 import os
+import re
 
 import cv2
 import numpy as np
@@ -149,3 +150,16 @@ def test_export_carries_reviewed_empty_images_as_background(root):
     m = cv2.imread(str(d / "masks" / "field_9__10__1__a.png"), cv2.IMREAD_UNCHANGED)
     assert int(m.max()) == 1
 
+
+def test_page_loads_its_css_and_js_from_static():
+    # CSS/JS nằm ở app/static/css, app/static/js; trang chỉ còn khung HTML.
+    from fastapi.testclient import TestClient
+
+    c = TestClient(server.app)
+    page = c.get("/").text
+    assert "<style>" not in page and "<script>\n" not in page and "{{V}}" not in page
+    css = re.search(r'href="(/static/css/app\.css\?v=\d+)"', page)
+    js = re.search(r'src="(/static/js/app\.js\?v=\d+)"', page)
+    assert css and js
+    for url in (css.group(1), js.group(1)):
+        assert c.get(url).status_code == 200

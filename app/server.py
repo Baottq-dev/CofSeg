@@ -12,6 +12,7 @@ import numpy as np
 import yaml
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app import flower as fl
@@ -342,9 +343,25 @@ class SaveReq(FlowerParams):
     # sat_max/val_min/method/tham số Otsu: từ FlowerParams — chỉ dùng khi flower.
 
 
+STATIC_DIR = os.path.join(HERE, "static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+def _static_version():
+    # mtime mới nhất trong static/, gắn vào ?v= của CSS/JS: sửa file nào là
+    # đường dẫn đổi, trình duyệt không dùng lại bản cũ trong cache. `-r` chỉ
+    # nạp lại server khi .py đổi nên không dựa vào giờ khởi động được.
+    newest = 0.0
+    for d, _, files in os.walk(STATIC_DIR):
+        for f in files:
+            newest = max(newest, os.path.getmtime(os.path.join(d, f)))
+    return str(int(newest))
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return open(os.path.join(HERE, "static", "index.html"), encoding="utf-8").read()
+    html = open(os.path.join(STATIC_DIR, "index.html"), encoding="utf-8").read()
+    return html.replace("{{V}}", _static_version())
 
 
 @app.get("/api/images")

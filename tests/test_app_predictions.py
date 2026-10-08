@@ -189,8 +189,9 @@ def test_giao_dien_khoa_sua_o_che_do_xem():
     gỡ `predLocked()` khỏi các lối vào sửa thì phải gãy ở đây."""
     from pathlib import Path
 
-    src = Path(__file__).resolve().parents[1] / "app" / "static" / "index.html"
-    s = src.read_text(encoding="utf-8")
+    # Mã giao diện nằm ở app/static/js/, không còn viết thẳng trong index.html.
+    js = Path(__file__).resolve().parents[1] / "app" / "static" / "js"
+    s = "\n".join(p.read_text(encoding="utf-8") for p in sorted(js.glob("*.js")))
     assert "function predLocked()" in s
     # Chế độ 'view' chặn mọi nhánh sửa trong handler chuột.
     assert "function setMode(m){if(predOn&&m!=='view')return;" in s
