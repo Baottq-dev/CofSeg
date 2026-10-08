@@ -1,71 +1,26 @@
-# Môi trường cho app/ (annotator) và canopyseg/ — KHÔNG có model benchmark.
-#
-#     pip install -r requirements.txt
-#     pip install -e .
-#
-# Bốn model benchmark có file riêng, mỗi thư mục một file, vì yêu cầu phiên bản
-# của chúng loại trừ nhau (mmcv của SOLOv2 khoá ở torch 2.4/cu121, còn GPU đời
-# Blackwell lại đòi torch >= 2.7):
-#
-#     benchmark/yolo/requirements.txt
-#     benchmark/solov2/requirements.txt
-#     benchmark/maskrcnn/requirements.txt
-#     benchmark/mask2former/requirements.txt
-#
-# Mỗi thư mục benchmark tự chứa bản `cofseg/` riêng và `train.py` tự thêm thư
-# mục của nó vào sys.path, nên chạy benchmark KHÔNG cần `pip install -e .`.
-#
-# MỌI GÓI Ở ĐÂY LÀ WHEEL DỰNG SẴN — không gói nào biên dịch, nên cài được trên
-# mọi máy: không cần nvcc, không cần CUDA toolkit, không cần trình biên dịch.
---extra-index-url https://download.pytorch.org/whl/cu121
-
-# ---- torch: ghim cả hậu tố +cu121 để thiếu index là pip báo ngay, chứ không
-# âm thầm kéo bản CPU. app/ chỉ dùng torch để chạy SAM, không huấn luyện gì,
-# nên bản nào cũng được — giữ cu121 cho khớp với benchmark, đỡ phải nhớ.
-torch==2.5.1+cu121; sys_platform == "win32"
-torchvision==0.20.1+cu121; sys_platform == "win32"
-torch==2.4.1+cu121; sys_platform == "linux"
-torchvision==0.19.1+cu121; sys_platform == "linux"
-
-# ---- annotator (app/server.py, app/annotator.py, app/flower.py)
-fastapi==0.139.0       # server annotator tự xây
-uvicorn==0.49.0        # chạy server đó
-pydantic==2.12.4       # app/server.py khai schema request
+# QUAN TRỌNG: cài bản GPU trước cho khớp CUDA của máy, rồi mới pip install -r:
+#   pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
+# Hai dòng dưới ghim cả hậu tố +cu121 nên CHỈ khớp khi cài từ index trên. Cố ý
+# như vậy: thiếu index thì pip báo lỗi ngay, thay vì âm thầm kéo bản CPU về rồi
+# để bạn ngồi chờ SAM chạy trên CPU mà không hiểu vì sao chậm.
+torch==2.5.1+cu121
+torchvision==0.20.1+cu121
 numpy==2.4.4
-opencv-python==5.0.0.93
-pillow==12.2.0
-pyyaml==6.0.3
-pycocotools==2.0.11    # app/ xuất mặt nạ dạng RLE của COCO
-
-# ---- SAM 2.1 / SAM 3 (app/annotator.py) cài bằng LỆNH RIÊNG, không nằm ở đây:
-#
-#     pip install --no-deps --no-build-isolation \
-#       "SAM-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4"
-#
-# --no-deps vì setup.py của SAM 2 khai `torch>=2.5.1`, còn máy Linux ở đây là
-# torch 2.4.1. Để nguyên mốc đó thì pip chết:
-#
-#     ERROR: Cannot install -r requirements.txt and torch==2.4.1+cu121
-#     The conflict is caused by: sam-2 1.0 depends on torch>=2.5.1
-#
-# Bỏ qua mốc đó AN TOÀN: nó xuất hiện ở commit 11/12/2024 để `torch.compile`
-# toàn model cho nhánh video (VOS). app/annotator.py chỉ dùng build_sam2 +
-# SAM2ImagePredictor — nhánh ảnh — và không gọi torch.compile ở đâu.
-# Hai gói SAM thật sự cần mà không tự đến thì ghim ngay dưới:
-hydra-core==1.3.3      # SAM đọc config model bằng hydra
-iopath==0.1.9          # SAM nạp checkpoint qua iopath
-
-# ---- scripts/
-scikit-image==0.26.0   # scripts/06_superpixel_flower.py (SLIC)
-# scipy: scikit-image tự kéo theo, nhưng ghim tường minh để hai máy cài cách
-# nhau vài tháng vẫn ra cùng một bản. pyproject.toml khai requires-python
-# >= 3.12 chính vì ba gói này chỉ có wheel từ đó trở lên.
 scipy==1.18.0
-
-# ---- TUỲ CHỌN, cài riêng khi cần
-#
-# pycolmap: chỉ canopyseg/datasets/sfm.py dùng, để đo chồng lấp giữa các ảnh
-# bay. Gói này nặng và không cần cho việc gán nhãn lẫn huấn luyện, nên
-# `require_pycolmap()` báo lỗi rõ ràng khi thiếu thay vì bắt mọi người cài:
-#
-#     pip install pycolmap
+scikit-image==0.26.0
+# albumentations và ultralytics kéo theo opencv-python-headless cùng phiên bản;
+# cả hai gói ghi đè lên cùng thư mục cv2/ nên đừng để lệch phiên bản giữa chúng.
+opencv-python==5.0.0.93
+rasterio==1.5.0
+pycocotools==2.0.11
+pyyaml==6.0.3
+tqdm==4.68.3
+albumentations==2.0.8
+gradio==6.19.0         # giao diện Phase 1 (app/)
+pillow==12.2.0
+fastapi==0.139.0       # annotator tự xây (app/server.py)
+uvicorn==0.49.0        # chạy server annotator
+ultralytics==8.4.143   # đọc/kiểm bộ YOLO-seg do annotator xuất ra
+# SAM2: cài từ GitHub. Ghim đúng commit đang dùng (dist name là SAM-2 1.0):
+#   pip install "git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4"
+# (Phase 1 CHẈ cần SAM. detectron2 / stardist / coral-pytorch sẽ thêm ở phase sau.)
