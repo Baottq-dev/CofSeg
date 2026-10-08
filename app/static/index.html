@@ -120,6 +120,9 @@
   .hsvbox .grp{display:flex;flex-direction:column;gap:6px}
   .hsvbox .grp[hidden],.hsvbox label[hidden]{display:none}
   .hsvbox .btn{margin-top:2px}
+  /* Cả khối đếm hoa HSV/Otsu nằm sau một công tắc, tắt mặc định. */
+  .flowerbox{display:flex;flex-direction:column;gap:8px}
+  .flowerbox[hidden]{display:none}
   .cls .cdel{border:0;background:transparent;color:var(--muted2);cursor:pointer;font-size:12px}
   .cls .cdel:hover{color:#f7a5a5}
   .reglist{flex:1;overflow:auto;display:flex;flex-direction:column;gap:5px;min-height:80px}
@@ -226,7 +229,7 @@
       <div class="stat"><div class="snum" id="stTotal">0</div><div class="slbl">Total Images</div></div>
       <div class="stat"><div class="snum" id="stLab">0</div><div class="slbl">Labeled</div></div>
       <div class="stat"><div class="snum" id="stUnlab">0</div><div class="slbl">Unlabeled</div></div>
-      <div class="stat"><div class="snum" id="stCls">0</div><div class="slbl">Số mức nhãn</div></div>
+      <div class="stat" id="stClsBox"><div class="snum" id="stCls">0</div><div class="slbl">Số mức nhãn</div></div>
     </div>
     <div class="sec">Train Model</div>
     <div class="train"><div class="trainicon">🚀</div><div class="traintxt"><b>Train model</b><span>Sắp có · Preparing…</span></div></div>
@@ -264,6 +267,8 @@
   </div>
   <div class="resizer" data-t="rightcol" data-dir="r"></div>
   <aside id="rightcol">
+    <div class="lblrow">Đếm hoa HSV/Otsu <button id="flowerOn" class="switch"><span class="knob"></span></button></div>
+    <div id="flowerBox" class="flowerbox" hidden>
     <div class="sec">Mật độ hoa <button id="addCls" class="addbtn" title="Đếm hoa & tự phân loại tất cả vùng">⚡</button></div>
     <div id="classes" class="clslist"></div>
     <div class="sec">Đếm pixel hoa</div>
@@ -285,6 +290,7 @@
       </div>
       <label class="chk"><input id="showMask" type="checkbox"/> Hiện pixel hoa trên ảnh</label>
       <button id="autoAll" class="btn">⚡ Đếm hoa & phân loại tất cả</button>
+    </div>
     </div>
     <div class="sec">Dự đoán model <span class="pill" id="predCount">—</span></div>
     <div id="predBox" class="predbox">
@@ -403,10 +409,15 @@ let satMax=50,valMin=180;
 // trường đầu của polygon khi lưu (label_method ghi lại điều đó).
 let fmethod='hsv',otsuP={channel:'white',s_max:50,class_s_max:0,sep_min:0,area_min:0,area_max:0,elong_max:0,clip_rule:false};
 let showMask=false,maskImg=null,maskTimer=null,maskToken=0,maskUrl=null;
+// Công tắc của cả phần đếm hoa HSV/Otsu, TẮT mặc định. Tắt thì không gọi
+// /api/flower*, không hiện mức/%, tán vẽ một màu, và lúc lưu server chỉ ghi
+// hình polygon (cờ `flower` trong payload). Bật lại là y như trước.
+let flowerOn=false;
+const CROWN_COLOR='#60a5fa';
 function flowerParams(){return Object.assign({sat_max:satMax,val_min:valMin,method:fmethod},otsuP);}
 function loadFlowerPrefs(){try{const s=JSON.parse(localStorage.getItem('cofseg_flower'));if(!s)return;
- if(s.method==='hsv'||s.method==='otsu')fmethod=s.method;if(s.otsu)Object.assign(otsuP,s.otsu);showMask=!!s.showMask;}catch(e){}}
-function saveFlowerPrefs(){localStorage.setItem('cofseg_flower',JSON.stringify({method:fmethod,otsu:otsuP,showMask:showMask}));}
+ if(s.method==='hsv'||s.method==='otsu')fmethod=s.method;if(s.otsu)Object.assign(otsuP,s.otsu);showMask=!!s.showMask;flowerOn=!!s.on;}catch(e){}}
+function saveFlowerPrefs(){try{localStorage.setItem('cofseg_flower',JSON.stringify({method:fmethod,otsu:otsuP,showMask:showMask,on:flowerOn}));}catch(e){}}
 loadFlowerPrefs();
 function methodName(){return fmethod==='hsv'?'HSV':'Otsu + blob';}
 function pctTxt(v){return v==null?'—':v.toFixed(1)+'%';}
@@ -455,7 +466,7 @@ function renderClasses(){const box=$('classes');box.innerHTML='';
 // Giữ THAM CHIẾU vùng qua await, không giữ chỉ số: xoá một vùng trong lúc server
 // đang đếm thì chỉ số trượt, kết quả gán nhầm sang vùng kế. Vùng không còn
 // trong inst (đã xoá, hoặc Ctrl+Z thay cả mảng) thì bỏ qua kết quả của nó.
-async function computeFlower(idxs,force){if(!current)return;const targets=idxs.map(i=>inst[i]).filter(Boolean);if(!targets.length)return;
+async function computeFlower(idxs,force){if(!flowerOn||!current)return;const targets=idxs.map(i=>inst[i]).filter(Boolean);if(!targets.length)return;
  const who=current,polys=targets.map(r=>r.poly);
  try{const r=await(await fetch('/api/flower',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({name:who,polygons:polys},flowerParams()))})).json();
   if(current!==who)return;
@@ -467,7 +478,7 @@ async function computeFlower(idxs,force){if(!current)return;const targets=idxs.m
    if(force)t.manual=false;
    if(!t.manual)t.cls=densOf(rt);});
   persist();renderRegions();renderClasses();draw();}catch(e){alert('Không đếm được hoa (đã khởi động lại server chưa?): '+e);}}
-function autoAll(){if(!inst.length){alert('Chưa có vùng nào để phân loại.');return;}pushHist();computeFlower(inst.map((_,i)=>i),true);}
+function autoAll(){if(!flowerOn)return;if(!inst.length){alert('Chưa có vùng nào để phân loại.');return;}pushHist();computeFlower(inst.map((_,i)=>i),true);}
 $('addCls').onclick=autoAll;$('autoAll').onclick=autoAll;
 $('satMax').oninput=()=>{satMax=parseInt($('satMax').value)||50;};
 $('valMin').oninput=()=>{valMin=parseInt($('valMin').value)||180;};
@@ -497,8 +508,8 @@ $('showMask').onchange=()=>{showMask=$('showMask').checked;saveFlowerPrefs();sch
 // Lớp phủ pixel hoa: PNG trong suốt cỡ cả ảnh do server vẽ theo phương pháp đang
 // chọn. Làm mới có trễ 400 ms để kéo điểm liên tục không dội server; token và
 // tên ảnh chặn kết quả cũ đè lên ảnh mới.
-function scheduleMask(){clearTimeout(maskTimer);if(!showMask){maskImg=null;draw();return;}maskTimer=setTimeout(fetchMask,400);}
-async function fetchMask(){if(!showMask||!current||!ready||!inst.length){maskImg=null;draw();return;}
+function scheduleMask(){clearTimeout(maskTimer);if(!flowerOn||!showMask){maskImg=null;draw();return;}maskTimer=setTimeout(fetchMask,400);}
+async function fetchMask(){if(!flowerOn||!showMask||!current||!ready||!inst.length){maskImg=null;draw();return;}
  const who=current,tok=++maskToken;
  try{const r=await fetch('/api/flower_mask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({name:who,polygons:inst.map(x=>x.poly)},flowerParams()))});
   if(!r.ok)throw new Error('HTTP '+r.status);const blob=await r.blob();
@@ -507,20 +518,31 @@ async function fetchMask(){if(!showMask||!current||!ready||!inst.length){maskImg
   im.src=URL.createObjectURL(blob);}
  catch(e){maskImg=null;draw();}}
 syncFlowerUI();
+// Bật/tắt chỉ đổi cách HIỂN THỊ và việc lưu về sau, không tự lưu gì: bật lên
+// thì vùng nào chưa có % vẫn để "—" cho tới khi bấm ⚡.
+function syncFlowerOn(){const b=$('flowerOn');b.classList.toggle('on',flowerOn);
+ b.title=flowerOn?'Đang bật: đếm pixel hoa HSV/Otsu cho từng tán và lưu vào file nhãn. Bấm để tắt.'
+  :'Đang tắt: chỉ lưu hình polygon, không đọc ảnh để đếm hoa. Bấm để bật (thí nghiệm cũ, mật độ hoa sẽ tính từ mask hoa).';
+ $('flowerBox').hidden=!flowerOn;$('stClsBox').hidden=!flowerOn;}
+$('flowerOn').onclick=()=>{flowerOn=!flowerOn;saveFlowerPrefs();syncFlowerOn();renderRegions();scheduleMask();draw();};
+syncFlowerOn();
 function regionArea(r){const p=r.poly,n=p.length/2;let a=0;for(let i=0;i<n;i++){const j=(i+1)%n;a+=p[i*2]*p[j*2+1]-p[j*2]*p[i*2+1];}return Math.abs(a)/2;}
 // Dựng lại cả danh sách thì scrollTop về 0: ảnh 30-48 vùng, bấm 👁/⚡/đổi lớp ở
 // hàng dưới là hàng đó bay khỏi tầm nhìn, trông như vùng đã mất. Giữ lại vị
 // trí cuộn; riêng khi VÙNG ĐƯỢC CHỌN đổi (bấm trên canvas) thì cuộn tới nó.
 let lastSelRow=-1;
 function renderRegions(){const box=$('regions');const st=box.scrollTop;box.innerHTML='';$('rcount').textContent=inst.length;
- inst.forEach((r,i)=>{const c=clsById(r.cls)||{name:'?',color:'#888'};
+ inst.forEach((r,i)=>{const c=flowerOn?(clsById(r.cls)||{name:'?',color:'#888'}):{name:'',color:CROWN_COLOR};
   const row=document.createElement('div');row.className='region'+(i===sel?' sel':'');
   const head=document.createElement('div');head.className='rhead';
   const dot=document.createElement('span');dot.className='dot';dot.style.background=c.color;
   const idb=document.createElement('b');idb.textContent='#'+r.id;
-  const cn=document.createElement('span');cn.className='rcls';cn.textContent=c.name+(r.manual?' ✋':'');
-  cn.title=r.manual?'Mức do bạn gán tay — máy sẽ không ghi đè. Bấm ⚡ để phân loại lại tự động.':'Mức do '+methodName()+' tự phân loại';
-  const pc=document.createElement('span');pc.className='rpct';pc.textContent=(r.pct==null?'—':'🌸 '+r.pct.toFixed(1)+'%');
+  const cn=document.createElement('span');cn.className='rcls';
+  // Tắt đếm hoa: hàng chỉ còn số và diện tích tán, không còn mức/%/⚡.
+  if(flowerOn){cn.textContent=c.name+(r.manual?' ✋':'');
+   cn.title=r.manual?'Mức do bạn gán tay — máy sẽ không ghi đè. Bấm ⚡ để phân loại lại tự động.':'Mức do '+methodName()+' tự phân loại';}
+  else cn.textContent=Math.round(regionArea(r)).toLocaleString('vi-VN')+' px';
+  const pc=document.createElement('span');pc.className='rpct';pc.textContent=flowerOn?(r.pct==null?'—':'🌸 '+r.pct.toFixed(1)+'%'):'';
   const ps=r.pcts||{},od=r.od;
   pc.title='Tỉ lệ pixel hoa ('+methodName()+')\nHSV '+pctTxt(ps.hsv)+' · Otsu '+pctTxt(ps.otsu)+(od?' ['+(od.channel||'')+' T='+(od.thr==null?'—':Math.round(od.thr))+(od.thr1!=null?' T1='+Math.round(od.thr1):'')+' η='+(od.sep==null?'—':(+od.sep).toFixed(2))+(od.class_s!=null?' S lớp='+Math.round(od.class_s):'')+' '+(od.n_kept==null?'':od.n_kept+'/'+od.n_blobs+' blob')+(od.rejected?' '+od.rejected:'')+']':'');
   head.title='#'+r.id+' · '+(r.poly.length/2)+' đỉnh';
@@ -548,7 +570,8 @@ function renderRegions(){const box=$('regions');const st=box.scrollTop;box.inner
   // đúng việc người ta cần lúc so sánh. Ba nút còn lại đều ghi xuống đĩa.
   [selc,bF,bD].forEach(el=>{if(predLocked()){el.disabled=true;el.style.opacity=.4;
    el.style.cursor='not-allowed';el.title='Đang ở chế độ xem dự đoán — tắt để sửa lại';}});
-  act.appendChild(selc);act.appendChild(bF);act.appendChild(bV);act.appendChild(bD);
+  if(flowerOn){act.appendChild(selc);act.appendChild(bF);}
+  act.appendChild(bV);act.appendChild(bD);
   row.appendChild(head);row.appendChild(act);box.appendChild(row);});
  box.scrollTop=st;
  if(sel>=0&&sel!==lastSelRow){const el=box.children[sel];if(el&&el.scrollIntoView)el.scrollIntoView({block:'nearest'});}
@@ -768,7 +791,7 @@ async function selectImg(t){if(current&&ready&&dirty){flush();}if(current&&ready
  // Đổi ảnh thì lớp dự đoán phải đổi theo: mỗi ảnh nằm trong split test của
  // đúng một fold, nên danh sách lượt chấm cũng khác.
  predData=null;predHover=null;predRender();predOnImage(tok);}
-function payload(){return JSON.stringify(Object.assign({name:current,width:img.width||0,height:img.height||0,polygons:inst.map(r=>r.poly),classes:inst.map(r=>r.cls),manual:inst.map(r=>!!r.manual),categories:classes,empty:(emptyMark&&!inst.length)},flowerParams()));}
+function payload(){return JSON.stringify(Object.assign({name:current,width:img.width||0,height:img.height||0,polygons:inst.map(r=>r.poly),classes:inst.map(r=>r.cls),manual:inst.map(r=>!!r.manual),categories:classes,empty:(emptyMark&&!inst.length),flower:flowerOn},flowerParams()));}
 // Chỉ báo lưu. Bản cũ gọi fetch rồi bỏ qua kết quả, nên server có báo lỗi cũng
 // không ai thấy — kể cả khi nó không đọc được ảnh và không tính được mật độ hoa.
 function svst(cls,txt,title){const el=$('svst');if(!el)return;
@@ -1159,11 +1182,11 @@ $('predConf').oninput=e=>{predConf=(+e.target.value)/100;
 $('predShowGt').onchange=e=>{predShowGt=e.target.checked;draw();};
 function draw(){ctx.clearRect(0,0,cv.width,cv.height);
  if(img.complete&&img.width)ctx.drawImage(img,ox,oy,img.width*scale,img.height*scale);
- if(showMask&&maskImg)ctx.drawImage(maskImg,ox,oy,img.width*scale,img.height*scale);
+ if(flowerOn&&showMask&&maskImg)ctx.drawImage(maskImg,ox,oy,img.width*scale,img.height*scale);
  // Ở chế độ xem dự đoán, nhãn lùi về làm NỀN: nền nhạt hơn và viền mảnh hơn,
  // để lớp dự đoán vẽ đè lên còn đọc được. Bỏ hẳn nhãn đi thì mất vế so sánh,
  // nên đó là một ô tick riêng chứ không phải mặc định.
- if(!(predOn&&!predShowGt))inst.forEach((r,i)=>{if(!r.vis)return;const col=clsColor(r.cls),on=(i===sel&&mode==='select'),p=r.poly;
+ if(!(predOn&&!predShowGt))inst.forEach((r,i)=>{if(!r.vis)return;const col=flowerOn?clsColor(r.cls):CROWN_COLOR,on=(i===sel&&mode==='select'),p=r.poly;
   polyPath(p);
   ctx.fillStyle=hexA(col,on?0.42:(predOn?0.10:0.22));ctx.fill();
   ctx.strokeStyle=on?'#ffffff':col;ctx.lineWidth=on?3:(predOn?1:2);ctx.stroke();
