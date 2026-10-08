@@ -334,7 +334,12 @@ class SaveReq(FlowerParams):
     # "chưa gán": file nhãn vẫn được ghi (polygons rỗng) để ảnh này đi vào bộ
     # xuất như ảnh nền. Không có cờ mà polygons rỗng thì xoá file như trước.
     empty: bool = False
-    # sat_max/val_min/method/tham số Otsu: từ FlowerParams — tính lại lúc lưu.
+    # Đếm hoa HSV/Otsu lúc lưu: TẮT mặc định, bật bằng công tắc ở giao diện.
+    # Tắt thì chỉ ghi hình polygon và không đọc ảnh: bộ xuất chỉ có lớp canopy,
+    # mật độ hoa về sau tính từ mask hoa chứ không từ ngưỡng màu.
+    # Client cũ không gửi cờ này nên cũng rơi vào nhánh tắt.
+    flower: bool = False
+    # sat_max/val_min/method/tham số Otsu: từ FlowerParams — chỉ dùng khi flower.
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -611,6 +616,16 @@ def pred_data(name: str = "", run: str = "", conf: float = 0.5,
         return {"ok": False, "error": str(e)}
 
 
+def _geom_entry(poly, conf):
+    # Phần hình của một polygon trong file nhãn: có trong mọi lần lưu, bật hay
+    # tắt đếm hoa đều vậy.
+    xs, ys = poly[0::2], poly[1::2]
+    return dict(points=[[float(x), float(y)] for x, y in zip(xs, ys)],
+                conf=round(float(conf), 4),
+                bbox=[round(float(min(xs)), 1), round(float(min(ys)), 1),
+                      round(float(max(xs)), 1), round(float(max(ys)), 1)])
+
+
 @app.post("/api/save")
 def save(req: SaveReq):
     # Lưu theo ĐỊNH DẠNG MỚI (giống file mẫu): path/field/.../polygons/flower_stats.
@@ -633,16 +648,27 @@ def save(req: SaveReq):
             doc = dict(path=rel, field=_field_of(rel),
                        img_w=req.width, img_h=req.height,
                        n_canopy=0, empty=True, conf_thr=DEFAULT_CONF_THR,
-                       flower_method=req.method, polygons=[],
-                       flower_stats=dict(no_flower=0, few_flowers=0,
-                                         many_flowers=0, very_many_flowers=0,
-                                         avg_ratio=0.0, max_ratio=0.0))
+                       polygons=[])
+            if req.flower:
+                doc.update(flower_method=req.method,
+                           flower_stats=dict(no_flower=0, few_flowers=0,
+                                             many_flowers=0, very_many_flowers=0,
+                                             avg_ratio=0.0, max_ratio=0.0))
             json.dump(doc, open(out, "w", encoding="utf-8"), ensure_ascii=False)
             return {"saved": out, "count": 0, "empty": True}
         # Không còn vùng nào -> xoá file cũ để ảnh không bị đánh dấu "đã nhãn".
         if os.path.exists(out):
             os.remove(out)
         return {"saved": None, "count": 0}
+    if not req.flower:
+        # Đếm hoa đang tắt: chỉ hình polygon, không đọc ảnh. Số hoa cũ trong file
+        # (nếu có) không mang sang, vì polygon có thể đã đổi hình từ lần đếm đó.
+        doc = dict(path=rel, field=_field_of(rel),
+                   img_w=req.width, img_h=req.height,
+                   n_canopy=len(polys), conf_thr=DEFAULT_CONF_THR,
+                   polygons=[_geom_entry(p, c) for p, c in zip(polys, confs)])
+        json.dump(doc, open(out, "w", encoding="utf-8"), ensure_ascii=False)
+        return {"saved": out, "count": len(polys)}
     err = _check_params(req)
     if err:
         return {"saved": None, "count": 0, "error": err}
@@ -653,7 +679,6 @@ def save(req: SaveReq):
     stats = {nm: 0 for nm in FLOWER_NAMES}
     ratios, out_polys = [], []
     for i, (poly, conf, cid, is_man) in enumerate(zip(polys, confs, cls, man)):
-        xs, ys = poly[0::2], poly[1::2]
         old = prev[i] if i < len(prev) else None
         hsv_blk = otsu_blk = None
         if img is not None:
@@ -682,11 +707,8 @@ def save(req: SaveReq):
         if ratio is not None:
             ratios.append(ratio)
         source = "manual" if is_man else ("auto" if lvl is not None else "unknown")
-        entry = dict(
-            points=[[float(x), float(y)] for x, y in zip(xs, ys)],
-            conf=round(float(conf), 4),
-            bbox=[round(float(min(xs)), 1), round(float(min(ys)), 1),
-                  round(float(max(xs)), 1), round(float(max(ys)), 1)],
+        entry = _geom_entry(poly, conf)
+        entry.update(
             # Trường đầu = phương pháp đang chọn (req.method); cả hai khối bên dưới.
             flower_pixels=int(fpx), total_pixels=int(tpx),
             flower_ratio=ratio, flower_label=lvl, flower_label_name=lname,

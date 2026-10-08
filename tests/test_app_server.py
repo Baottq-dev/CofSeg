@@ -74,6 +74,50 @@ def test_a_polygon_replaces_the_empty_flag(root):
     assert A in lab["labeled"] and A not in lab["empty"]
 
 
+def _doc(name):
+    return json.load(open(server._json_path(name), encoding="utf-8"))
+
+
+# --- công tắc đếm hoa HSV/Otsu: tắt mặc định ---------------------------------
+def test_save_with_flower_off_writes_geometry_only(root):
+    r = _save(A, [SQUARE])
+    assert r["count"] == 1 and "warning" not in r
+    doc = _doc(A)
+    assert set(doc["polygons"][0]) == {"points", "conf", "bbox"}
+    assert doc["polygons"][0]["bbox"] == [10.0, 10.0, 50.0, 40.0]
+    for k in ("hsv", "otsu", "flower_method", "flower_stats"):
+        assert k not in doc
+
+
+def test_save_with_flower_off_does_not_read_the_image(root):
+    os.remove(root / "images" / A)
+    r = _save(A, [SQUARE])
+    assert r["count"] == 1 and "warning" not in r
+    assert len(server.load(A)["polygons"]) == 1
+
+
+def test_an_old_client_without_the_flag_saves_geometry_only(root):
+    # Trang mở từ trước khi có công tắc vẫn gửi mức hoa và tham số HSV/Otsu.
+    _save(A, [SQUARE], classes=[2], manual=[True], sat_max=40, method="otsu")
+    assert set(_doc(A)["polygons"][0]) == {"points", "conf", "bbox"}
+
+
+def test_save_with_flower_on_still_counts_hsv_and_otsu(root):
+    r = _save(A, [SQUARE], flower=True)
+    assert r["count"] == 1
+    doc = _doc(A)
+    p = doc["polygons"][0]
+    assert {"points", "conf", "bbox", "hsv", "otsu", "flower_ratio", "flower_label"} <= set(p)
+    assert doc["flower_method"] == "hsv" and "hsv" in doc and "otsu" in doc
+
+
+def test_empty_label_carries_flower_fields_only_when_on(root):
+    _save(A, [], empty=True)
+    assert "flower_stats" not in _doc(A)
+    _save(B, [], empty=True, flower=True)
+    assert "flower_stats" in _doc(B)
+
+
 def test_export_carries_reviewed_empty_images_as_background(root):
     _save(A, [SQUARE])
     _save(B, [], empty=True)
@@ -104,3 +148,4 @@ def test_export_carries_reviewed_empty_images_as_background(root):
         assert m.shape == (H, W) and int(m.max()) == 0
     m = cv2.imread(str(d / "masks" / "field_9__10__1__a.png"), cv2.IMREAD_UNCHANGED)
     assert int(m.max()) == 1
+
