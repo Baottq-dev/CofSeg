@@ -159,7 +159,11 @@ def test_page_loads_its_css_and_js_from_static():
     page = c.get("/").text
     assert "<style>" not in page and "<script>\n" not in page and "{{V}}" not in page
     css = re.search(r'href="(/static/css/app\.css\?v=\d+)"', page)
-    js = re.search(r'src="(/static/js/app\.js\?v=\d+)"', page)
+    js = re.findall(r'src="(/static/js/(\w+)\.js\?v=\d+)"', page)
     assert css and js
-    for url in (css.group(1), js.group(1)):
+    # core.js nạp đầu (các file sau dùng hàm của nó), main.js nạp cuối (gắn
+    # sự kiện, khởi động); không file nào nạp hai lần.
+    names = [n for _, n in js]
+    assert names[0] == "core" and names[-1] == "main" and len(set(names)) == len(names)
+    for url in [css.group(1)] + [u for u, _ in js]:
         assert c.get(url).status_code == 200
