@@ -119,6 +119,30 @@ def test_empty_label_carries_flower_fields_only_when_on(root):
     assert "flower_stats" in _doc(B)
 
 
+def test_save_writes_through_a_temp_file(root):
+    _save(A, [SQUARE])
+    labels = os.listdir(server.OUT_DIR)
+    assert labels == [os.path.basename(server._json_path(A))]   # không sót file .tmp
+
+
+def test_a_failed_save_keeps_the_old_label(root, monkeypatch):
+    # Server chết giữa lúc ghi (ở đây: json.dump ném lỗi) thì file nhãn cũ phải
+    # còn nguyên, không bị thay bằng một file ghi dở.
+    _save(A, [SQUARE])
+    before = open(server._json_path(A), encoding="utf-8").read()
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+    real_dump = server.json.dump
+    monkeypatch.setattr(server.json, "dump", boom)
+    with pytest.raises(OSError):
+        _save(A, [SQUARE, [60.0, 10.0, 90.0, 10.0, 90.0, 40.0]])
+    # Trả json.dump lại bằng tay: monkeypatch.undo() sẽ gỡ luôn OUT_DIR của
+    # fixture và trỏ về thư mục nhãn thật.
+    monkeypatch.setattr(server.json, "dump", real_dump)
+    assert open(server._json_path(A), encoding="utf-8").read() == before
+
+
 def test_export_carries_reviewed_empty_images_as_background(root):
     _save(A, [SQUARE])
     _save(B, [], empty=True)

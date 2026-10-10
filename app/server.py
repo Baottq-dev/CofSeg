@@ -5,6 +5,7 @@
 # Chọn thư mục ảnh: $env:ANNOT_DIR="data/iachim_dataset_export/data_compressed/field_1"
 import json
 import os
+import time
 from pathlib import Path
 
 import cv2
@@ -633,6 +634,25 @@ def pred_data(name: str = "", run: str = "", conf: float = 0.5,
         return {"ok": False, "error": str(e)}
 
 
+def _write_json(path, doc):
+    # Ghi ra file tạm cạnh đó rồi thay thế. Ghi thẳng vào file nhãn thì một lần
+    # đọc trùng lúc (/api/load khi mở lại ảnh) thấy file rỗng và trả 500, còn
+    # server chết giữa chừng thì để lại file nhãn ghi dở — mất luôn nhãn cũ.
+    # Trên Windows os.replace báo PermissionError nếu đích đang được mở đọc;
+    # lần đọc nào cũng ngắn nên thử lại vài lần là qua.
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(doc, f, ensure_ascii=False)
+    for i in range(10):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if i == 9:
+                raise
+            time.sleep(0.05)
+
+
 def _geom_entry(poly, conf):
     # Phần hình của một polygon trong file nhãn: có trong mọi lần lưu, bật hay
     # tắt đếm hoa đều vậy.
@@ -671,7 +691,7 @@ def save(req: SaveReq):
                            flower_stats=dict(no_flower=0, few_flowers=0,
                                              many_flowers=0, very_many_flowers=0,
                                              avg_ratio=0.0, max_ratio=0.0))
-            json.dump(doc, open(out, "w", encoding="utf-8"), ensure_ascii=False)
+            _write_json(out, doc)
             return {"saved": out, "count": 0, "empty": True}
         # Không còn vùng nào -> xoá file cũ để ảnh không bị đánh dấu "đã nhãn".
         if os.path.exists(out):
@@ -684,7 +704,7 @@ def save(req: SaveReq):
                    img_w=req.width, img_h=req.height,
                    n_canopy=len(polys), conf_thr=DEFAULT_CONF_THR,
                    polygons=[_geom_entry(p, c) for p, c in zip(polys, confs)])
-        json.dump(doc, open(out, "w", encoding="utf-8"), ensure_ascii=False)
+        _write_json(out, doc)
         return {"saved": out, "count": len(polys)}
     err = _check_params(req)
     if err:
@@ -751,7 +771,7 @@ def save(req: SaveReq):
                    very_many_flowers=stats["very_many_flowers"],
                    avg_ratio=round(sum(ratios) / len(ratios), 4) if ratios else 0.0,
                    max_ratio=round(max(ratios), 4) if ratios else 0.0))
-    json.dump(doc, open(out, "w", encoding="utf-8"), ensure_ascii=False)
+    _write_json(out, doc)
     res = {"saved": out, "count": len(out_polys)}
     if img is None:
         res["warning"] = ("Không đọc được ảnh %s — giữ nguyên mức hoa cũ, "
