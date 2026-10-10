@@ -14,4 +14,17 @@ async function loadModels(){const s=$('modelSel');if(!s)return;
 let saveDirStart='',expDirStart='';
 async function loadPaths(){try{const d=await(await fetch('/api/paths',{cache:'no-store'})).json();
  saveDirStart=d.out_dir||'';expDirStart=d.export_dir||'';
- svst('','','Nhãn lưu tại: '+(saveDirStart||'(mặc định)'));}catch(e){}}
+ svst('','','Nhãn lưu tại: '+(saveDirStart||'(mặc định)'));
+ $('setPaths').textContent='Nhãn tán: '+(saveDirStart||'—')+' · xuất mặc định: '+(expDirStart||'—');
+ $('dataPaths').textContent='Nhãn tán lưu tại '+(saveDirStart||'—')+' · bộ xuất mặc định ở '+(expDirStart||'—')+'.';}catch(e){}}
+// Tên model SAM đang chọn, hiện nhỏ cạnh công cụ sửa tán.
+function syncSamName(){const s=$('modelSel'),o=s&&s.options[s.selectedIndex];$('samName').textContent=o?o.textContent.replace(/^✦3? /,''):'';}
+// Người gán: chọn ở thanh trên, thêm/bớt trong ⚙. Gửi kèm mọi thao tác gán hoa.
+let annotators=lsGet('cofseg_annotators',['A','B']),annot=lsGet('cofseg_annot','A');
+function renderAnnot(){if(!annotators.includes(annot))annot=annotators[0];
+ [$('annotBox'),$('annotList')].forEach(box=>{box.querySelectorAll('button').forEach(b=>b.remove());
+  annotators.forEach(n=>{const b=document.createElement('button');b.textContent=n;b.className=(n===annot?'on':'');
+   b.title='Người gán '+n;b.setAttribute('aria-pressed',n===annot);
+   b.onclick=()=>{annot=n;lsSet('cofseg_annot',n);renderAnnot();};box.appendChild(b);});});}
+function addAnnot(){const n=($('annotNew').value||'').trim().toUpperCase().slice(0,4);
+ if(!n||annotators.includes(n))return;annotators.push(n);lsSet('cofseg_annotators',annotators);$('annotNew').value='';renderAnnot();}

@@ -58,7 +58,7 @@ $('expGo').onclick=async()=>{
  await doExport(body,p);};
 if($('modelSel'))$('modelSel').onchange=async()=>{const id=$('modelSel').value;$('hint').textContent='⏳ Đang chuyển model: '+id+' …';
  try{const r=await(await fetch('/api/model',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})).json();
-  $('hint').textContent=r.ok?('✔ Đã chọn model: '+id+' — sẽ nạp khi bấm SAM lần đầu.'):('⚠ '+(r.error||'Lỗi đổi model'));}
+  $('hint').textContent=r.ok?('✔ Đã chọn model: '+id+' — sẽ nạp khi bấm SAM lần đầu.'):('⚠ '+(r.error||'Lỗi đổi model'));syncSamName();}
  catch(e){$('hint').textContent='⚠ '+e;}};
 $('noTree').onclick=()=>{if(!current||!ready||inst.length)return;emptyMark=!emptyMark;persist();$('count').textContent=countText();};
 $('undo').onclick=undo;
@@ -71,7 +71,7 @@ $('predOn').onchange=async e=>{
  predOn=e.target.checked;
  if(predOn){
   flush();                       // lưu nốt phần đang sửa TRƯỚC khi khoá
-  predBefore=(mode==='view')?'sam-click':mode;
+  predBefore=mode;               // Xem của thẻ Tán cũng là một chế độ để quay về
   sel=-1;dragPt=-1;hovPt=-1;ghost=null;draft=[];boxStart=null;
   syncPredLock();setMode('view');
   await predLoadRuns(selToken);await predFetch();}
@@ -83,6 +83,7 @@ $('predShowGt').onchange=e=>{predShowGt=e.target.checked;draw();};
 cv.addEventListener('wheel',e=>{e.preventDefault();const r=cv.getBoundingClientRect();zoomAt(e.clientX-r.left,e.clientY-r.top,e.deltaY<0?1.1:1/1.1);},{passive:false});
 cv.addEventListener('mousedown',async e=>{
  if(e.button===1){pan=[e.clientX,e.clientY,ox,oy];cv.style.cursor='grabbing';e.preventDefault();return;}
+ if(wsMouse('down',e))return;
  const xy=toImg(e),x=xy[0],y=xy[1];
  if(mode==='sam-click'){pushHist();await samCall('/api/sam/click',{name:current,x:x,y:y});}
  else if(mode==='sam-box'){boxStart=[x,y];}
@@ -118,6 +119,7 @@ cv.addEventListener('mousedown',async e=>{
  else if(mode==='view'){pan=[e.clientX,e.clientY,ox,oy];cv.style.cursor='grabbing';}});
 cv.addEventListener('mousemove',e=>{
  if(pan){ox=pan[2]+(e.clientX-pan[0]);oy=pan[3]+(e.clientY-pan[1]);draw();return;}
+ if(wsMouse('move',e))return;
  mouse=toImg(e);
  if(mode==='select'&&dragPt>=0&&sel>=0&&origPoly&&softD){const P=inst[sel].poly,dx=mouse[0]-dragStart[0],dy=mouse[1]-dragStart[1],N=origPoly.length/2;
   // Trọng số theo KHOẢNG CÁCH dọc biên (px màn hình), không theo số thứ tự đỉnh,
@@ -153,25 +155,28 @@ cv.addEventListener('mousemove',e=>{
 // cả cụm đỉnh chạy theo con trỏ. Với vùng đã ẩn thì không thấy gì cho tới khi
 // hiện lại và hình đã méo. Pan chuột giữa cũng kẹt y hệt.
 window.addEventListener('mouseup',async e=>{
- if(pan){pan=null;cv.style.cursor=(mode==='select'||mode==='view')?'grab':'crosshair';return;}
+ if(pan){pan=null;cv.style.cursor=(mode==='select'||mode==='view')?'grab':'crosshair';if(wsMouse('panEnd',e))return;return;}
+ if(wsMouse('up',e))return;
  if(mode==='sam-box'&&boxStart){const xy=toImg(e),x=xy[0],y=xy[1],b=[cX(Math.min(boxStart[0],x)),cY(Math.min(boxStart[1],y)),cX(Math.max(boxStart[0],x)),cY(Math.max(boxStart[1],y))];boxStart=null;
   if(Math.abs(b[2]-b[0])>5&&Math.abs(b[3]-b[1])>5){pushHist();await samCall('/api/sam/box',{name:current,box:b});}else draw();return;}
  if(dragPt>=0){dragPt=-1;dragVi=-1;origPoly=null;softD=null;
   cv.style.cursor='move';
   if(sel>=0&&inst[sel])inst[sel].poly=cleanPoly(inst[sel].poly);
   persist();renderRegions();draw();if(sel>=0)computeFlower([sel]);}});
-cv.addEventListener('mouseleave',()=>{if(!pan&&dragPt<0){hovPt=-1;ghost=null;
+cv.addEventListener('mouseleave',e=>{if(wsMouse('leave',e))return;if(!pan&&dragPt<0){hovPt=-1;ghost=null;
  if(predHover){predHover=null;predHint();}
  if(mode==='select')cv.style.cursor='crosshair';draw();}});
-cv.addEventListener('dblclick',()=>{if(mode==='draw'&&draft.length>=6){pushHist();const ni=addRegion(draft.slice());draft=[];sel=inst.length-1;refresh();computeFlower([ni]);}});
+cv.addEventListener('dblclick',e=>{if(wsMouse('dblclick',e))return;if(mode==='draw'&&draft.length>=6){pushHist();const ni=addRegion(draft.slice());draft=[];sel=inst.length-1;refresh();computeFlower([ni]);}});
 cv.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('keydown',e=>{
+ if(e.key==='Escape'&&closeModals())return;
  if(typing(e))return;
- // Hai phím này SỬA nhãn, nên chúng cũng phải khoá ở chế độ xem dự đoán —
- // chúng đi thẳng vào `inst` chứ không qua handler chuột.
- if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){e.preventDefault();if(!predLocked())undo();return;}
- if(e.key==='Escape'){draft=[];draw();}
- if(e.key==='Delete'&&!predLocked()&&sel>=0&&inst[sel]&&inst[sel].vis){pushHist();inst.splice(sel,1);sel=-1;refresh();}
+ // Alt+1…4 theo vị trí phím (e.code), để bàn phím gõ tiếng Việt không đổi số.
+ if(e.altKey&&/^Digit[1-4]$/.test(e.code)){e.preventDefault();switchWs(TAB_ORDER[+e.code.slice(5)-1]);return;}
+ if(e.key==='PageDown'||e.key==='PageUp'){e.preventDefault();stepImg(e.key==='PageDown'?1:-1);return;}
+ if(e.key==='?'){openHelp();return;}
+ if(wsKey(e))return;
+ if(wsActive==='data'||e.ctrlKey||e.metaKey||e.altKey)return;
  if(e.key==='+'||e.key==='=')zoomAt(cv.width/2,cv.height/2,1.25);
  if(e.key==='-')zoomAt(cv.width/2,cv.height/2,0.8);
  if(e.key==='0')resetView();});
@@ -190,8 +195,23 @@ $('fbPick').onclick=()=>fbDone(fbCur);
 $('fbMk').onclick=async()=>{const nm=$('fbNew').value.trim();if(!nm)return;
  try{const r=await(await fetch('/api/mkdir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:fbCur,name:nm})})).json();
   if(r.ok){$('fbNew').value='';fbLoad(fbCur);}else alert(r.error||'Không tạo được thư mục');}catch(e){alert(e);}};
-const hlp=document.querySelector('.hbtn');
-if(hlp){hlp.title='Phím tắt';hlp.onclick=()=>$('helpModal').classList.add('open');}
+// --- khung: thẻ, cột, điều hướng, cài đặt, bảng phím ------------------------------
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>switchWs(b.dataset.tab));
+$('navClose').onclick=$('navOpen').onclick=()=>toggleCol('nav');
+$('inspClose').onclick=$('inspOpen').onclick=()=>toggleCol('insp');
+$('navField').onchange=()=>pickDir($('navField').value);
+document.querySelectorAll('#navFilter button').forEach(b=>b.onclick=()=>setNavFilter(b.dataset.f));
+$('navThumbs').onchange=()=>setNavThumbs($('navThumbs').checked);
+$('veView').onclick=()=>setMode('view');
+$('veEdit').onclick=()=>{if(!predOn)setMode(lastEdit);};
+$('btnHelp').onclick=openHelp;
+$('btnSettings').onclick=openSettings;
+$('setClose').onclick=()=>$('setModal').classList.remove('open');
+$('setModal').onclick=e=>{if(e.target===$('setModal'))$('setModal').classList.remove('open');};
+$('annotAdd').onclick=addAnnot;
+$('annotNew').addEventListener('keydown',e=>{if(e.key==='Enter')addAnnot();});
 $('helpClose').onclick=$('helpOk').onclick=()=>$('helpModal').classList.remove('open');
 $('helpModal').onclick=e=>{if(e.target===$('helpModal'))$('helpModal').classList.remove('open');};
-renderClasses();setMode('sam-click');syncPredLock();loadModels();loadPaths();loadFolders().then(loadImgs);
+// Thẻ Tán mở ở chế độ Xem: nhãn tán đã chốt, không có cú bấm nào lỡ sửa được nó.
+renderClasses();setMode('view');syncPredLock();renderAnnot();setNavFilter(navFilter);$('navThumbs').checked=navThumbs;
+switchWs(lsGet('cofseg_tab','crown'));loadModels().then(syncSamName);loadPaths();loadFolders().then(loadImgs);

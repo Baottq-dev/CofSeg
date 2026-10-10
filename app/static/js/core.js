@@ -22,84 +22,132 @@ let selToken=0,ready=false;
 const WS=[];
 function wsRegister(w){WS.push(w);return w;}
 function wsEach(name,...args){for(const w of WS)if(w[name])w[name](...args);}
-// Thống kê bám theo thư mục đang chọn: đang gán dở một nhánh thì cần biết còn
-// bao nhiêu ảnh của NHÁNH ĐÓ, chứ tổng toàn bộ không giúp gì.
+// --- lưu tạm theo trình duyệt (cột, thẻ, bộ lọc…): hỏng thì dùng mặc định ----
+function lsGet(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+// --- bốn thẻ: Tán · Hoa · So sánh · Dữ liệu ----------------------------------
+// Mỗi thẻ đăng ký {id, inspTitle, help, enter(), leave(), key(e), mouse(loại,e)};
+// key/mouse trả true nếu đã xử lý. Phần tử nào mang data-ws="…" chỉ hiện khi
+// thẻ đang mở có tên trong danh sách đó. Đổi thẻ không đổi ảnh, không lưu gì.
+const TABS={},TAB_ORDER=['crown','flower','review','data'];
+const TAB_NAMES={crown:'Tán',flower:'Hoa',review:'So sánh',data:'Dữ liệu'};
+let wsActive=null;
+function tabRegister(t){TABS[t.id]=t;return t;}
+function switchWs(id){if(!TABS[id])id='crown';if(id===wsActive)return;
+ const old=wsActive&&TABS[wsActive];if(old&&old.leave)old.leave();
+ wsActive=id;lsSet('cofseg_tab',id);
+ document.querySelectorAll('#tabs button').forEach(b=>{const on=b.dataset.tab===id;b.classList.toggle('on',on);b.setAttribute('aria-selected',on);});
+ document.querySelectorAll('[data-ws]').forEach(el=>{el.hidden=!el.dataset.ws.split(' ').includes(id);});
+ $('inspTitle').textContent=TABS[id].inspTitle||'Chi tiết';
+ layoutCols();
+ if(TABS[id].enter)TABS[id].enter();
+ renderStatus();}
+function wsKey(e){const t=TABS[wsActive];return !!(t&&t.key&&t.key(e));}
+function wsMouse(type,e){const t=TABS[wsActive];return !!(t&&t.mouse&&t.mouse(type,e));}
+// Hai cột bên thu gọn được; thẻ Dữ liệu không có cột bên. Thu/mở xong thì
+// canvas đổi cỡ nhưng giữ nguyên mức phóng và vị trí đang xem.
+let colState=lsGet('cofseg_cols',{nav:true,insp:true});
+function layoutCols(){const sides=wsActive!=='data';
+ $('navcol').hidden=!(sides&&colState.nav);$('navrail').hidden=!(sides&&!colState.nav);
+ $('inspcol').hidden=!(sides&&colState.insp);$('insprail').hidden=!(sides&&!colState.insp);
+ document.querySelectorAll('.resizer').forEach(r=>{r.hidden=$(r.dataset.t).hidden;});
+ if(sides&&img.width){sizeCanvas();if(scale>0&&isFinite(scale))draw();else resetView();}}
+function toggleCol(which){colState[which]=!colState[which];lsSet('cofseg_cols',colState);layoutCols();}
+// Thanh trạng thái: ảnh đang mở; số tán chỉ có nghĩa ở thẻ Tán.
+function renderStatus(){const t=current?current.split('/'):[];
+ $('stWhere').textContent=(wsActive==='data'||!current)?'':((t.length>1?t[0]+' › ':'')+t[t.length-1]);
+ $('count').hidden=(wsActive!=='crown');}
+// Bảng phím: phím của thẻ đang mở, rồi phím dùng chung.
+const HELP_GLOBAL=[['Alt 1…4','Chuyển thẻ Tán · Hoa · So sánh · Dữ liệu'],['PgUp · PgDn','Ảnh trước · sau trong danh sách đang lọc'],
+ ['Lăn chuột · kéo','Phóng to, thu nhỏ · di chuyển ảnh'],['+ · − · 0','Phóng to · thu nhỏ · vừa khung'],['?','Bảng phím này'],['Esc','Đóng hộp thoại đang mở']];
+function openHelp(){const t=TABS[wsActive]||{};$('helpTitle').textContent='⌨ Phím tắt · thẻ '+TAB_NAMES[wsActive];
+ const box=$('helpList');box.innerHTML='';
+ [...(t.help||[]),null,...HELP_GLOBAL].forEach(r=>{const d=document.createElement('div');
+  if(!r){d.style.height='6px';box.appendChild(d);return;}
+  const k=document.createElement('b');k.className='kbd';k.textContent=r[0];
+  const s=document.createElement('span');s.textContent=r[1];d.appendChild(k);d.appendChild(s);box.appendChild(d);});
+ $('helpModal').classList.add('open');}
+function openSettings(){$('setModal').classList.add('open');}
+// Esc đóng hộp thoại trên cùng. Cửa sổ chọn thư mục đang chờ trả lời thì để
+// nó tự đóng bằng nút Huỷ, không đóng ngầm ở đây.
+function closeModals(){for(const id of ['helpModal','setModal']){if($(id).classList.contains('open')){$(id).classList.remove('open');return true;}}return false;}
+// --- điều hướng: một cột, lọc theo ruộng / chữ / trạng thái, nhóm theo đường bay ---
+let navFilter=lsGet('cofseg_navfilter','all'),navThumbs=lsGet('cofseg_navthumbs',false);
+let collapsed=new Set(lsGet('cofseg_navcollapsed',[]));   // nhóm đường bay đang gập
+function isDone(p){return labeledSet.has(p);}
+function inScope(p){return pathFilter===''||p===pathFilter||p.indexOf(pathFilter+'/')===0;}
+function fieldOf(p){const i=p.indexOf('/');return i<0?'':p.slice(0,i);}
+function groupOf(p){const i=p.lastIndexOf('/');return i<0?'':p.slice(0,i);}
+// Tên ảnh DJI dài và giống nhau tới gần hết, bị cắt "…" thì không còn phân biệt
+// được: hiện số khung và giờ chụp, tên đầy đủ để ở tooltip.
+function frameLabel(p){const f=p.split('/').pop(),m=f.match(/^DJI_\d{8}(\d\d)(\d\d)(\d\d)_(\d{4})_/);
+ return m?(m[4]+' · '+m[1]+':'+m[2]+':'+m[3]):f;}
+function navList(){const q=($('search').value||'').toLowerCase();
+ return imgs.filter(p=>inScope(p)&&p.toLowerCase().indexOf(q)>=0&&(navFilter==='all'||(navFilter==='done')===isDone(p)));}
+// Số đếm bám theo ruộng đang chọn: đang gán dở một ruộng thì cần biết còn bao
+// nhiêu ảnh của RUỘNG ĐÓ, chứ tổng toàn bộ không giúp gì.
 function renderStats(){
  const list=pathFilter?imgs.filter(inScope):imgs;
- const total=list.length,lab=list.filter(p=>labeledSet.has(p)).length;
+ const total=list.length,lab=list.filter(isDone).length;
  $('stTotal').textContent=total;$('stLab').textContent=lab;
  $('stUnlab').textContent=Math.max(0,total-lab);$('stCls').textContent=classes.length;
- const sub=pathFilter?(' · '+pathFilter):' · tất cả';
- document.querySelectorAll('#leftcol .stat .slbl')[0].textContent='Total Images'+sub;}
+ $('stTotalLbl').textContent='Ảnh'+(pathFilter?(' · '+pathFilter):' · tất cả');
+ $('nfAll').textContent=total;$('nfTodo').textContent=Math.max(0,total-lab);$('nfDone').textContent=lab;}
 async function loadLabeled(){try{const d=await(await fetch('/api/labeled?t='+Date.now(),{cache:'no-store'})).json();labeledSet=new Set(d.labeled||[]);emptySet=new Set(d.empty||[]);}catch(e){labeledSet=new Set();emptySet=new Set();}renderStats();}
-// Cây thư mục: mỗi nhánh mang sẵn số ảnh và số đã gán, để biết còn phải làm
-// bao nhiêu mà không cần bấm vào từng thư mục.
-function buildDirs(paths){const root={dirs:{},n:0,done:0};
- paths.forEach(p=>{const parts=p.split('/');let node=root;
-  for(let i=0;i<parts.length-1;i++){node.dirs[parts[i]]=node.dirs[parts[i]]||{dirs:{},n:0,done:0};
-   node=node.dirs[parts[i]];node.n++;if(labeledSet.has(p))node.done++;}
-  root.n++;if(labeledSet.has(p))root.done++;});
- return root;}
-let collapsed=new Set();     // giữ qua các lần vẽ lại, nếu không mỗi lần bấm là bung hết
 function firstImgIn(pre){return imgs.find(p=>pre===''||p===pre||p.indexOf(pre+'/')===0);}
 function pickDir(full){pathFilter=full;renderPTree();renderThumbs();renderStats();
  const f=firstImgIn(full);if(f&&f!==current)selectImg(f);}
-function treeRow(label,full,node){
- const row=document.createElement('div');
- const kidNames=Object.keys(node.dirs);
- row.className='dir'+(pathFilter===full?' on':'')+(node.n&&node.done===node.n?' done':'');
- const tw=document.createElement('span');tw.className='tw';
- if(kidNames.length)tw.textContent=collapsed.has(full)?'▸':'▾';   // lá thì không có mũi
- row.appendChild(tw);
- const nm=document.createElement('span');nm.className='dn';nm.textContent='📁 '+label;row.appendChild(nm);
- const c=document.createElement('span');c.className='dc';
- c.textContent=node.done+'/'+node.n;row.title=label+' — đã gán '+node.done+'/'+node.n+' ảnh';
- row.appendChild(c);
- row.onclick=e=>{e.stopPropagation();pickDir(full);};
- if(kidNames.length)tw.onclick=e=>{e.stopPropagation();
-  if(collapsed.has(full))collapsed.delete(full);else collapsed.add(full);renderPTree();};
- return row;}
-function progBar(node){const b=document.createElement('div');b.className='bar';
- const i=document.createElement('i');i.style.width=(node.n?100*node.done/node.n:0)+'%';
- b.appendChild(i);return b;}
-function renderPTree(){const el=$('ptree');el.innerHTML='';
- const root=buildDirs(imgs);
- el.appendChild(treeRow('Tất cả','',root));
- el.appendChild(progBar(root));
- if(collapsed.has(''))return;
- const wrap2=document.createElement('div');wrap2.className='kids';
- (function walk(node,prefix,cont){Object.keys(node.dirs).sort(natcmp).forEach(name=>{
-   const full=prefix?prefix+'/'+name:name,kid=node.dirs[name];
-   cont.appendChild(treeRow(name,full,kid));
-   if(collapsed.has(full))return;
-   const kids=document.createElement('div');kids.className='kids';
-   walk(kid,full,kids);cont.appendChild(kids);});})(root,'',wrap2);
- el.appendChild(wrap2);}
-function isDone(p){return labeledSet.has(p);}
-function inScope(p){return pathFilter===''||p===pathFilter||p.indexOf(pathFilter+'/')===0;}
-function renderThumbs(){const box=$('thumbs');box.innerHTML='';
- const q=($('search').value||'').toLowerCase();
- const list=imgs.filter(p=>inScope(p)&&p.toLowerCase().indexOf(q)>=0);
- // Hiện số ĐANG LỌC, không phải tổng — bản cũ luôn ghi tổng nên chọn thư mục
- // 67 ảnh vẫn thấy 118.
+// Ô chọn ruộng thay cho cây thư mục. Giữ tên renderPTree cho các chỗ gọi cũ.
+function renderPTree(){const s=$('navField');const fs=[...new Set(imgs.map(fieldOf).filter(Boolean))].sort(natcmp);
+ s.innerHTML='';const o0=document.createElement('option');o0.value='';o0.textContent='Tất cả · '+imgs.length+' ảnh';s.appendChild(o0);
+ fs.forEach(f=>{const n=imgs.filter(p=>fieldOf(p)===f).length,o=document.createElement('option');
+  o.value=f;o.textContent=f+' · '+n+' ảnh';s.appendChild(o);});
+ s.value=fs.includes(pathFilter)?pathFilter:'';}
+function setNavFilter(f){navFilter=f;lsSet('cofseg_navfilter',f);
+ document.querySelectorAll('#navFilter button').forEach(b=>b.classList.toggle('on',b.dataset.f===f));renderThumbs();}
+function setNavThumbs(on){navThumbs=on;lsSet('cofseg_navthumbs',on);$('navThumbs').checked=on;renderThumbs();}
+// Danh sách ảnh nhóm theo đường bay; đầu nhóm gập/mở được và mang số đã gán.
+// Vẽ lại thì giữ vị trí cuộn, chỉ cuộn khi ảnh đang mở đổi.
+function renderThumbs(){const box=$('thumbs'),st=box.scrollTop;box.innerHTML='';box.classList.toggle('noimg',!navThumbs);
+ const list=navList();
  $('nimg').textContent=(list.length===imgs.length)?imgs.length:(list.length+' / '+imgs.length);
- list.forEach(p=>{const row=document.createElement('div');row.className='thumb'+(p===current?' active':'')+(isDone(p)?' done':'')+(emptySet.has(p)?' empty':'');row.dataset.n=p;
-  const im=document.createElement('img');im.loading='lazy';im.src='/api/thumb/'+enc(p);
-  const nm=document.createElement('div');nm.className='tname';nm.textContent=p.split('/').pop();nm.title=p;
-  row.appendChild(im);row.appendChild(nm);row.onclick=()=>selectImg(p);box.appendChild(row);});}
-function updateThumbActive(){document.querySelectorAll('#thumbs .thumb').forEach(t=>{t.classList.toggle('active',t.dataset.n===current);t.classList.toggle('done',isDone(t.dataset.n));t.classList.toggle('empty',emptySet.has(t.dataset.n));});}
+ const tally={};imgs.forEach(p=>{const g=groupOf(p),t=tally[g]||(tally[g]={n:0,done:0});t.n++;if(isDone(p))t.done++;});
+ let g=null,open=false;
+ list.forEach(p=>{const k=groupOf(p);
+  if(k!==g){g=k;open=!collapsed.has(k);
+   const h=document.createElement('div');h.className='ghead';
+   const nm=document.createElement('b');nm.textContent=(open?'▾ ':'▸ ')+(k||'(gốc)');nm.style.fontWeight='600';
+   const c=document.createElement('span');c.textContent=tally[k].done+'/'+tally[k].n;
+   h.appendChild(nm);h.appendChild(c);h.title=(k||'(gốc)')+' — đã gán '+tally[k].done+'/'+tally[k].n+' ảnh';
+   h.onclick=()=>{if(collapsed.has(k))collapsed.delete(k);else collapsed.add(k);lsSet('cofseg_navcollapsed',[...collapsed]);renderThumbs();};
+   box.appendChild(h);}
+  if(!open)return;
+  const row=document.createElement('div');row.className='thumb'+(p===current?' active':'')+(isDone(p)?' done':'')+(emptySet.has(p)?' empty':'');row.dataset.n=p;
+  if(navThumbs){const im=document.createElement('img');im.loading='lazy';im.src='/api/thumb/'+enc(p);row.appendChild(im);}
+  const nm=document.createElement('div');nm.className='tname';nm.textContent=frameLabel(p);nm.title=p;
+  row.appendChild(nm);row.onclick=()=>selectImg(p);box.appendChild(row);});
+ box.scrollTop=st;}
+let lastActive=null;
+function updateThumbActive(){document.querySelectorAll('#thumbs .thumb').forEach(t=>{t.classList.toggle('active',t.dataset.n===current);t.classList.toggle('done',isDone(t.dataset.n));t.classList.toggle('empty',emptySet.has(t.dataset.n));});
+ if(current!==lastActive){lastActive=current;const a=document.querySelector('#thumbs .thumb.active');if(a&&a.scrollIntoView)a.scrollIntoView({block:'nearest'});}}
+// PgUp/PgDn: ảnh trước/sau theo đúng danh sách đang lọc trên màn hình.
+function stepImg(d){const list=navList();if(!list.length)return;
+ let i=list.indexOf(current);i=(i<0)?0:Math.min(list.length-1,Math.max(0,i+d));
+ if(list[i]!==current)selectImg(list[i]);}
 async function loadImgs(){imgs=await(await fetch('/api/images',{cache:'no-store'})).json();
  await loadLabeled();renderPTree();renderThumbs();renderStats();
- if(imgs.length)selectImg(imgs[0]);else{inst=[];current=null;draw();renderRegions();}}
+ // Mở lại ảnh lần trước nếu nó còn trong danh sách.
+ const last=lsGet('cofseg_img',null);
+ if(imgs.length)selectImg(imgs.includes(last)?last:imgs[0]);else{inst=[];current=null;draw();renderRegions();}}
 // Đổi ảnh. `tok` chốt lần đổi: hai lần đổi chồng nhau thì lần về sau không
 // được ghi đè bằng kết quả của ảnh trước (mọi phần nạp dữ liệu đều hỏi lại).
 async function selectImg(t){wsEach('beforeImage');
  const tok=++selToken;
- current=t;ready=false;wsEach('resetImage',t);updateThumbActive();
+ current=t;ready=false;lsSet('cofseg_img',t);renderStatus();wsEach('resetImage',t);updateThumbActive();
  img=new Image();img.onload=()=>{if(tok===selToken){sizeCanvas();resetView();wsEach('imageShown');}};
  img.src='/api/image/'+enc(t)+'?t='+Date.now();
  for(const w of WS){if(!w.loadImage)continue;await w.loadImage(t,tok);if(tok!==selToken)return;}
- ready=true;wsEach('onImage',t,tok);draw();}
+ ready=true;wsEach('onImage',t,tok);draw();renderStatus();}
 // Chỉ báo lưu. Bản cũ gọi fetch rồi bỏ qua kết quả, nên server có báo lỗi cũng
 // không ai thấy — kể cả khi nó không đọc được ảnh và không tính được mật độ hoa.
 function svst(cls,txt,title){const el=$('svst');if(!el)return;

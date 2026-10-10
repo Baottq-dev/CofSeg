@@ -7,102 +7,166 @@
 </head>
 <body>
 <header id="topbar">
-  <div class="brand"><span class="logo">🌿</span><b>AgriLabel Studio</b><span class="sub">Field Annotation · Instance Seg + Mật độ hoa</span></div>
-  <div class="hactions"><span class="hbtn">?</span><span class="avatar">A</span></div>
+  <div class="brand"><span class="logo">🌿</span><b>AgriLabel Studio</b></div>
+  <nav id="tabs" role="tablist" aria-label="Không gian làm việc">
+    <button role="tab" data-tab="crown">Tán <span class="kbd">Alt 1</span></button>
+    <button role="tab" data-tab="flower">Hoa <span class="kbd">Alt 2</span></button>
+    <button role="tab" data-tab="review">So sánh <span class="kbd">Alt 3</span></button>
+    <button role="tab" data-tab="data">Dữ liệu <span class="kbd">Alt 4</span></button>
+  </nav>
+  <div class="hactions">
+    <div id="annotBox" class="annot" role="group" aria-label="Người gán"><span>Người gán</span></div>
+    <button id="btnSettings" class="hbtn" title="Cài đặt" aria-label="Cài đặt">⚙</button>
+    <button id="btnHelp" class="hbtn" title="Bảng phím tắt (?)" aria-label="Bảng phím tắt">?</button>
+  </div>
 </header>
 <div id="cols">
-  <aside id="leftcol">
-    <div class="sec">Nguồn dữ liệu</div>
-    <div class="folder-row"><select id="folder"></select><button id="applyFolder" title="Áp dụng">→</button></div>
-    <details id="advanced"><summary>Đường dẫn tùy chỉnh</summary><input id="folderPath" placeholder="đường dẫn thư mục…"/></details>
-    <div class="sec">Project Tree</div>
-    <div id="ptree" class="tree"></div>
-    <div class="sec">Statistics <span class="tagnew">New</span></div>
-    <div class="stats">
-      <div class="stat"><div class="snum" id="stTotal">0</div><div class="slbl">Total Images</div></div>
-      <div class="stat"><div class="snum" id="stLab">0</div><div class="slbl">Labeled</div></div>
-      <div class="stat"><div class="snum" id="stUnlab">0</div><div class="slbl">Unlabeled</div></div>
-      <div class="stat" id="stClsBox"><div class="snum" id="stCls">0</div><div class="slbl">Số mức nhãn</div></div>
+  <div id="navrail" class="rail" hidden><button id="navOpen" class="tbtn icon" title="Mở cột điều hướng">›</button></div>
+  <aside id="navcol" aria-label="Điều hướng ảnh">
+    <div class="colhead"><span class="sec">Ảnh <span class="pill" id="nimg">0</span></span><button id="navClose" class="tbtn icon" title="Thu gọn cột điều hướng">‹</button></div>
+    <label class="flbl">Ruộng <select id="navField" class="search"></select></label>
+    <input id="search" class="search" placeholder="🔎 Tìm ảnh, ví dụ 0207"/>
+    <div id="navFilter" class="navfilter" role="group" aria-label="Lọc theo trạng thái">
+      <button data-f="all" class="on">Tất cả <b id="nfAll">0</b></button>
+      <button data-f="todo">Chưa <b id="nfTodo">0</b></button>
+      <button data-f="done">Xong <b id="nfDone">0</b></button>
     </div>
-    <div class="sec">Train Model</div>
-    <div class="train"><div class="trainicon">🚀</div><div class="traintxt"><b>Train model</b><span>Sắp có · Preparing…</span></div></div>
-    <button id="trainBtn" class="btn" disabled title="Sẽ thêm ở giai đoạn sau" style="opacity:.45;cursor:not-allowed">Configure Training</button>
-  </aside>
-  <div class="resizer" data-t="leftcol"></div>
-  <aside id="imgcol">
-    <div class="sec">Ảnh <span class="pill" id="nimg">0</span></div>
-    <input id="search" class="search" placeholder="🔎 Tìm ảnh…"/>
+    <div class="navopts"><label class="chk"><input id="navThumbs" type="checkbox"/> Ảnh thu nhỏ</label></div>
     <div id="thumbs" class="thumbs"></div>
   </aside>
-  <div class="resizer" data-t="imgcol"></div>
+  <div class="resizer" data-t="navcol"></div>
   <div id="main">
     <div id="bar">
-      <div class="modelpick"><span class="mpico">✦</span><select id="modelSel" class="modelsel" title="Chọn model SAM để xử lý"></select></div>
-      <div class="seg">
-        <button id="m-click" class="on">🖱️ Click</button>
-        <button id="m-box">▭ Box</button>
-        <button id="m-draw">✏️ Vẽ tay</button>
-        <button id="m-sel">✦ Chọn / Sửa</button>
+      <div class="tb" data-ws="crown">
+        <div id="veSeg" class="seg">
+          <button id="veView" title="Xem: nhãn tán đã chốt, không sửa được">👁 Xem <span class="kbd">V</span></button>
+          <button id="veEdit" title="Sửa polygon tán">✎ Sửa</button>
+        </div>
+        <div id="editTools" class="tbgroup" hidden>
+          <div id="editSeg" class="seg">
+            <button id="m-click">🖱️ Click <span class="kbd">C</span></button>
+            <button id="m-box">▭ Box <span class="kbd">B</span></button>
+            <button id="m-draw">✏️ Vẽ tay <span class="kbd">D</span></button>
+            <button id="m-sel">✦ Nắn <span class="kbd">S</span></button>
+          </div>
+          <span id="samName" class="muted"></span>
+          <button id="undo" class="tbtn">↶ Hoàn tác</button>
+          <button id="noTree" class="tbtn" title="Ảnh này đã xem và không có cây cà phê. Được lưu như một nhãn rỗng và đi vào bộ xuất như ảnh nền.">∅ Không có cây</button>
+          <button id="clear" class="tbtn danger">🗑 Xoá hết</button>
+        </div>
       </div>
-      <div class="divider"></div>
-      <button id="zout" class="tbtn icon">−</button>
-      <span id="zlbl">100%</span>
-      <button id="zin" class="tbtn icon">+</button>
-      <button id="zfit" class="tbtn">Vừa màn hình</button>
-      <div class="divider"></div>
-      <button id="undo" class="tbtn">↶ Hoàn tác</button>
-      <button id="clear" class="tbtn danger">🗑 Xoá hết</button>
-      <button id="noTree" class="tbtn" title="Ảnh này đã xem và không có cây cà phê. Được lưu như một nhãn rỗng và đi vào bộ xuất như ảnh nền.">∅ Không có cây</button>
-      <button id="save" class="save">📦 Xuất data</button>
+      <div class="tb" data-ws="flower"><span class="muted">Thẻ Hoa: gán mask hoa theo vòng.</span></div>
+      <div class="tb" data-ws="review"><span class="muted">So sánh dự đoán của model với nhãn tán · chỉ đọc</span></div>
+      <div class="tb zoomgrp" data-ws="crown flower review">
+        <button id="zout" class="tbtn icon" title="Thu nhỏ (−)">−</button>
+        <span id="zlbl">100%</span>
+        <button id="zin" class="tbtn icon" title="Phóng to (+)">+</button>
+        <button id="zfit" class="tbtn" title="Vừa khung (0)">Vừa khung <span class="kbd">0</span></button>
+      </div>
     </div>
-    <div id="wrap"><canvas id="cv"></canvas></div>
-    <div id="status"><span id="hint"></span><span id="svst"></span><span id="count">0 Vùng</span></div>
+    <div id="wrap" data-ws="crown flower review"><canvas id="cv"></canvas></div>
+    <div id="dataPage" class="datapage" data-ws="data">
+      <h2>Tổng quan</h2>
+      <div class="stats">
+        <div class="stat"><div class="snum" id="stTotal">0</div><div class="slbl" id="stTotalLbl">Ảnh</div></div>
+        <div class="stat"><div class="snum" id="stLab">0</div><div class="slbl">Đã có nhãn tán</div></div>
+        <div class="stat"><div class="snum" id="stUnlab">0</div><div class="slbl">Chưa có nhãn</div></div>
+        <div class="stat" id="stClsBox"><div class="snum" id="stCls">0</div><div class="slbl">Số mức hoa (HSV)</div></div>
+      </div>
+      <h2>Xuất dữ liệu</h2>
+      <p class="muted">Xuất bộ phân đoạn tán (COCO, YOLO-seg, mask) từ các ảnh đã gán nhãn, chia theo tỉ lệ, ruộng hoặc đường bay.</p>
+      <div><button id="save" class="save">📦 Xuất dữ liệu…</button></div>
+      <p id="dataPaths" class="muted"></p>
+    </div>
   </div>
-  <div class="resizer" data-t="rightcol" data-dir="r"></div>
-  <aside id="rightcol">
-    <div class="lblrow">Đếm hoa HSV/Otsu <button id="flowerOn" class="switch"><span class="knob"></span></button></div>
-    <div id="flowerBox" class="flowerbox" hidden>
-    <div class="sec">Mật độ hoa <button id="addCls" class="addbtn" title="Đếm hoa & tự phân loại tất cả vùng">⚡</button></div>
-    <div id="classes" class="clslist"></div>
-    <div class="sec">Đếm pixel hoa</div>
-    <div class="hsvbox">
-      <label>Phương pháp <select id="fmethod" title="HSV: ngưỡng cố định S/V. Otsu + blob: ngưỡng tự tìm trong từng tán, lọc theo blob"><option value="hsv">HSV cố định</option><option value="otsu">Otsu + blob</option></select></label>
-      <div id="hsvParams" class="grp">
-        <label>Saturation &lt; <input id="satMax" type="number" value="50" min="0" max="255"/></label>
-        <label>Value &gt; <input id="valMin" type="number" value="180" min="0" max="255"/></label>
+  <div class="resizer" data-t="inspcol" data-dir="r"></div>
+  <aside id="inspcol" aria-label="Chi tiết">
+    <div class="colhead"><span class="sec" id="inspTitle">Chi tiết</span><button id="inspClose" class="tbtn icon" title="Thu gọn cột chi tiết">›</button></div>
+    <div class="insp" data-ws="crown">
+      <div id="flowerBox" class="flowerbox" hidden>
+        <div class="sec">Mật độ hoa (HSV) <button id="addCls" class="addbtn" title="Đếm hoa & tự phân loại tất cả vùng">⚡</button></div>
+        <div id="classes" class="clslist"></div>
+        <button id="autoAll" class="btn">⚡ Đếm hoa & phân loại tất cả</button>
       </div>
-      <div id="otsuParams" class="grp" hidden>
-        <label>Kênh <select id="ochan" title="white: cổng màu S của HSV + ngưỡng sáng tự thích nghi theo tán (Otsu trên min(R,G,B)) — mặc định. min2: Otsu hai tầng trên min(R,G,B). v2: hai tầng trên V. v: một lần trên V (đề cương §6, tách nắng/bóng chứ không tách hoa)"><option value="white">Trắng: S &lt; s &amp; sáng theo tán</option><option value="min2">min(R,G,B) 2 tầng</option><option value="v2">V 2 tầng</option><option value="v">V 1 lần</option></select></label>
-        <label id="sMaxRow" title="Kênh white: pixel hoa phải có S < ngưỡng này (cùng nghĩa Saturation của HSV)">S &lt; <input id="sMax" type="number" min="0" max="255" value="50"/></label>
-        <label title="Lớp pixel chọn ra có S trung bình vượt ngưỡng này là lá nắng → 0; 0 = tắt. Đo: tán không hoa ≈ 73, tán nhiều hoa ≈ 17">S lớp ≤ <input id="classSMax" type="number" step="5" min="0" max="255" value="0"/></label>
-        <label title="Độ tách η tối thiểu của tầng Otsu cuối; 0 = tắt">Độ tách ≥ <input id="sepMin" type="number" step="0.05" min="0" max="1" value="0"/></label>
-        <label title="Bỏ blob nhỏ hơn (px²); 0 = tắt">Blob ≥ px² <input id="areaMin" type="number" min="0" value="0"/></label>
-        <label title="Bỏ blob lớn hơn (px²); 0 = tắt">Blob ≤ px² <input id="areaMax" type="number" min="0" value="0"/></label>
-        <label title="Bỏ blob có dài/rộng khung bao vượt ngưỡng; 0 = tắt">Dài/rộng ≤ <input id="elongMax" type="number" step="0.5" min="0" value="0"/></label>
-        <label class="chk"><input id="clipRule" type="checkbox"/> Bỏ blob lõi bão hoà (≥250)</label>
-      </div>
-      <label class="chk"><input id="showMask" type="checkbox"/> Hiện pixel hoa trên ảnh</label>
-      <button id="autoAll" class="btn">⚡ Đếm hoa & phân loại tất cả</button>
+      <div class="sec">Tán trong ảnh <span class="pill" id="rcount">0</span></div>
+      <div id="regions" class="reglist"></div>
     </div>
-    </div>
-    <div class="sec">Dự đoán model <span class="pill" id="predCount">—</span></div>
-    <div id="predBox" class="predbox">
-      <label class="chk"><input id="predOn" type="checkbox"/> Hiện dự đoán (khoá sửa)</label>
-      <div id="predBody" hidden>
-        <div class="predbox" style="border:0;padding:0;gap:7px">
-          <label>Lượt chấm <select id="predRun"></select></label>
-          <label>Điểm ≥ <input id="predConf" type="range" min="5" max="95" step="5" value="50"/>
-            <b id="predConfLbl" style="min-width:34px;text-align:right;color:var(--text)">0,50</b></label>
-          <label class="chk"><input id="predShowGt" type="checkbox" checked/> Hiện cả nhãn tay</label>
-          <div class="predsum" id="predSum"></div>
-          <div class="predwarn" id="predWarn" hidden></div>
-          <div class="predsrc" id="predSrc"></div>
+    <div class="insp" data-ws="flower"><p class="muted">Chưa có tán nào đang gán.</p></div>
+    <div class="insp" data-ws="review">
+      <div class="sec">Dự đoán model <span class="pill" id="predCount">—</span></div>
+      <div id="predBox" class="predbox">
+        <label class="chk"><input id="predOn" type="checkbox"/> Hiện dự đoán (khoá sửa)</label>
+        <div id="predBody" hidden>
+          <div class="predbox" style="border:0;padding:0;gap:7px">
+            <label>Lượt chấm <select id="predRun"></select></label>
+            <label>Điểm ≥ <input id="predConf" type="range" min="5" max="95" step="5" value="50"/>
+              <b id="predConfLbl" style="min-width:34px;text-align:right;color:var(--text)">0,50</b></label>
+            <label class="chk"><input id="predShowGt" type="checkbox" checked/> Hiện cả nhãn tay</label>
+            <div class="predsum" id="predSum"></div>
+            <div class="predwarn" id="predWarn" hidden></div>
+            <div class="predsrc" id="predSrc"></div>
+          </div>
         </div>
       </div>
     </div>
-    <div class="sec">Instances (vùng cây) <span class="pill" id="rcount">0</span></div>
-    <div id="regions" class="reglist"></div>
   </aside>
+  <div id="insprail" class="rail" hidden><button id="inspOpen" class="tbtn icon" title="Mở cột chi tiết">‹</button></div>
+</div>
+<footer id="status">
+  <span id="svst"></span>
+  <span id="stWhere"></span>
+  <span id="count">0 Vùng</span>
+  <span id="stTimer"></span>
+  <span id="hint"></span>
+  <span class="muted"><b class="kbd">?</b> phím tắt</span>
+</footer>
+<div id="setModal" class="fbmask drawer">
+  <section class="fbbox" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <div class="fbhead"><b id="setTitle">⚙ Cài đặt</b><span id="setClose" class="fbx">✕</span></div>
+    <div class="exbody">
+      <div class="exgrp">
+        <div class="exlbl">Nguồn dữ liệu</div>
+        <div class="folder-row"><select id="folder"></select><button id="applyFolder" title="Áp dụng">→</button></div>
+        <input id="folderPath" class="search" placeholder="đường dẫn thư mục tuỳ chỉnh…"/>
+      </div>
+      <div class="exgrp">
+        <div class="exlbl">Model SAM (khi sửa tán)</div>
+        <select id="modelSel" class="search" title="Chọn model SAM để xử lý"></select>
+      </div>
+      <div class="exgrp">
+        <div class="exlbl">Người gán</div>
+        <div id="annotList" class="annotlist"></div>
+        <div class="fbpath"><input id="annotNew" class="search" style="flex:1;min-width:0" placeholder="tên viết tắt, ví dụ C"/><button id="annotAdd" class="btn" style="width:auto">Thêm</button></div>
+      </div>
+      <div class="exgrp">
+        <div class="exlbl">Nơi lưu (cố định)</div>
+        <div id="setPaths" class="expinfo"></div>
+      </div>
+      <div class="exgrp">
+        <div class="exlbl">Thí nghiệm</div>
+        <div class="lblrow">Đếm hoa HSV/Otsu <button id="flowerOn" class="switch"><span class="knob"></span></button></div>
+        <div class="muted">Đếm pixel hoa theo ngưỡng màu, từ đợt nghiên cứu 15–16/09. Không phải nhãn hoa. Tắt thì lúc lưu chỉ ghi hình polygon.</div>
+        <div class="hsvbox">
+          <label>Phương pháp <select id="fmethod" title="HSV: ngưỡng cố định S/V. Otsu + blob: ngưỡng tự tìm trong từng tán, lọc theo blob"><option value="hsv">HSV cố định</option><option value="otsu">Otsu + blob</option></select></label>
+          <div id="hsvParams" class="grp">
+            <label>Saturation &lt; <input id="satMax" type="number" value="50" min="0" max="255"/></label>
+            <label>Value &gt; <input id="valMin" type="number" value="180" min="0" max="255"/></label>
+          </div>
+          <div id="otsuParams" class="grp" hidden>
+            <label>Kênh <select id="ochan" title="white: cổng màu S của HSV + ngưỡng sáng tự thích nghi theo tán (Otsu trên min(R,G,B)) — mặc định. min2: Otsu hai tầng trên min(R,G,B). v2: hai tầng trên V. v: một lần trên V (đề cương §6, tách nắng/bóng chứ không tách hoa)"><option value="white">Trắng: S &lt; s &amp; sáng theo tán</option><option value="min2">min(R,G,B) 2 tầng</option><option value="v2">V 2 tầng</option><option value="v">V 1 lần</option></select></label>
+            <label id="sMaxRow" title="Kênh white: pixel hoa phải có S < ngưỡng này (cùng nghĩa Saturation của HSV)">S &lt; <input id="sMax" type="number" min="0" max="255" value="50"/></label>
+            <label title="Lớp pixel chọn ra có S trung bình vượt ngưỡng này là lá nắng → 0; 0 = tắt. Đo: tán không hoa ≈ 73, tán nhiều hoa ≈ 17">S lớp ≤ <input id="classSMax" type="number" step="5" min="0" max="255" value="0"/></label>
+            <label title="Độ tách η tối thiểu của tầng Otsu cuối; 0 = tắt">Độ tách ≥ <input id="sepMin" type="number" step="0.05" min="0" max="1" value="0"/></label>
+            <label title="Bỏ blob nhỏ hơn (px²); 0 = tắt">Blob ≥ px² <input id="areaMin" type="number" min="0" value="0"/></label>
+            <label title="Bỏ blob lớn hơn (px²); 0 = tắt">Blob ≤ px² <input id="areaMax" type="number" min="0" value="0"/></label>
+            <label title="Bỏ blob có dài/rộng khung bao vượt ngưỡng; 0 = tắt">Dài/rộng ≤ <input id="elongMax" type="number" step="0.5" min="0" value="0"/></label>
+            <label class="chk"><input id="clipRule" type="checkbox"/> Bỏ blob lõi bão hoà (≥250)</label>
+          </div>
+          <label class="chk"><input id="showMask" type="checkbox"/> Hiện pixel hoa trên ảnh</label>
+        </div>
+      </div>
+    </div>
+  </section>
 </div>
 <div id="expModal" class="fbmask">
   <div class="fbbox">
@@ -150,22 +214,9 @@
   </div>
 </div>
 <div id="helpModal" class="fbmask">
-  <div class="fbbox" style="width:430px">
-    <div class="fbhead"><b>⌨ Phím tắt</b><span id="helpClose" class="fbx">✕</span></div>
-    <div class="hlist">
-      <div><b class="kbd">Ctrl</b><b class="kbd">Z</b><span>Hoàn tác</span></div>
-      <div><b class="kbd">Del</b><span>Xoá vùng đang chọn</span></div>
-      <div><b class="kbd">Esc</b><span>Huỷ nét đang vẽ</span></div>
-      <div><b class="kbd">+</b><b class="kbd">−</b><span>Phóng to / thu nhỏ</span></div>
-      <div><b class="kbd">0</b><span>Vừa màn hình</span></div>
-      <div style="height:6px"></div>
-      <div><b class="kbd">Shift</b><span>Giữ khi kéo điểm = chỉ nắn đúng 1 đỉnh</span></div>
-      <div><span>Chuột phải lên đỉnh = xoá đỉnh đó</span></div>
-      <div><span>Kéo vùng trống = di chuyển ảnh · lăn chuột = phóng to</span></div>
-      <div><span>Rê lên cạnh = hiện điểm mờ ⊕, bấm vào là thêm điểm và kéo được ngay</span></div>
-      <div><span>Nháy đúp khi Vẽ tay = đóng vùng</span></div>
-      <div><span>∅ Không có cây = ảnh đã xem, không có tán; vẫn được lưu và xuất như ảnh nền (thumbnail hiện ∅)</span></div>
-    </div>
+  <div class="fbbox" style="width:470px">
+    <div class="fbhead"><b id="helpTitle">⌨ Phím tắt</b><span id="helpClose" class="fbx">✕</span></div>
+    <div class="hlist" id="helpList"></div>
     <div class="fbfoot"><button id="helpOk" class="btn" style="width:auto">Đóng</button></div>
   </div>
 </div>
@@ -181,6 +232,7 @@
 <script src="/static/js/core.js?v={{V}}"></script>
 <script src="/static/js/hsv.js?v={{V}}"></script>
 <script src="/static/js/ws_crown.js?v={{V}}"></script>
+<script src="/static/js/ws_flower.js?v={{V}}"></script>
 <script src="/static/js/ws_review.js?v={{V}}"></script>
 <script src="/static/js/ws_data.js?v={{V}}"></script>
 <script src="/static/js/settings.js?v={{V}}"></script>

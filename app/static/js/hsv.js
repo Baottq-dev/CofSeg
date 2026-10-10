@@ -75,7 +75,8 @@ async function fetchMask(){if(!flowerOn||!showMask||!current||!ready||!inst.leng
 function syncFlowerOn(){const b=$('flowerOn');b.classList.toggle('on',flowerOn);
  b.title=flowerOn?'Đang bật: đếm pixel hoa HSV/Otsu cho từng tán và lưu vào file nhãn. Bấm để tắt.'
   :'Đang tắt: chỉ lưu hình polygon, không đọc ảnh để đếm hoa. Bấm để bật (thí nghiệm cũ, mật độ hoa sẽ tính từ mask hoa).';
- $('flowerBox').hidden=!flowerOn;$('stClsBox').hidden=!flowerOn;}
+ $('flowerBox').hidden=!flowerOn;$('stClsBox').hidden=!flowerOn;
+ document.querySelector('#setModal .hsvbox').hidden=!flowerOn;}
 function pickCls(id){return clsById(id)?id:activeCls;}
 function mergeCats(cats){if(!cats)return;let ch=false;cats.forEach(c=>{if(c&&c.id!=null&&!clsById(c.id)){classes.push({id:c.id,name:c.name||('Lớp '+c.id),color:c.color||'#888'});if(c.id>clsMax)clsMax=c.id;ch=true;}});if(ch){saveClasses();renderClasses();renderStats();}}
 wsRegister({id:'hsv',

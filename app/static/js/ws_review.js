@@ -102,7 +102,8 @@ function predHint(){
 // đổi sang chế độ 'view' thì bốn nhánh sửa trong handler chuột không khớp nữa,
 // nhưng các nút trong danh sách vùng và phím tắt vẫn đi đường riêng nên vẫn
 // phải hỏi ở đây.
-function predLocked(){return predOn;}
+// Khoá cả khi thẻ Tán đang ở chế độ Xem: cùng một chốt cho mọi lối vào sửa.
+function predLocked(){return predOn||mode==='view';}
 function syncPredLock(){
  const on=predOn;
  ['m-click','m-box','m-draw','m-sel','undo','clear','noTree','autoAll','addCls']
@@ -179,3 +180,9 @@ wsRegister({id:'review',
  // đúng một fold, nên danh sách lượt chấm cũng khác.
  onImage(t,tok){predData=null;predHover=null;predRender();predOnImage(tok);},
  draw(){drawPred();}});
+// Thẻ So sánh = lớp dự đoán đang bật. Vào thẻ thì bật, rời thẻ thì tắt, nên
+// về thẻ Tán là không còn dự đoán nào che nhãn.
+function setPredOn(on){const c=$('predOn');if(c.checked===on)return;c.checked=on;c.dispatchEvent(new Event('change'));}
+tabRegister({id:'review',inspTitle:'Kết quả trên ảnh',
+ help:[['Rê chuột lên một vùng','Xem điểm và IoU của dự đoán hoặc nhãn'],['Thanh Điểm ≥','Đổi ngưỡng điểm của dự đoán'],['Hiện cả nhãn tay','Bật/tắt nền nhãn để nhìn rõ dự đoán']],
+ enter(){setPredOn(true);},leave(){setPredOn(false);}});

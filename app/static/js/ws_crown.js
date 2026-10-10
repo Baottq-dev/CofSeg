@@ -15,8 +15,9 @@ let inst=[],store={},hist=[],saveTimer=null,rid=1,dirty=false;
 // nền đi vào bộ xuất. emptyMark = ảnh hiện tại; emptyStore = theo ảnh, cùng
 // vòng đời với store; emptySet = server báo ảnh nào đang có nhãn rỗng.
 let emptyMark=false,emptyStore={},emptySet=new Set();
-let mode='sam-click',sel=-1,dragPt=-1,dragVi=-1,dragStart=null,origPoly=null,softD=null,dragSoft=true,hovPt=-1,ghost=null,draft=[],boxStart=null,mouse=null,pan=null;
-const HINT={'sam-click':'SAM Click · Bấm vào 1 cây để tạo vùng mới (lớp đang chọn).','sam-box':'SAM Box · Kéo 1 khung quanh cây để tạo vùng chính xác hơn.','draw':'Vẽ tay · Click các điểm quanh tán; double-click để đóng vùng; Esc để huỷ.','select':'Chọn / Sửa · Kéo điểm trắng để nắn viền (Shift = 1 điểm) · rê lên cạnh để hiện điểm mờ, bấm là thêm điểm ngay đó · chuột phải xoá điểm · Delete xoá vùng · Ctrl+Z hoàn tác.',
+let lastEdit='select',mode='sam-click',sel=-1,dragPt=-1,dragVi=-1,dragStart=null,origPoly=null,softD=null,dragSoft=true,hovPt=-1,ghost=null,draft=[],boxStart=null,mouse=null,pan=null;
+const HINT={'sam-click':'SAM Click · Bấm vào 1 cây để tạo vùng mới (lớp đang chọn).','sam-box':'SAM Box · Kéo 1 khung quanh cây để tạo vùng chính xác hơn.','draw':'Vẽ tay · Click các điểm quanh tán; double-click để đóng vùng; Esc để huỷ.','select':'Nắn · Kéo điểm trắng để nắn viền (Shift = 1 điểm) · rê lên cạnh để hiện điểm mờ, bấm là thêm điểm ngay đó · chuột phải xoá điểm · Delete xoá vùng · Ctrl+Z hoàn tác.',
+ 'look':'👁 Xem · nhãn tán đã chốt nên không sửa được · kéo để di chuyển, lăn để phóng to · bấm ✎ Sửa khi thật sự cần.',
  'view':'👁 Xem dự đoán — KHOÁ SỬA · kéo để di chuyển, lăn để phóng to · rê lên một vùng để xem điểm và IoU · bỏ tick "Hiện dự đoán" để sửa lại.'};
 const BTN={'sam-click':'m-click','sam-box':'m-box','draw':'m-draw','select':'m-sel'};
 // 'view' = chế độ CHỈ XEM. Khoá bằng một chế độ riêng chứ không rải cờ khắp
@@ -24,10 +25,14 @@ const BTN={'sam-click':'m-click','sam-box':'m-box','draw':'m-draw','select':'m-s
 // không nhánh nào khớp nữa, tức không có đường nào lọt. Các nút trong danh
 // sách vùng và phím tắt đi đường riêng nên vẫn hỏi `predLocked()`.
 function setMode(m){if(predOn&&m!=='view')return;
- mode=m;draft=[];boxStart=null;hovPt=-1;ghost=null;dragPt=-1;dragVi=-1;origPoly=null;softD=null;
- document.querySelectorAll('#bar .seg button').forEach(b=>b.classList.remove('on'));
+ mode=m;if(m!=='view')lastEdit=m;draft=[];boxStart=null;hovPt=-1;ghost=null;dragPt=-1;dragVi=-1;origPoly=null;softD=null;
+ document.querySelectorAll('#editSeg button').forEach(b=>b.classList.remove('on'));
  if(BTN[m])$(BTN[m]).classList.add('on');
- cv.style.cursor=(m==='view')?'grab':'crosshair';$('hint').textContent=HINT[m]||'';draw();}
+ cv.style.cursor=(m==='view')?'grab':'crosshair';$('hint').textContent=((m==='view'&&!predOn)?HINT.look:HINT[m])||'';syncVE();draw();}
+// Thẻ Tán có hai chế độ: Xem (mặc định, không gì sửa được nhãn đã chốt) và Sửa
+// (bốn công cụ cũ). Lúc xem dự đoán thì không bật Sửa được.
+function syncVE(){const v=(mode==='view');$('veView').classList.toggle('on',v);$('veEdit').classList.toggle('on',!v);
+ $('veEdit').disabled=predOn;$('editTools').hidden=v;renderRegions();}
 function regionArea(r){const p=r.poly,n=p.length/2;let a=0;for(let i=0;i<n;i++){const j=(i+1)%n;a+=p[i*2]*p[j*2+1]-p[j*2]*p[i*2+1];}return Math.abs(a)/2;}
 // Dựng lại cả danh sách thì scrollTop về 0: ảnh 30-48 vùng, bấm 👁/⚡/đổi lớp ở
 // hàng dưới là hàng đó bay khỏi tầm nhìn, trông như vùng đã mất. Giữ lại vị
@@ -71,7 +76,7 @@ function renderRegions(){const box=$('regions');const st=box.scrollTop;box.inner
   // chế độ xem dự đoán — ẩn một nhãn đi để nhìn rõ đường dự đoán bên dưới là
   // đúng việc người ta cần lúc so sánh. Ba nút còn lại đều ghi xuống đĩa.
   [selc,bF,bD].forEach(el=>{if(predLocked()){el.disabled=true;el.style.opacity=.4;
-   el.style.cursor='not-allowed';el.title='Đang ở chế độ xem dự đoán — tắt để sửa lại';}});
+   el.style.cursor='not-allowed';el.title=predOn?'Đang ở chế độ xem dự đoán — tắt để sửa lại':'Đang ở chế độ Xem — bấm ✎ Sửa để chỉnh';}});
   if(flowerOn){act.appendChild(selc);act.appendChild(bF);}
   act.appendChild(bV);act.appendChild(bD);
   row.appendChild(head);row.appendChild(act);box.appendChild(row);});
@@ -320,3 +325,18 @@ wsRegister({id:'crown',
   if(mouse)ctx.lineTo(sx(cX(mouse[0])),sy(cY(mouse[1])));ctx.stroke();ctx.setLineDash([]);
   for(let k=0;k<draft.length;k+=2){ctx.beginPath();ctx.arc(sx(draft[k]),sy(draft[k+1]),4,0,7);ctx.fillStyle='#f97316';ctx.fill();}}
  if(mode==='sam-box'&&boxStart&&mouse){const bx=cX(boxStart[0]),by=cY(boxStart[1]),mx=cX(mouse[0]),my=cY(mouse[1]);ctx.strokeStyle='#f97316';ctx.setLineDash([5,4]);ctx.strokeRect(sx(bx),sy(by),(mx-bx)*scale,(my-by)*scale);ctx.setLineDash([]);}}});
+tabRegister({id:'crown',inspTitle:'Chi tiết',
+ help:[['V','Xem (nhãn tán không sửa được)'],['C · B · D · S','Click · Box · Vẽ tay · Nắn (khi Sửa)'],['Shift + kéo đỉnh','Chỉ nắn đúng một đỉnh'],
+  ['Chuột phải lên đỉnh','Xoá đỉnh đó'],['Rê lên cạnh','Hiện điểm ⊕, bấm vào là thêm đỉnh và kéo luôn'],['Nháy đúp','Đóng vùng khi Vẽ tay'],
+  ['Del','Xoá tán đang chọn'],['Esc','Huỷ nét đang vẽ'],['Ctrl Z','Hoàn tác']],
+ // Hai phím Ctrl+Z và Delete SỬA nhãn nên cũng phải khoá khi đang Xem hoặc xem
+ // dự đoán — chúng đi thẳng vào `inst` chứ không qua handler chuột.
+ key(e){if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){e.preventDefault();if(!predLocked())undo();return true;}
+  if(e.ctrlKey||e.metaKey||e.altKey)return false;
+  if(e.key==='Escape'){draft=[];draw();return true;}
+  if(e.key==='Delete'){if(!predLocked()&&sel>=0&&inst[sel]&&inst[sel].vis){pushHist();inst.splice(sel,1);sel=-1;refresh();}return true;}
+  const k=e.key.toLowerCase();
+  if(k==='v'){setMode('view');return true;}
+  const m={c:'sam-click',b:'sam-box',d:'draw',s:'select'}[k];
+  if(m&&mode!=='view'&&!predOn){setMode(m);return true;}
+  return false;}});

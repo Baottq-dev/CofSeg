@@ -92,3 +92,4 @@ async function fbLoad(path){try{const d=await(await fetch('/api/browse?path='+en
  if(d.error){const e=document.createElement('div');e.className='fbrow';e.style.color='#f7a5a5';e.textContent='⚠ '+d.error;box.appendChild(e);}
  if(!(d.dirs||[]).length&&!(d.drives||[]).length&&!d.error){const em=document.createElement('div');em.className='fbrow';em.style.color='var(--muted)';em.textContent='(không có thư mục con)';box.appendChild(em);}}
  catch(e){}}
+tabRegister({id:'data',inspTitle:'Dữ liệu',help:[],enter(){renderStats();}});

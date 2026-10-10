@@ -204,3 +204,55 @@ canvas{background:#070c15;display:block}
 .predsrc{font-size:10.5px;color:var(--muted2);line-height:1.45;word-break:break-all}
 .predwarn{font-size:11px;color:#f7c66b;line-height:1.45}
 .predlock{font-size:11px;color:var(--pred-tp);display:flex;align-items:center;gap:5px}
+/* ===================== khung 4 thẻ: Tán · Hoa · So sánh · Dữ liệu ===================== */
+/* `hidden` phải thắng mọi `display` đặt bằng class: thẻ nào không mở thì phần
+   của nó biến mất hẳn, kể cả khi class của nó là flex. */
+[data-ws][hidden],aside[hidden],.resizer[hidden],.rail[hidden],.tbgroup[hidden],.hsvbox[hidden]{display:none!important}
+#topbar{justify-content:flex-start;gap:18px;padding-right:12px}
+#tabs{display:flex;gap:2px;align-self:stretch}
+#tabs button{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);padding:0 14px;font-size:13.5px;cursor:pointer;display:flex;align-items:center;gap:8px}
+#tabs button:hover{color:var(--text)}
+#tabs button.on{color:#fff;border-bottom-color:var(--teal);font-weight:600}
+.hactions{margin-left:auto}
+button.hbtn{background:transparent;font-size:14px;line-height:1}
+button.hbtn:hover{color:var(--text);border-color:var(--teal)}
+.annot{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}
+.annot button,.annotlist button{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-weight:700;cursor:pointer}
+.annot button.on,.annotlist button.on{background:var(--teal);color:#04201c;border-color:var(--teal)}
+.annotlist{display:flex;gap:6px;flex-wrap:wrap}
+#navcol{width:240px;flex:none}
+#inspcol{width:280px;flex:none;border-right:0;border-left:1px solid var(--border)}
+.colhead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.colhead .tbtn.icon{padding:3px 9px;font-size:13px}
+.rail{flex:none;width:38px;background:var(--panel);border-right:1px solid var(--border);display:flex;justify-content:center;padding-top:10px}
+#insprail{border-right:0;border-left:1px solid var(--border)}
+.rail .tbtn{height:30px}
+.flbl{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted)}
+.navfilter{display:flex;gap:4px}
+.navfilter button{flex:1;min-height:28px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:11.5px;cursor:pointer}
+.navfilter button b{font-variant-numeric:tabular-nums;color:var(--text);font-weight:600}
+.navfilter button.on{border-color:var(--teal);background:var(--elev);color:#fff}
+.navopts{font-size:11.5px;color:var(--muted)}
+.navopts .chk{display:flex;align-items:center;gap:6px;cursor:pointer}
+.ghead{display:flex;justify-content:space-between;gap:6px;font-size:11.5px;color:var(--muted);padding:6px 5px 3px;cursor:pointer;user-select:none}
+.ghead:hover{color:var(--text)}
+.ghead span{font-variant-numeric:tabular-nums}
+.thumbs.noimg .thumb img{display:none}
+.thumbs.noimg .thumb{padding:6px 8px}
+.tb,.tbgroup{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.zoomgrp{margin-left:auto}
+.seg .kbd,.tbtn .kbd{margin:0 0 0 2px}
+.muted{color:var(--muted);font-size:12px}
+.insp{display:flex;flex-direction:column;gap:8px;flex:1;min-height:0}
+.datapage{flex:1;overflow:auto;padding:22px 26px;display:flex;flex-direction:column;gap:12px}
+.datapage h2{font-size:15px;margin:6px 0 0;font-weight:600}
+.datapage p{margin:0;line-height:1.55}
+.datapage .stats{grid-template-columns:repeat(4,minmax(0,170px))}
+.datapage .save{width:auto}
+#status{flex:none}
+#status #stWhere{white-space:nowrap;color:var(--text)}
+#status #stTimer{font-variant-numeric:tabular-nums}
+.fbmask.drawer{justify-content:flex-end;align-items:stretch}
+.drawer .fbbox{width:420px;max-width:100vw;max-height:none;height:100%;border-radius:0;border-width:0 0 0 1px}
+.drawer .hsvbox{margin-top:4px}
+.datapage .save{background:var(--green);color:#04210f;border:0;font-weight:700;padding:8px 14px;border-radius:7px;cursor:pointer;font-size:12.5px}

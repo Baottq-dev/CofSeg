@@ -191,3 +191,14 @@ def test_page_loads_its_css_and_js_from_static():
     assert names[0] == "core" and names[-1] == "main" and len(set(names)) == len(names)
     for url in [css.group(1)] + [u for u, _ in js]:
         assert c.get(url).status_code == 200
+
+
+def test_page_has_four_workspaces_and_no_placeholders():
+    # Bốn thẻ theo đúng thứ tự phím Alt+1…4; các ô chiếm chỗ mà không làm gì
+    # (Train model "Sắp có", avatar tĩnh) đã bỏ.
+    from fastapi.testclient import TestClient
+
+    page = TestClient(server.app).get("/").text
+    assert re.findall(r'data-tab="(\w+)"', page) == ["crown", "flower", "review", "data"]
+    for gone in ("Train model", "Configure Training", 'class="avatar"', 'id="leftcol"'):
+        assert gone not in page
