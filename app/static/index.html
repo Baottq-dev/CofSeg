@@ -55,7 +55,17 @@
           <button id="clear" class="tbtn danger">🗑 Xoá hết</button>
         </div>
       </div>
-      <div class="tb" data-ws="flower"><span class="muted">Thẻ Hoa: gán mask hoa theo vòng.</span></div>
+      <div class="tb" data-ws="flower">
+        <div id="flTools" class="seg" role="radiogroup" aria-label="Nhãn đang vẽ">
+          <button data-tool="hoa" role="radio"><i class="sw" style="background:#22c55e"></i>Hoa <span class="kbd">1</span></button>
+          <button data-tool="khong" role="radio"><i class="sw" style="background:#ef4444"></i>Không hoa <span class="kbd">2</span></button>
+          <button data-tool="boqua" role="radio"><i class="sw hatch"></i>Bỏ qua <span class="kbd">3</span></button>
+          <button data-tool="tay" role="radio"><i class="sw" style="border:1.5px solid #9fb0c6"></i>Tẩy <span class="kbd">E</span></button>
+        </div>
+        <label class="flrange">Cọ <input id="flBrush" type="range" min="2" max="80" value="12"/><b id="flBrushLbl">12 px</b><span class="kbd">[ ]</span></label>
+        <button id="flLearn" class="tbtn learn" title="Học lại từ nét của mọi tán trong vòng rồi tô tán đang mở">✨ Học &amp; tô <span class="kbd">T</span></button>
+        <button id="flUndo" class="tbtn">↶ Hoàn tác <span class="kbd">Ctrl Z</span></button>
+      </div>
       <div class="tb" data-ws="review"><span class="muted">So sánh dự đoán của model với nhãn tán · chỉ đọc</span></div>
       <div class="tb zoomgrp" data-ws="crown flower review">
         <button id="zout" class="tbtn icon" title="Thu nhỏ (−)">−</button>
@@ -91,7 +101,26 @@
       <div class="sec">Tán trong ảnh <span class="pill" id="rcount">0</span></div>
       <div id="regions" class="reglist"></div>
     </div>
-    <div class="insp" data-ws="flower"><p class="muted">Chưa có tán nào đang gán.</p></div>
+    <div class="insp" data-ws="flower">
+      <label class="flbl">Vòng <select id="flRound" class="search"></select></label>
+      <div id="flRoundInfo" class="muted"></div>
+      <div id="flCrownBox" class="flbox" hidden>
+        <div class="flhead"><b id="flTitle">Tán</b><span id="flState" class="pchip"></span></div>
+        <div class="flcover"><span class="muted">Độ phủ hoa của tán (theo mask)</span><b id="flCover">—</b></div>
+        <div id="flMeta" class="muted"></div>
+        <div class="fllayers" role="group" aria-label="Hiện trên ảnh">
+          <button data-layer="mask"><i class="sw" style="background:#facc15"></i>Mask hoa</button>
+          <button data-layer="human"><i class="sw" style="background:#22c55e"></i>Nét của người</button>
+          <button data-layer="others"><i class="sw" style="border:1.5px solid #cbd5e1"></i>Viền các tán khác</button>
+        </div>
+        <label class="flrange">Độ đậm mask <input id="flOpacity" type="range" min="0" max="100" value="80"/><span class="kbd">O</span></label>
+        <button id="flDone" class="save">✔ Xong tán này <span class="kbd">Enter</span></button>
+        <div id="flLearnInfo" class="muted"></div>
+      </div>
+      <div class="sec">Các tán trong ảnh <span class="pill" id="flCount">0</span></div>
+      <div id="flChips" class="flchips"></div>
+      <button id="flNext" class="btn">▶ Tán kế tiếp <span class="kbd">N</span></button>
+    </div>
     <div class="insp" data-ws="review">
       <div class="sec">Dự đoán model <span class="pill" id="predCount">—</span></div>
       <div id="predBox" class="predbox">

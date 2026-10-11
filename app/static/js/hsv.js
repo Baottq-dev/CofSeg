@@ -82,4 +82,4 @@ function mergeCats(cats){if(!cats)return;let ch=false;cats.forEach(c=>{if(c&&c.i
 wsRegister({id:'hsv',
  resetImage(){maskImg=null;maskToken++;clearTimeout(maskTimer);},
  onImage(){renderClasses();scheduleMask();},
- draw(){if(flowerOn&&showMask&&maskImg)ctx.drawImage(maskImg,ox,oy,img.width*scale,img.height*scale);}});
+ draw(){if(wsActive!=='flower'&&flowerOn&&showMask&&maskImg)ctx.drawImage(maskImg,ox,oy,img.width*scale,img.height*scale);}});

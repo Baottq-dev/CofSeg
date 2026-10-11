@@ -256,3 +256,32 @@ button.hbtn:hover{color:var(--text);border-color:var(--teal)}
 .drawer .fbbox{width:420px;max-width:100vw;max-height:none;height:100%;border-radius:0;border-width:0 0 0 1px}
 .drawer .hsvbox{margin-top:4px}
 .datapage .save{background:var(--green);color:#04210f;border:0;font-weight:700;padding:8px 14px;border-radius:7px;cursor:pointer;font-size:12.5px}
+/* --- thẻ Hoa --- */
+.sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:2px;vertical-align:-1px}
+.sw.hatch{background:repeating-linear-gradient(45deg,#94a3b8 0 2px,transparent 2px 4px);border:1px solid #94a3b8}
+.flrange{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.flrange input{width:84px;accent-color:var(--teal)}
+.flrange b{min-width:40px;color:var(--text);font-variant-numeric:tabular-nums;font-weight:600}
+.tbtn.learn{background:var(--teal);color:#04201c;border-color:var(--teal);font-weight:700}
+.tbtn.learn:hover{filter:brightness(1.06);background:var(--teal)}
+.tbtn.learn .kbd{background:#22b8a5;border-color:#168f80;color:#04201c}
+.flbox{display:flex;flex-direction:column;gap:9px}
+.flbox[hidden]{display:none}
+.flhead{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:15px}
+.flcover{display:flex;flex-direction:column;gap:2px;background:var(--panel2);border:1px solid var(--border);border-radius:9px;padding:9px 11px}
+.flcover b{font-size:21px;color:#facc15;font-variant-numeric:tabular-nums}
+.fllayers{display:flex;flex-direction:column;gap:4px}
+.fllayers button{display:flex;align-items:center;gap:7px;min-height:30px;padding:0 9px;border-radius:7px;border:1px solid var(--border);background:var(--panel2);color:var(--muted);font-size:12px;cursor:pointer;text-align:left}
+.fllayers button.on{border-color:var(--teal);color:var(--text);background:#123536}
+.insp .save{width:100%;justify-content:center;display:flex;gap:8px;align-items:center;background:var(--teal);color:#04201c;border:0;font-weight:700;padding:10px;border-radius:8px;cursor:pointer;font-size:13px}
+.insp .save:disabled{opacity:.45;cursor:not-allowed}
+.flchips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+.flchip{border:1px solid var(--border);background:var(--panel2);border-radius:8px;padding:5px 7px;display:flex;flex-direction:column;cursor:pointer;text-align:left;color:var(--text)}
+.flchip b{font-size:12px}
+.flchip span{font-size:10.5px;color:var(--muted)}
+.flchip.done{border-color:#1f6f66}.flchip.done span{color:#5eead4}
+.flchip.doing span{color:#fbbf24}
+.flchip.cur{border-color:#f59e0b;background:#2a2110}
+.insp .save .kbd{background:#22b8a5;border-color:#168f80;color:#04201c}
+.insp .flrange input{flex:1;width:auto}
+.tb[data-ws="flower"] .seg button{padding:6px 9px}

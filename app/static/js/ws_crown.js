@@ -299,7 +299,7 @@ wsRegister({id:'crown',
   store[t]=inst.map(cloneR);emptyStore[t]=emptyMark;},
  imageShown(){renderRegions();},
  onImage(){$('count').textContent=countText();syncEmptyBtn();renderRegions();},
- draw(){
+ draw(){if(wsActive==='flower')return;   // thẻ Hoa tự vẽ viền tán, mảnh và không tô nền
  // Ở chế độ xem dự đoán, nhãn lùi về làm NỀN: nền nhạt hơn và viền mảnh hơn,
  // để lớp dự đoán vẽ đè lên còn đọc được. Bỏ hẳn nhãn đi thì mất vế so sánh,
  // nên đó là một ô tick riêng chứ không phải mặc định.

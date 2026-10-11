@@ -209,6 +209,17 @@ $('btnSettings').onclick=openSettings;
 $('setClose').onclick=()=>$('setModal').classList.remove('open');
 $('setModal').onclick=e=>{if(e.target===$('setModal'))$('setModal').classList.remove('open');};
 $('annotAdd').onclick=addAnnot;
+// --- thẻ Hoa ------------------------------------------------------------------
+document.querySelectorAll('#flTools button').forEach(b=>b.onclick=()=>setFlTool(b.dataset.tool));
+$('flBrush').oninput=()=>setFlBrush(+$('flBrush').value);
+$('flOpacity').oninput=()=>setFlOpacity(+$('flOpacity').value/100);
+$('flLearn').onclick=flClassify;
+$('flUndo').onclick=flUndo;
+$('flDone').onclick=flFinish;
+$('flNext').onclick=flNext;
+$('flRound').onchange=()=>{flRound=$('flRound').value;lsSet('cofseg_flround',flRound);flCrown=-1;flLoadConfig().then(flLoadCrowns);};
+document.querySelectorAll('.fllayers button').forEach(b=>b.onclick=()=>toggleFlLayer(b.dataset.layer));
+window.addEventListener('keyup',e=>{if(e.key===' '&&flSpace){flSpace=false;if(flMouse)flCursor(flMouse[0],flMouse[1]);}});
 $('annotNew').addEventListener('keydown',e=>{if(e.key==='Enter')addAnnot();});
 $('helpClose').onclick=$('helpOk').onclick=()=>$('helpModal').classList.remove('open');
 $('helpModal').onclick=e=>{if(e.target===$('helpModal'))$('helpModal').classList.remove('open');};
