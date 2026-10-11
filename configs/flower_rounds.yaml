@@ -1,0 +1,23 @@
+# Các vòng gán nhãn hoa (thẻ Hoa của annotator). Đổi ruộng, số tán hay tham số
+# thì sửa file này, không sửa code. Server đọc lại file mỗi lần cần, không phải
+# khởi động lại.
+#
+# data_dir: thư mục nhãn hoa, tính từ data.masks_dir của configs/config.yaml
+# (mặc định data/masks/flower_v1/). Nhãn hoa nằm riêng, không đụng nhãn tán.
+version: v1
+data_dir: flower_v1
+rounds:
+  # Vòng thử: người tự chọn tán trên ảnh, vẽ vài nét Hoa / Không hoa rồi để bộ
+  # phân loại pixel tô phần còn lại. Dùng để xem vài nét có tách được lá vàng
+  # dưới nắng khỏi hoa ở Field 3 không, và mỗi tán mất bao lâu.
+  - id: try_f3
+    label: Vòng thử Field 3
+    kind: scribble               # nét vẽ + bộ phân loại pixel
+    pick: {mode: manual, fields: [field_3]}
+    classifier:
+      n_trees: 100
+      max_depth: 12
+      sigma_min: 0.7             # bộ lọc nhiều thang của skimage.multiscale_basic_features
+      sigma_max: 5.0
+      num_sigma: 4
+      max_samples: 50000         # tối đa số pixel học, chia đều hai lớp

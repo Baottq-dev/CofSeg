@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app import flower as fl
+from app import flower_api
 from app import predictions as pred
 from app.annotator import SamAnnotator
 
@@ -32,6 +33,8 @@ HERE = os.path.dirname(__file__)
 EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
 
 app = FastAPI(title="Coffee Canopy Annotator")
+# Thẻ Hoa: nét vẽ, Học & tô, chốt tán (/api/fl/*). Nhãn hoa nằm riêng, chỉ ĐỌC nhãn tán.
+app.include_router(flower_api.router)
 
 _ann = None       # SamAnnotator (nạp lười khi dùng SAM lần đầu)
 _current = None   # tên ảnh đang set_image
