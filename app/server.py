@@ -1215,6 +1215,42 @@ def export_preview(scope: str = ""):
                         for k in sorted(folders)]}
 
 
+@app.get("/api/overview")
+def overview():
+    """Thẻ Dữ liệu: số theo ruộng — ảnh, ảnh có nhãn tán, ảnh không cây, số tán —
+    cộng số tán hoa theo vòng × trạng thái và các tán cần kiểm lại."""
+    root = Path(ROOT)
+    rows = {}
+    for p in sorted(root.rglob("*")):
+        if p.suffix.lower() not in EXTS:
+            continue
+        name = p.relative_to(root).as_posix()
+        field = _field_of(_full_rel(name)) or "(gốc)"
+        r = rows.setdefault(field, dict(field=field, images=0, labeled=0, empty=0, crowns=0))
+        r["images"] += 1
+        jp = _json_path(name)
+        if not os.path.exists(jp):
+            continue
+        r["labeled"] += 1
+        try:
+            _, _, recs = _read_records(jp)
+        except Exception:  # noqa: BLE001 - một file hỏng không làm sập cả bảng
+            continue
+        r["crowns"] += len(recs)
+        if not recs:
+            r["empty"] += 1
+    try:
+        flower, checks = flower_api.overview()
+        error = ""
+    except Exception as e:  # noqa: BLE001
+        flower, checks, error = {}, [], str(e)
+    out = [rows[k] for k in sorted(rows, key=lambda f: (len(f), f))]
+    for r in out:
+        r["flower"] = flower.get(r["field"], {})
+    total = {k: sum(r[k] for r in out) for k in ("images", "labeled", "empty", "crowns")}
+    return {"fields": out, "total": total, "checks": checks, "flower_error": error}
+
+
 class RootReq(BaseModel):
     folder: str = ""
 

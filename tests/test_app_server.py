@@ -202,3 +202,24 @@ def test_page_has_four_workspaces_and_no_placeholders():
     assert re.findall(r'data-tab="(\w+)"', page) == ["crown", "flower", "review", "data"]
     for gone in ("Train model", "Configure Training", 'class="avatar"', 'id="leftcol"'):
         assert gone not in page
+
+
+def test_overview_counts_fields_crowns_and_flower_checks(root, monkeypatch):
+    from app import flower_api
+    _save(A, [SQUARE, [60.0, 10.0, 90.0, 10.0, 90.0, 40.0]])
+    _save(B, [], empty=True)
+    st = flower_api._store()
+    flat = server._flat(A)
+    st.set_status(flat, 0, "try", state="done", bbox=[10, 10, 51, 41])
+    st.set_status(flat, 1, "try", state="doing", bbox=[60, 10, 91, 41])
+
+    d = server.overview()
+    assert d["total"] == {"images": 2, "labeled": 2, "empty": 1, "crowns": 2}
+    f9 = d["fields"][0]
+    assert f9["field"] == "field_9" and f9["flower"] == {"try": {"done": 1, "doing": 1}}
+    assert d["checks"] == []
+
+    # Sửa polygon tán 0 sau khi đã gán hoa: thẻ Dữ liệu phải báo.
+    _save(A, [[10.0, 10.0, 70.0, 10.0, 70.0, 40.0, 10.0, 40.0], [60.0, 10.0, 90.0, 10.0, 90.0, 40.0]])
+    checks = server.overview()["checks"]
+    assert [(c["crown"], c["problem"]) for c in checks] == [(0, "polygon tán đã đổi sau khi gán hoa")]

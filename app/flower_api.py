@@ -159,6 +159,43 @@ def _state_of(rows, flat, crown, rnd=None):
     return None
 
 
+def _name_of(flat):
+    """Ảnh phẳng -> tên theo ROOT hiện tại, hoặc None nếu nằm ngoài ROOT."""
+    s = _srv()
+    rel = os.path.relpath(os.path.join(s.BASE, flat.replace("__", "/")), s.ROOT).replace("\\", "/")
+    return None if rel.startswith("..") else rel
+
+
+def overview():
+    """Số tán hoa theo ruộng × vòng × trạng thái (đọc status.csv), và danh sách
+    tán có polygon đã đổi sau khi gán hoa (bbox lưu lúc gán khác bbox bây giờ)."""
+    st = _store()
+    counts, checks = {}, []
+    for (flat, crown, rnd), row in sorted(st.read_status().items()):
+        field = flat.split("__", 1)[0]
+        c = counts.setdefault(field, {}).setdefault(rnd, {})
+        state = row.get("state") or "todo"
+        c[state] = c.get(state, 0) + 1
+        name = _name_of(flat)
+        if name is None or not row.get("bbox"):
+            continue
+        polys, (h, w) = _crowns(name)
+        try:
+            saved = [int(v) for v in json_loads(row["bbox"])]
+        except Exception:  # noqa: BLE001
+            continue
+        if crown >= len(polys):
+            checks.append(dict(image=name, crown=crown, round=rnd, problem="tán không còn trong nhãn tán"))
+        elif list(fs.crown_box(polys[crown], w, h)) != saved:
+            checks.append(dict(image=name, crown=crown, round=rnd, problem="polygon tán đã đổi sau khi gán hoa"))
+    return counts, checks
+
+
+def json_loads(s):
+    import json
+    return json.loads(s)
+
+
 # ---------------------------------------------------------------- endpoint
 @router.get("/config")
 def config():

@@ -92,4 +92,23 @@ async function fbLoad(path){try{const d=await(await fetch('/api/browse?path='+en
  if(d.error){const e=document.createElement('div');e.className='fbrow';e.style.color='#f7a5a5';e.textContent='⚠ '+d.error;box.appendChild(e);}
  if(!(d.dirs||[]).length&&!(d.drives||[]).length&&!d.error){const em=document.createElement('div');em.className='fbrow';em.style.color='var(--muted)';em.textContent='(không có thư mục con)';box.appendChild(em);}}
  catch(e){}}
-tabRegister({id:'data',inspTitle:'Dữ liệu',help:[],enter(){renderStats();}});
+// Bảng tổng quan theo ruộng (đọc /api/overview mỗi lần mở thẻ).
+let ovTok=0;
+async function loadOverview(){const tok=++ovTok;$('ovNote').textContent='⏳ đang đếm…';
+ let d=null;try{d=await(await fetch('/api/overview',{cache:'no-store'})).json();}catch(e){d=null;}
+ if(tok!==ovTok)return;
+ if(!d){$('ovNote').textContent='⚠ không đọc được tổng quan';return;}
+ const n=v=>Number(v).toLocaleString('vi-VN'),body=$('ovTable').tBodies[0],foot=$('ovTable').tFoot;
+ const flw=f=>Object.keys(f).sort().map(r=>r+': '+Object.entries(f[r]).map(([s,c])=>c+' '+({done:'xong',doing:'đang',todo:'chưa'}[s]||s)).join(' · ')).join(' | ')||'—';
+ body.innerHTML='';
+ d.fields.forEach(r=>{const tr=document.createElement('tr');
+  [r.field,n(r.images),n(r.labeled),n(r.empty),n(r.crowns),flw(r.flower)].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.appendChild(td);});
+  body.appendChild(tr);});
+ foot.innerHTML='';const tr=document.createElement('tr');
+ ['Tổng',n(d.total.images),n(d.total.labeled),n(d.total.empty),n(d.total.crowns),''].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.appendChild(td);});
+ foot.appendChild(tr);
+ $('ovNote').textContent='Không cây = ảnh đã xem và xác nhận không có tán (xuất như ảnh nền).'+(d.flower_error?' ⚠ nhãn hoa: '+d.flower_error:'');
+ const box=$('ovChecks');box.innerHTML='';
+ if(!d.checks.length){const s=document.createElement('span');s.className='ok';s.textContent='✔ Không tán nào có polygon đổi sau khi đã gán hoa.';box.appendChild(s);}
+ d.checks.forEach(c=>{const s=document.createElement('span');s.className='warn';s.textContent='⚠ '+c.image+' · tán #'+(c.crown+1)+' · vòng '+c.round+': '+c.problem;box.appendChild(s);});}
+tabRegister({id:'data',inspTitle:'Dữ liệu',help:[],enter(){$('hint').textContent='Dữ liệu · tổng quan theo ruộng và xuất bộ dữ liệu';renderStats();loadOverview();}});

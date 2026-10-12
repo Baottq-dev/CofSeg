@@ -306,3 +306,14 @@ button.hbtn:hover{color:var(--text);border-color:var(--teal)}
 .legend{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#c9d4e3}
 .legend span{display:flex;align-items:center;gap:8px}
 .legend i{display:inline-block;width:20px}
+/* --- thẻ Dữ liệu --- */
+.tablewrap{overflow:auto;max-width:100%}
+.ovtable{border-collapse:collapse;font-size:12.5px;min-width:620px}
+.ovtable th,.ovtable td{padding:7px 12px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}
+.ovtable th:first-child,.ovtable td:first-child,.ovtable th:last-child,.ovtable td:last-child{text-align:left}
+.ovtable th{color:var(--muted);font-weight:600;font-size:11.5px}
+.ovtable td{font-variant-numeric:tabular-nums}
+.ovtable tfoot td{font-weight:700;border-bottom:0}
+.ovchecks{display:flex;flex-direction:column;gap:4px;font-size:12.5px}
+.ovchecks .ok{color:var(--green)}
+.ovchecks .warn{color:#f7c66b}
