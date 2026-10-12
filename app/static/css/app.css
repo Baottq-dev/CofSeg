@@ -298,3 +298,11 @@ button.hbtn:hover{color:var(--text);border-color:var(--teal)}
 .region.compact .rhead .rcls{flex:1}
 .crsel{border-top:1px solid var(--border);padding-top:9px}
 .crsel .flhead{font-size:14px}
+/* --- thẻ So sánh --- */
+.needlook{display:flex;flex-direction:column;gap:5px}
+.needitem{justify-content:flex-start;white-space:normal;text-align:left;line-height:1.4}
+.needitem.fn{border-left:3px solid var(--pred-fn)}
+.needitem.fp{border-left:3px solid var(--pred-fp)}
+.legend{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#c9d4e3}
+.legend span{display:flex;align-items:center;gap:8px}
+.legend i{display:inline-block;width:20px}

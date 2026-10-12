@@ -187,3 +187,11 @@ function askConfirm(o,onOk){const m=$('cfModal'),b=$('cfOk');
  const done=v=>{m.classList.remove('open');b.onclick=$('cfCancel').onclick=m.onclick=null;if(v)onOk();};
  b.onclick=()=>done(true);$('cfCancel').onclick=()=>done(false);m.onclick=e=>{if(e.target===m)done(false);};
  m.classList.add('open');$('cfCancel').focus();}
+// Phóng tới một polygon (toạ độ ảnh), chừa lề quanh nó.
+function zoomToPoly(p,pad){if(!img.width||!p||p.length<6)return;
+ let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+ for(let k=0;k<p.length;k+=2){x0=Math.min(x0,p[k]);x1=Math.max(x1,p[k]);y0=Math.min(y0,p[k+1]);y1=Math.max(y1,p[k+1]);}
+ const bw=Math.max(40,x1-x0),bh=Math.max(40,y1-y0),f=pad||1.6;
+ const s=Math.min(cv.width/(bw*f),cv.height/(bh*f));
+ zoom=Math.min(12,Math.max(0.1,s/baseFit));scale=baseFit*zoom;
+ ox=cv.width/2-(x0+x1)/2*scale;oy=cv.height/2-(y0+y1)/2*scale;setZlbl();draw();}

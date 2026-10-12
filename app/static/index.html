@@ -134,8 +134,7 @@
     <div class="insp" data-ws="review">
       <div class="sec">Dự đoán model <span class="pill" id="predCount">—</span></div>
       <div id="predBox" class="predbox">
-        <label class="chk"><input id="predOn" type="checkbox"/> Hiện dự đoán (khoá sửa)</label>
-        <div id="predBody" hidden>
+        <div id="predBody">
           <div class="predbox" style="border:0;padding:0;gap:7px">
             <label>Lượt chấm <select id="predRun"></select></label>
             <label>Điểm ≥ <input id="predConf" type="range" min="5" max="95" step="5" value="50"/>
@@ -146,6 +145,15 @@
             <div class="predsrc" id="predSrc"></div>
           </div>
         </div>
+      </div>
+      <div class="sec">Cần xem</div>
+      <div id="needLook" class="needlook"></div>
+      <div class="sec">Cách đọc</div>
+      <div class="legend">
+        <span><i style="border-top:2px solid #60a5fa"></i>Nhãn tay (nền nhạt)</span>
+        <span><i style="border-top:2px dashed var(--pred-tp)"></i>Dự đoán ghép được nhãn</span>
+        <span><i style="border-top:2px dashed var(--pred-fp)"></i>Dự đoán thừa (nền hồng)</span>
+        <span><i style="border-top:2px dashed var(--pred-fn)"></i>Tán bị sót (nền đỏ)</span>
       </div>
     </div>
   </aside>

@@ -98,24 +98,11 @@ function predHint(){
       ? ('được ghép ở IoU '+h.r.iou.toFixed(3))
       : 'KHÔNG model nào ghép được (bỏ sót)'));}
 // --- khoá sửa ---------------------------------------------------------------
-// Một hàm duy nhất, gọi ở MỌI lối vào có thể đổi hoặc lưu nhãn. Khoá bằng cách
-// đổi sang chế độ 'view' thì bốn nhánh sửa trong handler chuột không khớp nữa,
-// nhưng các nút trong danh sách vùng và phím tắt vẫn đi đường riêng nên vẫn
-// phải hỏi ở đây.
-// Khoá cả khi thẻ Tán đang ở chế độ Xem: cùng một chốt cho mọi lối vào sửa.
-function predLocked(){return predOn||mode==='view';}
-function syncPredLock(){
- const on=predOn;
- ['m-click','m-box','m-draw','m-sel','undo','clear','noTree','autoAll','addCls']
-  .forEach(id=>{const b=$(id);if(!b)return;
-   // Nhớ tooltip gốc ở lần chạm ĐẦU TIÊN, nếu không thì tắt chế độ xem xong
-   // mọi nút đều mang vĩnh viễn dòng "đang ở chế độ xem dự đoán".
-   if(b.dataset.t0===undefined)b.dataset.t0=b.title||'';
-   b.disabled=on;b.style.opacity=on?0.4:'';b.style.cursor=on?'not-allowed':'';
-   b.title=on?'Đang ở chế độ xem dự đoán — tắt để sửa lại':b.dataset.t0;});
- $('predBox').classList.toggle('on',on);
- $('predBody').hidden=!on;
- renderRegions();}
+// Một hàm duy nhất, gọi ở MỌI lối vào có thể đổi hoặc lưu nhãn tán. Chế độ
+// 'view' (Xem của thẻ Tán, và lúc thẻ So sánh đang mở) làm bốn nhánh sửa trong
+// handler chuột không khớp nữa; các nút trong danh sách tán và phím tắt đi
+// đường riêng nên vẫn phải hỏi ở đây.
+function editLocked(){return predOn||mode==='view';}
 // --- nạp dữ liệu ------------------------------------------------------------
 // `tok` là selToken lúc bắt đầu. Danh sách lượt chấm phụ thuộc ẢNH (mỗi ảnh
 // nằm trong split test của đúng một fold), nên hai lần đổi ảnh chồng nhau mà
@@ -156,9 +143,9 @@ async function predFetch(){
 function predSchedule(){clearTimeout(predTimer);predTimer=setTimeout(predFetch,180);}
 function predRender(){
  const box=$('predSum'),src=$('predSrc'),w=$('predWarn');
- if(!predData){box.innerHTML='';src.textContent='';w.hidden=true;return;}
+ if(!predData){box.innerHTML='';src.textContent='';w.hidden=true;renderNeedLook();return;}
  if(!predData.ok){box.innerHTML='<span class="pchip fp">'+(predData.error||'lỗi')+'</span>';
-  src.textContent='';w.hidden=true;return;}
+  src.textContent='';w.hidden=true;renderNeedLook();return;}
  const s=predData.summary;
  box.innerHTML=
   '<span class="pchip tp">khớp <b>'+s.tp+'</b></span>'+
@@ -169,7 +156,7 @@ function predRender(){
  const o=predData.source;
  src.textContent=o.run+'  ·  imgsz '+(o.imgsz||'?')+'  ·  chấm ở conf '+(o.conf==null?'?':o.conf)
   +'  ·  ghép ở IoU '+predData.iou_thr+'\n'+(o.weights||'');
- w.hidden=!predData.warn;w.textContent=predData.warn||'';}
+ w.hidden=!predData.warn;w.textContent=predData.warn||'';renderNeedLook();}
 async function predOnImage(tok){
  if(!predOn)return;
  await predLoadRuns(tok);
@@ -180,9 +167,32 @@ wsRegister({id:'review',
  // đúng một fold, nên danh sách lượt chấm cũng khác.
  onImage(t,tok){predData=null;predHover=null;predRender();predOnImage(tok);},
  draw(){drawPred();}});
-// Thẻ So sánh = lớp dự đoán đang bật. Vào thẻ thì bật, rời thẻ thì tắt, nên
-// về thẻ Tán là không còn dự đoán nào che nhãn.
-function setPredOn(on){const c=$('predOn');if(c.checked===on)return;c.checked=on;c.dispatchEvent(new Event('change'));}
+// Thẻ So sánh = lớp dự đoán đang bật, chỉ đọc theo cấu tạo. Vào thẻ thì bật
+// (lưu nốt phần đang sửa TRƯỚC khi khoá), rời thẻ thì tắt và trả thẻ Tán về
+// đúng chế độ cũ, nên ở thẻ Tán không còn dự đoán nào che nhãn.
+async function setPredOn(on){if(predOn===on)return;predOn=on;
+ if(on){flush();predBefore=mode;
+  sel=-1;dragPt=-1;hovPt=-1;ghost=null;draft=[];boxStart=null;
+  setMode('view');await predLoadRuns(selToken);await predFetch();}
+ else{predData=null;predHover=null;setMode(predBefore);predRender();draw();}}
+// "Cần xem": tán bị sót và dự đoán thừa ở ngưỡng điểm đang chọn; bấm là phóng
+// tới. Dự đoán rời thành nhiều vòng chỉ tính một lần, theo vòng lớn nhất.
+function renderNeedLook(){const box=$('needLook');if(!box)return;box.innerHTML='';
+ if(!predOn||!predData||!predData.ok){box.innerHTML='<span class="muted">—</span>';return;}
+ const items=[];
+ (predData.gt||[]).forEach((g,i)=>{if(!g.matched&&g.points&&g.points.length>=6)
+  items.push({kind:'gt',i:i,pts:g.points,txt:'Sót · tán #'+(i+1)+': không dự đoán nào ghép được'});});
+ const big={};
+ (predData.polygons||[]).forEach((q,i)=>{if(q.matched||!q.points||q.points.length<6)return;
+  const w=polyW(q.points);if(!big[q.det]||w>big[q.det].w)big[q.det]={i:i,w:w};});
+ Object.values(big).map(b=>predData.polygons[b.i]&&{i:b.i,q:predData.polygons[b.i]})
+  .sort((a,b)=>b.q.conf-a.q.conf)
+  .forEach(o=>items.push({kind:'pred',i:o.i,pts:o.q.points,txt:'Thừa · dự đoán điểm '+o.q.conf.toFixed(2).replace('.',',')}));
+ if(!items.length){box.innerHTML='<span class="muted">Không có tán sót hay dự đoán thừa ở ngưỡng này.</span>';return;}
+ items.forEach(it=>{const b=document.createElement('button');b.className='btn needitem '+(it.kind==='gt'?'fn':'fp');b.textContent=it.txt;
+  b.onclick=()=>{zoomToPoly(it.pts);predHover={kind:it.kind,i:it.i,r:it.kind==='gt'?predData.gt[it.i]:predData.polygons[it.i]};predHint();draw();};
+  box.appendChild(b);});}
 tabRegister({id:'review',inspTitle:'Kết quả trên ảnh',
- help:[['Rê chuột lên một vùng','Xem điểm và IoU của dự đoán hoặc nhãn'],['Thanh Điểm ≥','Đổi ngưỡng điểm của dự đoán'],['Hiện cả nhãn tay','Bật/tắt nền nhãn để nhìn rõ dự đoán']],
+ help:[['Rê chuột lên một vùng','Xem điểm và IoU của dự đoán hoặc nhãn'],['Bấm một mục Cần xem','Phóng tới tán sót hoặc dự đoán thừa đó'],
+  ['Thanh Điểm ≥','Đổi ngưỡng điểm của dự đoán'],['Hiện cả nhãn tay','Bật/tắt nền nhãn để nhìn rõ dự đoán']],
  enter(){setPredOn(true);},leave(){setPredOn(false);}});

@@ -18,12 +18,12 @@ let emptyMark=false,emptyStore={},emptySet=new Set();
 let editOk=false,lastEdit='select',mode='sam-click',sel=-1,dragPt=-1,dragVi=-1,dragStart=null,origPoly=null,softD=null,dragSoft=true,hovPt=-1,ghost=null,draft=[],boxStart=null,mouse=null,pan=null;
 const HINT={'sam-click':'SAM Click · Bấm vào 1 cây để tạo vùng mới (lớp đang chọn).','sam-box':'SAM Box · Kéo 1 khung quanh cây để tạo vùng chính xác hơn.','draw':'Vẽ tay · Click các điểm quanh tán; double-click để đóng vùng; Esc để huỷ.','select':'Nắn · Kéo điểm trắng để nắn viền (Shift = 1 điểm) · rê lên cạnh để hiện điểm mờ, bấm là thêm điểm ngay đó · chuột phải xoá điểm · Delete xoá vùng · Ctrl+Z hoàn tác.',
  'look':'👁 Xem · nhãn tán đã chốt nên không sửa được · kéo để di chuyển, lăn để phóng to · bấm ✎ Sửa khi thật sự cần.',
- 'view':'👁 Xem dự đoán — KHOÁ SỬA · kéo để di chuyển, lăn để phóng to · rê lên một vùng để xem điểm và IoU · bỏ tick "Hiện dự đoán" để sửa lại.'};
+ 'view':'👁 So sánh · chỉ đọc · kéo để di chuyển, lăn để phóng to · rê lên một vùng để xem điểm và IoU · về thẻ Tán (Alt+1) để sửa nhãn.'};
 const BTN={'sam-click':'m-click','sam-box':'m-box','draw':'m-draw','select':'m-sel'};
 // 'view' = chế độ CHỈ XEM. Khoá bằng một chế độ riêng chứ không rải cờ khắp
 // nơi: bốn nhánh sửa trong handler chuột đều bắt đầu bằng `mode==='...'` nên
 // không nhánh nào khớp nữa, tức không có đường nào lọt. Các nút trong danh
-// sách vùng và phím tắt đi đường riêng nên vẫn hỏi `predLocked()`.
+// sách vùng và phím tắt đi đường riêng nên vẫn hỏi `editLocked()`.
 function setMode(m){if(predOn&&m!=='view')return;
  mode=m;if(m!=='view')lastEdit=m;draft=[];boxStart=null;hovPt=-1;ghost=null;dragPt=-1;dragVi=-1;origPoly=null;softD=null;
  document.querySelectorAll('#editSeg button').forEach(b=>b.classList.remove('on'));
@@ -57,9 +57,9 @@ function renderRegions(){const box=$('regions');const st=box.scrollTop;box.inner
   // Chọn từ danh sách thì vùng phải hiện: vùng được chọn luôn nhìn thấy được.
   // Ở chế độ xem dự đoán, bấm một hàng chỉ để HIỆN lại vùng đó: `tidySel` dọn
   // polygon rồi `persist()` lưu xuống đĩa, tức nó là một thao tác sửa.
-  head.onclick=()=>{if(!r.vis){if(!predLocked())pushHist();r.vis=true;}
+  head.onclick=()=>{if(!r.vis){if(!editLocked())pushHist();r.vis=true;}
    // Đang Xem: bấm hàng chỉ để chọn xem chi tiết, không dọn, không lưu.
-   if(predLocked()){if(!predOn)sel=i;renderRegions();draw();return;}
+   if(editLocked()){if(!predOn)sel=i;renderRegions();draw();return;}
    sel=i;setMode('select');tidySel(i);renderRegions();draw();};
   const act=document.createElement('div');act.className='ract';
   const selc=document.createElement('select');selc.title='Gán mức mật độ thủ công';classes.forEach(cc=>{const o=document.createElement('option');o.value=cc.id;o.textContent=cc.name;if(cc.id===r.cls)o.selected=true;selc.appendChild(o);});
@@ -76,8 +76,8 @@ function renderRegions(){const box=$('regions');const st=box.scrollTop;box.inner
   // 👁 chỉ đổi trạng thái XEM (`vis` không đi vào payload lưu) nên vẫn mở ở
   // chế độ xem dự đoán — ẩn một nhãn đi để nhìn rõ đường dự đoán bên dưới là
   // đúng việc người ta cần lúc so sánh. Ba nút còn lại đều ghi xuống đĩa.
-  [selc,bF,bD].forEach(el=>{if(predLocked()){el.disabled=true;el.style.opacity=.4;
-   el.style.cursor='not-allowed';el.title=predOn?'Đang ở chế độ xem dự đoán — tắt để sửa lại':'Đang ở chế độ Xem — bấm ✎ Sửa để chỉnh';}});
+  [selc,bF,bD].forEach(el=>{if(editLocked()){el.disabled=true;el.style.opacity=.4;
+   el.style.cursor='not-allowed';el.title='Đang ở chế độ Xem — bấm ✎ Sửa để chỉnh';}});
   if(flowerOn){act.appendChild(selc);act.appendChild(bF);}
   act.appendChild(bV);act.appendChild(bD);
   // Không đếm hoa thì hàng chỉ còn số, diện tích, 👁, 🗑: gọn trên một dòng.
@@ -90,18 +90,18 @@ function renderRegions(){const box=$('regions');const st=box.scrollTop;box.inner
 function renderCrSel(){const r=inst[sel],box=$('crSelBox');box.hidden=!r;if(!r)return;
  $('crSelTitle').textContent='Tán #'+r.id;
  $('crSelMeta').textContent=(r.poly.length/2)+' đỉnh · '+Math.round(regionArea(r)).toLocaleString('vi-VN')+' px'+(r.vis?'':' · đang ẩn');
- const ed=!predLocked();$('crSelEdit').hidden=!ed;$('crSelView').hidden=ed;}
+ const ed=!editLocked();$('crSelEdit').hidden=!ed;$('crSelView').hidden=ed;}
 // Bật Sửa: lần đầu mỗi phiên phải xác nhận, vì nhãn tán đã chốt và mọi thay
 // đổi tự lưu đè sau 0,7 giây.
 function askEdit(){if(predOn)return;if(editOk){setMode(lastEdit);return;}
  askConfirm({title:'Nhãn tán đã chốt',ok:'Bật Sửa cho phiên này',
   text:'Nhãn tán của '+labeledSet.size+' ảnh đã được người kiểm và chốt. Ở chế độ Sửa, mọi thay đổi được lưu đè vào file nhãn sau 0,7 giây. Chỉ bật khi thật sự cần sửa.'},
   ()=>{editOk=true;setMode(lastEdit);});}
-function deleteSel(){if(!predLocked()&&sel>=0&&inst[sel]&&inst[sel].vis){pushHist();inst.splice(sel,1);sel=-1;refresh();}}
-function tidyAll(){if(predLocked()||!inst.length)return;pushHist();let n0=0,n1=0;
+function deleteSel(){if(!editLocked()&&sel>=0&&inst[sel]&&inst[sel].vis){pushHist();inst.splice(sel,1);sel=-1;refresh();}}
+function tidyAll(){if(editLocked()||!inst.length)return;pushHist();let n0=0,n1=0;
  inst.forEach(r=>{n0+=r.poly.length/2;r.poly=cleanPoly(r.poly);n1+=r.poly.length/2;});
  $('hint').textContent='🧹 Đã dọn '+inst.length+' tán: '+n0+' → '+n1+' đỉnh · Ctrl+Z để hoàn tác';refresh();}
-function clearAll(){if(predLocked()||!inst.length)return;
+function clearAll(){if(editLocked()||!inst.length)return;
  askConfirm({title:'Xoá hết tán trong ảnh này?',ok:'Xoá hết',danger:true,
   text:'Xoá cả '+inst.length+' tán của ảnh đang mở. Ctrl+Z hoàn tác được, nhưng file nhãn bị lưu đè sau 0,7 giây.'},
   ()=>{pushHist();inst=[];sel=-1;refresh();});}
@@ -354,7 +354,7 @@ tabRegister({id:'crown',inspTitle:'Chi tiết',
   ['Del','Xoá tán đang chọn'],['Esc','Huỷ nét đang vẽ'],['Ctrl Z','Hoàn tác']],
  // Hai phím Ctrl+Z và Delete SỬA nhãn nên cũng phải khoá khi đang Xem hoặc xem
  // dự đoán — chúng đi thẳng vào `inst` chứ không qua handler chuột.
- key(e){if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){e.preventDefault();if(!predLocked())undo();return true;}
+ key(e){if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){e.preventDefault();if(!editLocked())undo();return true;}
   if(e.ctrlKey||e.metaKey||e.altKey)return false;
   if(e.key==='Escape'){draft=[];draw();return true;}
   if(e.key==='Delete'){deleteSel();return true;}

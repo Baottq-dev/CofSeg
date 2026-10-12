@@ -186,17 +186,20 @@ def test_lop_xem_khong_ghi_gi_vao_thu_muc_nhan(lan_cham, tmp_path, monkeypatch):
 
 def test_giao_dien_khoa_sua_o_che_do_xem():
     """Khoá là một phần của tính năng, không phải chi tiết hiển thị: nếu ai đó
-    gỡ `predLocked()` khỏi các lối vào sửa thì phải gãy ở đây."""
+    gỡ `editLocked()` khỏi các lối vào sửa thì phải gãy ở đây."""
     from pathlib import Path
 
     # Mã giao diện nằm ở app/static/js/, không còn viết thẳng trong index.html.
-    js = Path(__file__).resolve().parents[1] / "app" / "static" / "js"
-    s = "\n".join(p.read_text(encoding="utf-8") for p in sorted(js.glob("*.js")))
-    assert "function predLocked()" in s
+    static = Path(__file__).resolve().parents[1] / "app" / "static"
+    s = "\n".join(p.read_text(encoding="utf-8") for p in sorted((static / "js").glob("*.js")))
+    assert "function editLocked(){return predOn||mode==='view';}" in s
     # Chế độ 'view' chặn mọi nhánh sửa trong handler chuột.
     assert "function setMode(m){if(predOn&&m!=='view')return;" in s
-    # Ba lối vào KHÔNG đi qua handler chuột, nên phải hỏi riêng.
-    assert s.count("predLocked()") >= 4, "thiếu chốt ở phím tắt / danh sách vùng"
+    # Các lối vào KHÔNG đi qua handler chuột (phím, danh sách tán, nút chi tiết),
+    # nên phải hỏi riêng.
+    assert s.count("editLocked()") >= 6, "thiếu chốt ở phím tắt / danh sách tán"
+    # Thẻ So sánh chỉ đọc theo cấu tạo: không còn ô tick bật/tắt khoá.
+    assert 'id="predOn"' not in (static / "index.html").read_text(encoding="utf-8")
     # Dự đoán không bao giờ được đi vào `inst` (thứ mà payload() lưu xuống đĩa).
     than = s[s.index("function drawPred()"):s.index("function predPick(")]
     assert "inst" not in than, "drawPred chạm vào inst — dự đoán sẽ bị lưu thành nhãn"

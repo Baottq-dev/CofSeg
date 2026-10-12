@@ -67,21 +67,12 @@ $('crTidyAll').onclick=()=>{closeCrMenu();tidyAll();};
 $('crMore').onclick=e=>{e.stopPropagation();const m=$('crMenu'),on=!m.classList.contains('open');m.classList.toggle('open',on);$('crMore').setAttribute('aria-expanded',on);};
 function closeCrMenu(){$('crMenu').classList.remove('open');$('crMore').setAttribute('aria-expanded',false);}
 document.addEventListener('click',e=>{if(!e.target.closest('.dd'))closeCrMenu();});
-$('crTidy').onclick=()=>{if(sel>=0&&!predLocked()){tidySel(sel);renderRegions();draw();}};
+$('crTidy').onclick=()=>{if(sel>=0&&!editLocked()){tidySel(sel);renderRegions();draw();}};
 $('crDel').onclick=deleteSel;
 $('zin').onclick=()=>zoomAt(cv.width/2,cv.height/2,1.25);
 $('zout').onclick=()=>zoomAt(cv.width/2,cv.height/2,0.8);
 $('zfit').onclick=()=>resetView();
 // --- nối dây ----------------------------------------------------------------
-$('predOn').onchange=async e=>{
- predOn=e.target.checked;
- if(predOn){
-  flush();                       // lưu nốt phần đang sửa TRƯỚC khi khoá
-  predBefore=mode;               // Xem của thẻ Tán cũng là một chế độ để quay về
-  sel=-1;dragPt=-1;hovPt=-1;ghost=null;draft=[];boxStart=null;
-  syncPredLock();setMode('view');
-  await predLoadRuns(selToken);await predFetch();}
- else{predData=null;predHover=null;syncPredLock();setMode(predBefore);predRender();draw();}};
 $('predRun').onchange=e=>{predRun=e.target.value;predFetch();};
 $('predConf').oninput=e=>{predConf=(+e.target.value)/100;
  $('predConfLbl').textContent=predConf.toFixed(2).replace('.',',');predSchedule();};
@@ -234,5 +225,5 @@ $('annotNew').addEventListener('keydown',e=>{if(e.key==='Enter')addAnnot();});
 $('helpClose').onclick=$('helpOk').onclick=()=>$('helpModal').classList.remove('open');
 $('helpModal').onclick=e=>{if(e.target===$('helpModal'))$('helpModal').classList.remove('open');};
 // Thẻ Tán mở ở chế độ Xem: nhãn tán đã chốt, không có cú bấm nào lỡ sửa được nó.
-renderClasses();setMode('view');syncPredLock();renderAnnot();setNavFilter(navFilter);$('navThumbs').checked=navThumbs;
+renderClasses();setMode('view');renderAnnot();setNavFilter(navFilter);$('navThumbs').checked=navThumbs;
 switchWs(lsGet('cofseg_tab','crown'));loadModels().then(syncSamName);loadPaths();loadFolders().then(loadImgs);
