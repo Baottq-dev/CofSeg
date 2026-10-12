@@ -70,7 +70,7 @@ function openHelp(){const t=TABS[wsActive]||{};$('helpTitle').textContent='⌨ P
 function openSettings(){$('setModal').classList.add('open');}
 // Esc đóng hộp thoại trên cùng. Cửa sổ chọn thư mục đang chờ trả lời thì để
 // nó tự đóng bằng nút Huỷ, không đóng ngầm ở đây.
-function closeModals(){for(const id of ['helpModal','setModal']){if($(id).classList.contains('open')){$(id).classList.remove('open');return true;}}return false;}
+function closeModals(){for(const id of ['cfModal','helpModal','setModal']){if($(id).classList.contains('open')){$(id).classList.remove('open');return true;}}return false;}
 // --- điều hướng: một cột, lọc theo ruộng / chữ / trạng thái, nhóm theo đường bay ---
 let navFilter=lsGet('cofseg_navfilter','all'),navThumbs=lsGet('cofseg_navthumbs',false);
 let collapsed=new Set(lsGet('cofseg_navcollapsed',[]));   // nhóm đường bay đang gập
@@ -179,3 +179,11 @@ function pip(p,x,y){let c=false;for(let i=0,j=p.length-2;i<p.length;j=i,i+=2){co
 // out, Delete là xoá vùng đang chọn (kể cả vùng đang ẩn, không thấy nó mất).
 function typing(e){const t=e.target,tag=t&&t.tagName;
  return tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||(t&&t.isContentEditable);}
+// Hộp xác nhận trong trang thay cho confirm(): confirm() chặn cả luồng sự kiện
+// của trình duyệt, và không đặt được nút "Huỷ" là mặc định.
+function askConfirm(o,onOk){const m=$('cfModal'),b=$('cfOk');
+ $('cfTitle').textContent=o.title||'';$('cfText').textContent=o.text||'';
+ b.textContent=o.ok||'Đồng ý';b.className='cfok'+(o.danger?' danger':'');
+ const done=v=>{m.classList.remove('open');b.onclick=$('cfCancel').onclick=m.onclick=null;if(v)onOk();};
+ b.onclick=()=>done(true);$('cfCancel').onclick=()=>done(false);m.onclick=e=>{if(e.target===m)done(false);};
+ m.classList.add('open');$('cfCancel').focus();}

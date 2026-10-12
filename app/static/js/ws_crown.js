@@ -15,7 +15,7 @@ let inst=[],store={},hist=[],saveTimer=null,rid=1,dirty=false;
 // nền đi vào bộ xuất. emptyMark = ảnh hiện tại; emptyStore = theo ảnh, cùng
 // vòng đời với store; emptySet = server báo ảnh nào đang có nhãn rỗng.
 let emptyMark=false,emptyStore={},emptySet=new Set();
-let lastEdit='select',mode='sam-click',sel=-1,dragPt=-1,dragVi=-1,dragStart=null,origPoly=null,softD=null,dragSoft=true,hovPt=-1,ghost=null,draft=[],boxStart=null,mouse=null,pan=null;
+let editOk=false,lastEdit='select',mode='sam-click',sel=-1,dragPt=-1,dragVi=-1,dragStart=null,origPoly=null,softD=null,dragSoft=true,hovPt=-1,ghost=null,draft=[],boxStart=null,mouse=null,pan=null;
 const HINT={'sam-click':'SAM Click · Bấm vào 1 cây để tạo vùng mới (lớp đang chọn).','sam-box':'SAM Box · Kéo 1 khung quanh cây để tạo vùng chính xác hơn.','draw':'Vẽ tay · Click các điểm quanh tán; double-click để đóng vùng; Esc để huỷ.','select':'Nắn · Kéo điểm trắng để nắn viền (Shift = 1 điểm) · rê lên cạnh để hiện điểm mờ, bấm là thêm điểm ngay đó · chuột phải xoá điểm · Delete xoá vùng · Ctrl+Z hoàn tác.',
  'look':'👁 Xem · nhãn tán đã chốt nên không sửa được · kéo để di chuyển, lăn để phóng to · bấm ✎ Sửa khi thật sự cần.',
  'view':'👁 Xem dự đoán — KHOÁ SỬA · kéo để di chuyển, lăn để phóng to · rê lên một vùng để xem điểm và IoU · bỏ tick "Hiện dự đoán" để sửa lại.'};
@@ -58,7 +58,8 @@ function renderRegions(){const box=$('regions');const st=box.scrollTop;box.inner
   // Ở chế độ xem dự đoán, bấm một hàng chỉ để HIỆN lại vùng đó: `tidySel` dọn
   // polygon rồi `persist()` lưu xuống đĩa, tức nó là một thao tác sửa.
   head.onclick=()=>{if(!r.vis){if(!predLocked())pushHist();r.vis=true;}
-   if(predLocked()){renderRegions();draw();return;}
+   // Đang Xem: bấm hàng chỉ để chọn xem chi tiết, không dọn, không lưu.
+   if(predLocked()){if(!predOn)sel=i;renderRegions();draw();return;}
    sel=i;setMode('select');tidySel(i);renderRegions();draw();};
   const act=document.createElement('div');act.className='ract';
   const selc=document.createElement('select');selc.title='Gán mức mật độ thủ công';classes.forEach(cc=>{const o=document.createElement('option');o.value=cc.id;o.textContent=cc.name;if(cc.id===r.cls)o.selected=true;selc.appendChild(o);});
@@ -79,10 +80,31 @@ function renderRegions(){const box=$('regions');const st=box.scrollTop;box.inner
    el.style.cursor='not-allowed';el.title=predOn?'Đang ở chế độ xem dự đoán — tắt để sửa lại':'Đang ở chế độ Xem — bấm ✎ Sửa để chỉnh';}});
   if(flowerOn){act.appendChild(selc);act.appendChild(bF);}
   act.appendChild(bV);act.appendChild(bD);
-  row.appendChild(head);row.appendChild(act);box.appendChild(row);});
+  // Không đếm hoa thì hàng chỉ còn số, diện tích, 👁, 🗑: gọn trên một dòng.
+  if(flowerOn){row.appendChild(head);row.appendChild(act);}else{row.classList.add('compact');head.appendChild(act);row.appendChild(head);}
+  box.appendChild(row);});
  box.scrollTop=st;
  if(sel>=0&&sel!==lastSelRow){const el=box.children[sel];if(el&&el.scrollIntoView)el.scrollIntoView({block:'nearest'});}
- lastSelRow=sel;}
+ lastSelRow=sel;renderCrSel();}
+// Chi tiết tán đang chọn, dưới danh sách.
+function renderCrSel(){const r=inst[sel],box=$('crSelBox');box.hidden=!r;if(!r)return;
+ $('crSelTitle').textContent='Tán #'+r.id;
+ $('crSelMeta').textContent=(r.poly.length/2)+' đỉnh · '+Math.round(regionArea(r)).toLocaleString('vi-VN')+' px'+(r.vis?'':' · đang ẩn');
+ const ed=!predLocked();$('crSelEdit').hidden=!ed;$('crSelView').hidden=ed;}
+// Bật Sửa: lần đầu mỗi phiên phải xác nhận, vì nhãn tán đã chốt và mọi thay
+// đổi tự lưu đè sau 0,7 giây.
+function askEdit(){if(predOn)return;if(editOk){setMode(lastEdit);return;}
+ askConfirm({title:'Nhãn tán đã chốt',ok:'Bật Sửa cho phiên này',
+  text:'Nhãn tán của '+labeledSet.size+' ảnh đã được người kiểm và chốt. Ở chế độ Sửa, mọi thay đổi được lưu đè vào file nhãn sau 0,7 giây. Chỉ bật khi thật sự cần sửa.'},
+  ()=>{editOk=true;setMode(lastEdit);});}
+function deleteSel(){if(!predLocked()&&sel>=0&&inst[sel]&&inst[sel].vis){pushHist();inst.splice(sel,1);sel=-1;refresh();}}
+function tidyAll(){if(predLocked()||!inst.length)return;pushHist();let n0=0,n1=0;
+ inst.forEach(r=>{n0+=r.poly.length/2;r.poly=cleanPoly(r.poly);n1+=r.poly.length/2;});
+ $('hint').textContent='🧹 Đã dọn '+inst.length+' tán: '+n0+' → '+n1+' đỉnh · Ctrl+Z để hoàn tác';refresh();}
+function clearAll(){if(predLocked()||!inst.length)return;
+ askConfirm({title:'Xoá hết tán trong ảnh này?',ok:'Xoá hết',danger:true,
+  text:'Xoá cả '+inst.length+' tán của ảnh đang mở. Ctrl+Z hoàn tác được, nhưng file nhãn bị lưu đè sau 0,7 giây.'},
+  ()=>{pushHist();inst=[];sel=-1;refresh();});}
 function cloneR(r){return {poly:r.poly.slice(),cls:r.cls,vis:r.vis,id:r.id,pct:(r.pct==null?null:r.pct),manual:!!r.manual,pcts:r.pcts?{hsv:r.pcts.hsv,otsu:r.pcts.otsu}:null,od:r.od||null};}
 function payload(){return JSON.stringify(Object.assign({name:current,width:img.width||0,height:img.height||0,polygons:inst.map(r=>r.poly),classes:inst.map(r=>r.cls),manual:inst.map(r=>!!r.manual),categories:classes,empty:(emptyMark&&!inst.length),flower:flowerOn},flowerParams()));}
 async function saveNow(){if(!current||!ready)return;dirty=false;
@@ -307,6 +329,7 @@ wsRegister({id:'crown',
   polyPath(p);
   ctx.fillStyle=hexA(col,on?0.42:(predOn?0.10:0.22));ctx.fill();
   ctx.strokeStyle=on?'#ffffff':col;ctx.lineWidth=on?3:(predOn?1:2);ctx.stroke();
+  if(i===sel&&mode==='view'&&!predOn){ctx.strokeStyle='#ffffff';ctx.lineWidth=3;ctx.stroke();}
   if(on)for(const vi of handleIdx(p,HANDLE_PX)){const k=vi*2,hv=(k===hovPt);
    ctx.beginPath();ctx.arc(sx(p[k]),sy(p[k+1]),hv?7:5,0,7);ctx.fillStyle=hv?col:'#fff';ctx.fill();ctx.strokeStyle=hv?'#fff':col;ctx.lineWidth=hv?2:1.5;ctx.stroke();}});
  // Đỉnh giả: vòng tròn rỗng nét đứt + dấu cộng, để phân biệt ngay với đỉnh
@@ -334,7 +357,7 @@ tabRegister({id:'crown',inspTitle:'Chi tiết',
  key(e){if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){e.preventDefault();if(!predLocked())undo();return true;}
   if(e.ctrlKey||e.metaKey||e.altKey)return false;
   if(e.key==='Escape'){draft=[];draw();return true;}
-  if(e.key==='Delete'){if(!predLocked()&&sel>=0&&inst[sel]&&inst[sel].vis){pushHist();inst.splice(sel,1);sel=-1;refresh();}return true;}
+  if(e.key==='Delete'){deleteSel();return true;}
   const k=e.key.toLowerCase();
   if(k==='v'){setMode('view');return true;}
   const m={c:'sam-click',b:'sam-box',d:'draw',s:'select'}[k];

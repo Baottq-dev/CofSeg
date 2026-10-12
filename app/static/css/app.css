@@ -285,3 +285,16 @@ button.hbtn:hover{color:var(--text);border-color:var(--teal)}
 .insp .save .kbd{background:#22b8a5;border-color:#168f80;color:#04201c}
 .insp .flrange input{flex:1;width:auto}
 .tb[data-ws="flower"] .seg button{padding:6px 9px}
+/* --- thẻ Tán: menu ⋯, hộp xác nhận, danh sách gọn --- */
+.ddmenu .dangeritem{color:#fca5a5}
+.cfbox{width:460px;gap:12px;border-color:#b7791f}
+.cfbox b{font-size:14px}
+#cfText{color:#c9d4e3;line-height:1.55;font-size:12.5px}
+.cfok{min-height:34px;padding:0 14px;border:0;border-radius:8px;background:#f59e0b;color:#1f1300;font-weight:700;font-size:12.5px;cursor:pointer}
+.cfok.danger{background:#ef4444;color:#fff}
+.region.compact{padding:5px 8px}
+.region.compact .rhead .ract{margin:0 0 0 auto}
+.region.compact .ract button{padding:2px 7px}
+.region.compact .rhead .rcls{flex:1}
+.crsel{border-top:1px solid var(--border);padding-top:9px}
+.crsel .flhead{font-size:14px}

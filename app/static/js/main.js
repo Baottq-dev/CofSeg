@@ -62,7 +62,13 @@ if($('modelSel'))$('modelSel').onchange=async()=>{const id=$('modelSel').value;$
  catch(e){$('hint').textContent='⚠ '+e;}};
 $('noTree').onclick=()=>{if(!current||!ready||inst.length)return;emptyMark=!emptyMark;persist();$('count').textContent=countText();};
 $('undo').onclick=undo;
-$('clear').onclick=()=>{pushHist();inst=[];sel=-1;refresh();};
+$('clear').onclick=()=>{closeCrMenu();clearAll();};
+$('crTidyAll').onclick=()=>{closeCrMenu();tidyAll();};
+$('crMore').onclick=e=>{e.stopPropagation();const m=$('crMenu'),on=!m.classList.contains('open');m.classList.toggle('open',on);$('crMore').setAttribute('aria-expanded',on);};
+function closeCrMenu(){$('crMenu').classList.remove('open');$('crMore').setAttribute('aria-expanded',false);}
+document.addEventListener('click',e=>{if(!e.target.closest('.dd'))closeCrMenu();});
+$('crTidy').onclick=()=>{if(sel>=0&&!predLocked()){tidySel(sel);renderRegions();draw();}};
+$('crDel').onclick=deleteSel;
 $('zin').onclick=()=>zoomAt(cv.width/2,cv.height/2,1.25);
 $('zout').onclick=()=>zoomAt(cv.width/2,cv.height/2,0.8);
 $('zfit').onclick=()=>resetView();
@@ -155,7 +161,11 @@ cv.addEventListener('mousemove',e=>{
 // cả cụm đỉnh chạy theo con trỏ. Với vùng đã ẩn thì không thấy gì cho tới khi
 // hiện lại và hình đã méo. Pan chuột giữa cũng kẹt y hệt.
 window.addEventListener('mouseup',async e=>{
- if(pan){pan=null;cv.style.cursor=(mode==='select'||mode==='view')?'grab':'crosshair';if(wsMouse('panEnd',e))return;return;}
+ // Thẻ Tán ở chế độ Xem: bấm (không kéo) lên một tán là chọn để xem chi tiết.
+ if(pan){const click=Math.abs(e.clientX-pan[0])<3&&Math.abs(e.clientY-pan[1])<3;pan=null;cv.style.cursor=(mode==='select'||mode==='view')?'grab':'crosshair';
+  if(wsMouse('panEnd',e))return;
+  if(click&&wsActive==='crown'&&mode==='view'&&!predOn){const xy=toImg(e);sel=hitPolygon(xy[0],xy[1]);renderRegions();draw();}
+  return;}
  if(wsMouse('up',e))return;
  if(mode==='sam-box'&&boxStart){const xy=toImg(e),x=xy[0],y=xy[1],b=[cX(Math.min(boxStart[0],x)),cY(Math.min(boxStart[1],y)),cX(Math.max(boxStart[0],x)),cY(Math.max(boxStart[1],y))];boxStart=null;
   if(Math.abs(b[2]-b[0])>5&&Math.abs(b[3]-b[1])>5){pushHist();await samCall('/api/sam/box',{name:current,box:b});}else draw();return;}
@@ -203,7 +213,7 @@ $('navField').onchange=()=>pickDir($('navField').value);
 document.querySelectorAll('#navFilter button').forEach(b=>b.onclick=()=>setNavFilter(b.dataset.f));
 $('navThumbs').onchange=()=>setNavThumbs($('navThumbs').checked);
 $('veView').onclick=()=>setMode('view');
-$('veEdit').onclick=()=>{if(!predOn)setMode(lastEdit);};
+$('veEdit').onclick=askEdit;
 $('btnHelp').onclick=openHelp;
 $('btnSettings').onclick=openSettings;
 $('setClose').onclick=()=>$('setModal').classList.remove('open');

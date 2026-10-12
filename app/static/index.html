@@ -52,7 +52,11 @@
           <span id="samName" class="muted"></span>
           <button id="undo" class="tbtn">↶ Hoàn tác</button>
           <button id="noTree" class="tbtn" title="Ảnh này đã xem và không có cây cà phê. Được lưu như một nhãn rỗng và đi vào bộ xuất như ảnh nền.">∅ Không có cây</button>
-          <button id="clear" class="tbtn danger">🗑 Xoá hết</button>
+          <div class="dd"><button id="crMore" class="tbtn" aria-haspopup="menu" aria-expanded="false" title="Thao tác khác">⋯</button>
+            <div id="crMenu" class="ddmenu" role="menu">
+              <button id="crTidyAll" role="menuitem">🧹 Dọn đỉnh mọi tán trong ảnh</button>
+              <button id="clear" role="menuitem" class="dangeritem">🗑 Xoá hết tán trong ảnh…</button>
+            </div></div>
         </div>
       </div>
       <div class="tb" data-ws="flower">
@@ -100,6 +104,12 @@
       </div>
       <div class="sec">Tán trong ảnh <span class="pill" id="rcount">0</span></div>
       <div id="regions" class="reglist"></div>
+      <div id="crSelBox" class="flbox crsel" hidden>
+        <div class="flhead"><b id="crSelTitle">Tán</b></div>
+        <div id="crSelMeta" class="muted"></div>
+        <div id="crSelEdit" class="tbgroup"><button id="crTidy" class="tbtn">🧹 Dọn đỉnh</button><button id="crDel" class="tbtn danger">🗑 Xoá tán <span class="kbd">Del</span></button></div>
+        <div id="crSelView" class="muted">Bật ✎ Sửa trên thanh công cụ để chỉnh tán này.</div>
+      </div>
     </div>
     <div class="insp" data-ws="flower">
       <label class="flbl">Vòng <select id="flRound" class="search"></select></label>
@@ -240,6 +250,13 @@
       <div id="expInfo" class="expinfo"></div>
     </div>
     <div class="fbfoot"><button id="expCancel" class="btn" style="width:auto">Huỷ</button><button id="expGo" class="save" style="border:0;cursor:pointer">Tiếp → chọn nơi lưu</button></div>
+  </div>
+</div>
+<div id="cfModal" class="fbmask">
+  <div class="fbbox cfbox" role="alertdialog" aria-modal="true" aria-labelledby="cfTitle" aria-describedby="cfText">
+    <b id="cfTitle"></b>
+    <div id="cfText"></div>
+    <div class="fbfoot"><button id="cfCancel" class="btn" style="width:auto">Huỷ</button><button id="cfOk" class="cfok">Đồng ý</button></div>
   </div>
 </div>
 <div id="helpModal" class="fbmask">
