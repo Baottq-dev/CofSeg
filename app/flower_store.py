@@ -73,9 +73,17 @@ def raster_stroke(op, box):
     return m.astype(bool)
 
 
-def human_layer(ops, poly, box):
+def snap_to(hit, seg):
+    """Nét bám siêu điểm ảnh: mọi mảnh SLIC mà nét chạm vào đều được tô trọn."""
+    ids = np.unique(seg[hit])
+    ids = ids[ids > 0]
+    return np.isin(seg, ids) if len(ids) else hit
+
+
+def human_layer(ops, poly, box, seg=None):
     """Lớp người của một tán trên crop: phát lại các thao tác theo thứ tự, thao
-    tác sau đè thao tác trước. UNSET = chưa tô; ngoài polygon cũng UNSET."""
+    tác sau đè thao tác trước. UNSET = chưa tô; ngoài polygon cũng UNSET.
+    `seg`: nhãn siêu điểm ảnh của crop, dùng cho các nét có snap."""
     inside = crown_mask(poly, box)
     lay = np.full(inside.shape, UNSET, np.uint8)
     for op in ops:
@@ -83,15 +91,19 @@ def human_layer(ops, poly, box):
         if kind == "fill_rest":
             lay[inside & (lay == UNSET)] = 0
             continue
-        hit = raster_stroke(op, box) & inside
+        hit = raster_stroke(op, box)
+        if op.get("snap") and seg is not None:
+            hit = snap_to(hit, seg)
+        hit &= inside
         lab = op.get("label")
         lay[hit] = UNSET if lab == "erase" else int(lab)
     return lay
 
 
-def compose(shape, crowns, ops_doc, base):
+def compose(shape, crowns, ops_doc, base, seg_for=None):
     """Mask cả ảnh: trong mỗi tán, nét người nếu có, không thì nền máy, không
-    thì 255. Tán chạm nhau thì vùng chung theo tán có thao tác gần nhất."""
+    thì 255. Tán chạm nhau thì vùng chung theo tán có thao tác gần nhất.
+    `seg_for(k, box)` trả nhãn siêu điểm ảnh của tán k (cho các nét snap)."""
     h, w = shape
     out = np.full((h, w), IGNORE, np.uint8)
     by_crown = {}
@@ -112,7 +124,9 @@ def compose(shape, crowns, ops_doc, base):
         poly = crowns[k]
         b = crown_box(poly, w, h)
         inside = crown_mask(poly, b)
-        lay = human_layer(by_crown.get(k, []), poly, b)
+        ops = by_crown.get(k, [])
+        seg = seg_for(k, b) if seg_for and any(o.get("snap") for o in ops) else None
+        lay = human_layer(ops, poly, b, seg)
         dst = out[b[1]:b[3], b[0]:b[2]]
         val = np.full(inside.shape, IGNORE, np.uint8)
         if base is not None:
@@ -196,12 +210,13 @@ class FlowerStore:
             self.save_ops(flat, doc)
             return op, doc
 
-    def undo(self, flat, crown):
-        """Bỏ thao tác cuối của đúng tán đó; trả về thao tác đã bỏ hoặc None."""
+    def undo(self, flat, crown, keep=None):
+        """Bỏ thao tác cuối của đúng tán đó (và của đúng người, nếu `keep` lọc
+        theo người); trả về thao tác đã bỏ hoặc None."""
         with self.lock:
             doc = self.load_ops(flat)
             for i in range(len(doc["ops"]) - 1, -1, -1):
-                if int(doc["ops"][i]["crown"]) == int(crown):
+                if int(doc["ops"][i]["crown"]) == int(crown) and (keep is None or keep(doc["ops"][i])):
                     op = doc["ops"].pop(i)
                     self.save_ops(flat, doc)
                     return op, doc
@@ -211,8 +226,10 @@ class FlowerStore:
     def base_path(self, flat):
         return self.root / "base" / (os.path.splitext(flat)[0] + ".png")
 
-    def mask_path(self, flat):
-        return self.root / "masks" / (os.path.splitext(flat)[0] + ".png")
+    def mask_path(self, flat, who=None):
+        """masks/ là mask chính; người gán thứ hai (gán đôi) có masks_<người>/."""
+        sub = "masks" if not who else "masks_" + who
+        return self.root / sub / (os.path.splitext(flat)[0] + ".png")
 
     def load_base(self, flat, shape):
         b = _read_png(self.base_path(flat))
@@ -223,14 +240,14 @@ class FlowerStore:
     def save_base(self, flat, base):
         _atomic_bytes(self.base_path(flat), _png(base))
 
-    def load_mask(self, flat, shape):
-        m = _read_png(self.mask_path(flat))
+    def load_mask(self, flat, shape, who=None):
+        m = _read_png(self.mask_path(flat, who))
         if m is None or m.shape != tuple(shape):
             return np.full(shape, IGNORE, np.uint8)
         return m
 
-    def save_mask(self, flat, mask):
-        _atomic_bytes(self.mask_path(flat), _png(mask))
+    def save_mask(self, flat, mask, who=None):
+        _atomic_bytes(self.mask_path(flat, who), _png(mask))
 
     # --- trạng thái theo tán
     def status_path(self):
@@ -274,6 +291,18 @@ class FlowerStore:
         if p.exists():
             return json.loads(p.read_text(encoding="utf-8"))
         return {"id": rnd, "created": now(), "items": []}
+
+    def save_round(self, rnd, doc):
+        _atomic_bytes(self.round_path(rnd), json.dumps(doc, ensure_ascii=False, indent=1).encode("utf-8"))
+
+    def all_rounds(self):
+        """{id vòng: doc} của mọi vòng đã dựng hoặc đã có tán."""
+        d = self.root / "rounds"
+        out = {}
+        if d.exists():
+            for p in sorted(d.glob("*.json")):
+                out[p.stem] = json.loads(p.read_text(encoding="utf-8"))
+        return out
 
     def add_round_item(self, rnd, item):
         """Thêm tán vào vòng chọn tay (lần đầu có nét); có rồi thì thôi."""

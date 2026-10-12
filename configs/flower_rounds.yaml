@@ -21,3 +21,28 @@ rounds:
       sigma_max: 5.0
       num_sigma: 4
       max_samples: 50000         # tối đa số pixel học, chia đều hai lớp
+
+  # Bộ vàng: vẽ tay từ đầu, không có bản tô sẵn, chỉ dùng để CHẤM (không bao
+  # giờ học). 5 tán mỗi ruộng từ 2 ảnh ở hai đường bay khác nhau (3 + 2), bỏ tán
+  # chạm mép ảnh. 10 tán do người thứ hai vẽ lại độc lập để đo độ khớp giữa
+  # hai người — mốc "tốt" cho mọi cách gán nhãn và mọi model.
+  - id: gold
+    label: Bộ vàng
+    kind: manual                 # vẽ tay; Xong = phần chưa tô thành Không hoa
+    pick: {crowns_per_field: 5, crowns_per_image: 3, skip_border: true, seed: 7}
+    superpixel: {area_px: 50, compactness: 10}   # cọ bám siêu điểm ảnh (phím G)
+    double: {annotator: B, crowns: 10}
+
+  # Vòng 1: nét vẽ + bộ phân loại, 10 tán mỗi ruộng. Dựng SAU bộ vàng: ảnh cách
+  # ảnh vàng ≤ 3 khung trong cùng đường bay bị loại (chụp trùng cây).
+  - id: r1
+    label: Vòng 1
+    kind: scribble
+    pick: {crowns_per_field: 10, crowns_per_image: 5, skip_border: true, buffer_frames: 3, seed: 11}
+    classifier:
+      n_trees: 100
+      max_depth: 12
+      sigma_min: 0.7
+      sigma_max: 5.0
+      num_sigma: 4
+      max_samples: 50000
