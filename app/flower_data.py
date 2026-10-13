@@ -1,8 +1,8 @@
 # app/flower_data.py — Chọn nhãn hoa đã chốt cho train, predict và xuất bộ hoa.
 #
 # Luật dùng chung ở mọi nơi:
-# - bộ vàng (vòng kind=manual) chỉ để CHẤM, không bao giờ vào train;
-# - ảnh cách ảnh vàng ≤ buffer khung trong cùng đường bay cũng không vào train
+# - bộ chấm (vòng kind=manual hoặc role: test) chỉ để CHẤM, không bao giờ vào train;
+# - ảnh cách ảnh test ≤ buffer khung trong cùng đường bay cũng không vào train
 #   (khung liền kề chụp trùng cây);
 # - một tán vào train khi đã có người chốt: done (vẽ/nét), fixed (sửa sau duyệt),
 #   accepted (duyệt chấp nhận); `auto` (model tự nhận, chưa ai xem) chỉ khi
@@ -52,37 +52,42 @@ def kinds_of(rounds_cfg):
     return {r["id"]: r["kind"] for r in rounds_cfg}
 
 
-def gold_and_buffer(store, rounds_cfg, labels_dir):
-    """(ảnh vàng, ảnh đệm quanh ảnh vàng). Đệm = max buffer_frames của các vòng."""
-    kinds = kinds_of(rounds_cfg)
-    gold = set()
+def test_ids(rounds_cfg):
+    return {r["id"] for r in rounds_cfg if fr.is_test(r)}
+
+
+def test_and_buffer(store, rounds_cfg, labels_dir):
+    """(ảnh test, ảnh đệm quanh ảnh test). Đệm = max buffer_frames của các vòng."""
+    tests = test_ids(rounds_cfg)
+    test_imgs = set()
     for rid, doc in store.all_rounds().items():
-        if kinds.get(rid) == "manual":
-            gold |= {it["image"] for it in doc.get("items") or []}
+        if rid in tests:
+            test_imgs |= {it["image"] for it in doc.get("items") or []}
     buf = max([int((r.get("pick") or {}).get("buffer_frames", 0)) for r in rounds_cfg] + [0])
     at = {}
-    for f in gold:
+    for f in test_imgs:
         at.setdefault(flight_of(f), []).append(fr.frame_no(f))
     near = set()
     if buf:
         for p in Path(labels_dir).glob("*.json"):
             flat = p.name[:-5]
-            if flat in gold:
+            if flat in test_imgs:
                 continue
             seq = fr.frame_no(flat, -10 ** 9)
             if any(abs(seq - s) <= buf for s in at.get(flight_of(flat), ())):
                 near.add(flat)
-    return gold, near
+    return test_imgs, near
 
 
 def collect(store, rounds_cfg, labels_dir, split="train", include_auto=False, holdout=None):
     """Danh sách tán đã chốt: [{image, crown, round, state, source, field}].
 
-    split="train": các vòng không phải bộ vàng, bỏ ảnh vàng và ảnh đệm, bỏ
-    ruộng `holdout`. split="gold": các tán xong của bộ vàng (người gán chính),
+    split="train": các vòng không phải bộ chấm, bỏ ảnh test và ảnh đệm, bỏ
+    ruộng `holdout`. split="test": các tán xong của bộ chấm (người gán chính),
     chỉ ruộng `holdout` nếu có."""
     kinds = kinds_of(rounds_cfg)
-    gold, near = gold_and_buffer(store, rounds_cfg, labels_dir)
+    tests = test_ids(rounds_cfg)
+    test_imgs, near = test_and_buffer(store, rounds_cfg, labels_dir)
     ok = TRAIN_STATES | ({"auto"} if include_auto else set())
     out = []
     for (flat, crown, rnd), row in sorted(store.read_status().items()):
@@ -93,11 +98,11 @@ def collect(store, rounds_cfg, labels_dir, split="train", include_auto=False, ho
             continue
         state = row.get("state") or "todo"
         field = field_of(flat)
-        if split == "gold":
-            if kind != "manual" or state != "done" or (holdout and field != holdout):
+        if split == "test":
+            if rnd not in tests or state != "done" or (holdout and field != holdout):
                 continue
         else:
-            if kind == "manual" or flat in gold or flat in near or state not in ok:
+            if rnd in tests or flat in test_imgs or flat in near or state not in ok:
                 continue
             if holdout and field == holdout:
                 continue

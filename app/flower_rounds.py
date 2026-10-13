@@ -12,6 +12,9 @@
 #   fields             chỉ lấy các ruộng này
 #   seed               cùng seed thì ra đúng danh sách cũ
 #
+# Bộ chấm (test) là vòng vẽ tay (kind: manual) hoặc vòng có `role: test`: nó
+# chỉ để chấm, không bao giờ vào train, và vòng học tránh các ảnh quanh nó.
+#
 # Một ảnh chỉ thuộc một vòng. Ảnh trong mỗi ruộng được lấy rải đều các đường
 # bay (xen kẽ từng đường), trong mỗi ảnh lấy ngẫu nhiên các tán đủ điều kiện.
 import random
@@ -24,6 +27,11 @@ def frame_no(name, fallback=0):
     """Số thứ tự khung trong tên ảnh DJI; ảnh không theo mẫu dùng `fallback`."""
     m = DJI.search(name)
     return int(m.group(1)) if m else fallback
+
+
+def is_test(rcfg):
+    """Vòng này là bộ chấm: vẽ tay (bộ vàng) hoặc khai `role: test`."""
+    return rcfg.get("kind") == "manual" or rcfg.get("role") == "test"
 
 
 def touches_border(poly, size, margin=1):
@@ -42,7 +50,7 @@ def build(rcfg, images, taken, block, buffer):
 
     images: [{name, flat, field, flight, seq, size=(h, w), crowns=[poly, ...]}]
     taken:  ảnh (flat) đã thuộc một vòng nào đó — không lấy lại
-    block:  ảnh của phía bên kia (bộ vàng nếu đang dựng vòng học, và ngược lại)
+    block:  ảnh của phía bên kia (bộ chấm nếu đang dựng vòng học, và ngược lại)
     buffer: số khung đệm quanh các ảnh `block`
     """
     pick = dict(rcfg.get("pick") or {})

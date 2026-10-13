@@ -83,6 +83,9 @@ def load_config(path=None):
         if kind not in KINDS:
             errors.append("Vòng %s: kind phải là một trong %s" % (rid, ", ".join(KINDS)))
             continue
+        if r.get("role") not in (None, "test"):
+            errors.append("Vòng %s: role chỉ có thể là test" % rid)
+            continue
         seen.add(rid)
         r = dict(r)
         r["classifier"] = dict(CLF_DEFAULTS, **(r.get("classifier") or {}))
@@ -706,21 +709,21 @@ def round_build(req: RoundReq):
                 return _err("Vòng %s đã có nét vẽ, không dựng lại được." % req.round, 409)
             if not req.force:
                 return _err("Vòng %s đã dựng (%d tán)." % (req.round, len(old["items"])), 409)
-        manual_ids = {r["id"] for r in cfg["rounds"] if r["kind"] == "manual"}
-        if rnd["kind"] != "manual" and manual_ids and not any(built.get(m, {}).get("items") for m in manual_ids):
-            return _err("Dựng bộ vàng trước: vòng học phải tránh các ảnh quanh ảnh vàng.")
-        taken, gold, train = set(), set(), set()
+        test_ids = {r["id"] for r in cfg["rounds"] if fr.is_test(r)}
+        if req.round not in test_ids and test_ids and not any(built.get(t, {}).get("items") for t in test_ids):
+            return _err("Dựng vòng test (bộ chấm) trước: vòng học phải tránh các ảnh quanh ảnh test.")
+        taken, test, train = set(), set(), set()
         for rid, doc in built.items():
             if rid == req.round:
                 continue
             fl = {it["image"] for it in doc.get("items") or []}
             taken |= fl
-            (gold if rid in manual_ids else train).update(fl)
-        if rnd["kind"] == "manual":
+            (test if rid in test_ids else train).update(fl)
+        if req.round in test_ids:
             block = train
             buffer = max([int(r["pick"].get("buffer_frames", 0)) for r in cfg["rounds"]] + [0])
         else:
-            block = gold
+            block = test
             buffer = int(rnd["pick"].get("buffer_frames", 0))
         items = fr.build(rnd, _all_images(), taken, block, buffer)
         if not items:
@@ -931,7 +934,8 @@ class ExportReq(BaseModel):
 @router.post("/export")
 def export(req: ExportReq):
     """Xuất bộ nhãn hoa: images/ + masks/ (0 không hoa, 1 hoa, 255 bỏ qua),
-    tách train/ và gold/. Bộ vàng và ảnh đệm quanh nó không bao giờ vào train;
+    tách train/ và test/. Bộ chấm (vòng vẽ tay hoặc role: test) và ảnh đệm quanh
+    nó không bao giờ vào train;
     meta.json ghi trạng thái và nguồn của từng tán."""
     import shutil
     from app import flower_data as fd
@@ -947,9 +951,9 @@ def export(req: ExportReq):
             shutil.rmtree(root, ignore_errors=True)
         labels = s.OUT_DIR
         train = fd.collect(st, cfg["rounds"], labels, "train", req.include_auto)
-        gold = fd.collect(st, cfg["rounds"], labels, "gold")
+        test = fd.collect(st, cfg["rounds"], labels, "test")
         crowns, problems, counts = [], [], {}
-        for split, items in (("train", train), ("gold", gold)):
+        for split, items in (("train", train), ("test", test)):
             img_dir, mask_dir = root / "images" / split, root / "masks" / split
             img_dir.mkdir(parents=True, exist_ok=True)
             mask_dir.mkdir(parents=True, exist_ok=True)
@@ -971,7 +975,7 @@ def export(req: ExportReq):
             counts[split] = {"images": n_img, "crowns": sum(1 for c in crowns if c["split"] == split)}
         meta = dict(name=req.name, created=fs.now(), include_auto=req.include_auto,
                     mask_values="0=no flower, 1=flower, 255=ignore (outside the exported crowns, unsure, unlabelled)",
-                    rule="gold (manual rounds) and images within the buffer frames of a gold image never go to train",
+                    rule="test rounds (manual, or role: test) and images within the buffer frames of a test image never go to train",
                     splits=counts, crowns=crowns, problems=problems)
         (root / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
         return {"ok": True, "dir": str(root).replace("\\", "/"), "splits": counts, "problems": problems}

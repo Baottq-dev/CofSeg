@@ -101,7 +101,7 @@ def test_train_and_predict_scripts_end_to_end(root, monkeypatch):
     for f in ("model.pt", "last.pt", "config.json", "log.csv", "metrics.json"):
         assert (out / f).exists()
     cfg = json.loads((out / "config.json").read_text(encoding="utf-8"))
-    assert cfg["n_train_crowns"] == 1 and cfg["n_gold_crowns"] == 1   # vàng không vào train
+    assert cfg["n_train_crowns"] == 1 and cfg["n_test_crowns"] == 1   # vàng không vào train
     assert fa.round_build(fa.RoundReq(round="r2"))["ok"]
     rows = _script("flower_predict").main(["--run", str(out), "--round", "r2", "--tile", "32", "--device", "cpu"])
     n_items = len(st.load_round("r2")["items"])

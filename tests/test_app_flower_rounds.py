@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from app import flower_api as fa
+from app import flower_data as fd
 from app import flower_rounds as fr
 from app import server
 
@@ -122,6 +123,43 @@ def test_a_training_round_waits_for_the_gold_set(root):
     r1 = fa.round_build(fa.RoundReq(round="r1"))
     assert r1["ok"] and r1["n_items"] > 0
     assert fa.round_build(fa.RoundReq(round="gold")).status_code == 409   # đã dựng
+
+
+def test_a_scribble_round_with_role_test_is_the_scoring_side(root, monkeypatch):
+    # Không bộ vàng: vòng test và vòng train đều vẽ nét; vòng có role: test giữ
+    # vai bộ chấm (dựng trước, vòng train tránh ảnh quanh nó, script chấm trên nó).
+    cfg = root / "rounds_test.yaml"
+    cfg.write_text(
+        "version: v1\ndata_dir: flower_v1\nrounds:\n"
+        "  - {id: test, kind: scribble, role: test, pick: {images_per_field: 1, crowns_per_image: all, seed: 7}}\n"
+        "  - {id: train, kind: scribble, pick: {images_per_field: 2, crowns_per_image: all, buffer_frames: 3, seed: 11}}\n",
+        encoding="utf-8")
+    monkeypatch.setattr(fa, "CFG_PATH", cfg)
+    monkeypatch.setattr(fa, "_CACHE", None)
+    assert fa.round_build(fa.RoundReq(round="train")).status_code == 400   # test trước
+    t = fa.round_build(fa.RoundReq(round="test"))
+    assert t["by_field"] == {"field_1": {"images": 1, "crowns": 3}, "field_2": {"images": 1, "crowns": 3}}
+    assert fa.round_build(fa.RoundReq(round="train"))["ok"]
+    st = fa._store()
+    test_items, train_items = st.load_round("test")["items"], st.load_round("train")["items"]
+    test_at = {(it["flight"], it["seq"]) for it in test_items}
+    for it in train_items:
+        assert all(f != it["flight"] or abs(s - it["seq"]) > 3 for f, s in test_at)
+    a, b = test_items[0], train_items[0]
+    for rnd, it in (("test", a), ("train", b)):
+        fa.stroke(fa.StrokeReq(round=rnd, name=it["name"], crown=it["crown"], label=1, pts=[[25, 25]]))
+        fa.finish(fa.FinishReq(round=rnd, name=it["name"], crown=it["crown"]))
+    rounds = fa.load_config()[0]["rounds"]
+    labels = root / "labels"
+    assert [(x["image"], x["crown"]) for x in fd.collect(st, rounds, labels, "test")] == [(a["image"], a["crown"])]
+    assert [(x["image"], x["crown"]) for x in fd.collect(st, rounds, labels, "train")] == [(b["image"], b["crown"])]
+
+
+def test_role_must_be_test(root, tmp_path, monkeypatch):
+    cfg = tmp_path / "bad.yaml"
+    cfg.write_text("rounds:\n  - {id: x, kind: scribble, role: gold}\n", encoding="utf-8")
+    _, errors = fa.load_config(cfg)
+    assert errors and "role" in errors[0]
 
 
 def test_queue_progress_and_membership(root):

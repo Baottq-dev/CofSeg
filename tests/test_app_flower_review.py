@@ -146,8 +146,8 @@ def test_export_keeps_gold_and_its_neighbours_out_of_train(root):
     out = root / "export" / "ds"
     train = {p.name for p in (out / "images" / "train").iterdir()}
     assert server._flat(far) in train and server._flat(near) not in train and g["image"] not in train
-    assert {p.name for p in (out / "images" / "gold").iterdir()} == {g["image"]}
+    assert {p.name for p in (out / "images" / "test").iterdir()} == {g["image"]}
     m = cv2.imread(str(out / "masks" / "train" / (server._flat(far).rsplit(".", 1)[0] + ".png")), cv2.IMREAD_UNCHANGED)
     assert m[25, 25] == 1 and m[60, 70] == 255            # tán B không chọn: 255
     meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
-    assert meta["splits"] == {"train": {"images": 1, "crowns": 1}, "gold": {"images": 1, "crowns": 1}}
+    assert meta["splits"] == {"train": {"images": 1, "crowns": 1}, "test": {"images": 1, "crowns": 1}}

@@ -119,7 +119,7 @@ async function flExport(body){const info=$('flExpInfo');info.textContent='⏳ đ
   ()=>flExport(Object.assign({},body,{overwrite:true})));return;}
  if(!r.ok){info.textContent='⚠ '+(r.error||'Lỗi xuất');return;}
  const s=r.splits||{};
- info.textContent='✔ train '+((s.train||{}).images||0)+' ảnh / '+((s.train||{}).crowns||0)+' tán · gold '+((s.gold||{}).images||0)+' ảnh / '+((s.gold||{}).crowns||0)+' tán → '+r.dir+
+ info.textContent='✔ train '+((s.train||{}).images||0)+' ảnh / '+((s.train||{}).crowns||0)+' tán · test '+((s.test||{}).images||0)+' ảnh / '+((s.test||{}).crowns||0)+' tán → '+r.dir+
   ((r.problems||[]).length?(' · ⚠ '+r.problems.length+' ảnh có vấn đề'):'');}
 async function flExportStart(){const name=($('flExpName').value||'').trim();
  if(!name||/[\\/:*?"<>|]/.test(name)){$('flExpInfo').textContent='⚠ Tên bộ dữ liệu không hợp lệ.';return;}

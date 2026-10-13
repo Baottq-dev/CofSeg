@@ -9,9 +9,10 @@ data/masks/flower_v1), ảnh gốc theo configs/config.yaml. Mỗi tán đã ch�
 cắt theo khung (nới lề) ở độ phân giải gốc; mỗi bước lấy ngẫu nhiên các ô
 `--tile` px trong các crop đó, lật/xoay ngẫu nhiên. Pixel 255 không tính loss.
 
-Bộ vàng (vòng kind=manual) KHÔNG BAO GIỜ vào train, ảnh cách ảnh vàng ≤ buffer
-khung cũng không. Mỗi epoch chấm trên bộ vàng (chỉ ruộng --holdout-field nếu
-có): IoU và F1 lớp hoa; giữ checkpoint IoU cao nhất.
+Bộ chấm (vòng `role: test`, hoặc vòng vẽ tay kind=manual) KHÔNG BAO GIỜ vào
+train, ảnh cách ảnh test ≤ buffer khung cũng không. Mỗi epoch chấm trên bộ test
+(chỉ ruộng --holdout-field nếu có): IoU và F1 lớp hoa; giữ checkpoint IoU cao
+nhất. Chưa có tán test nào đã chốt thì giữ checkpoint loss train thấp nhất.
 
 Ghi runs/flower/<name>/: model.pt (tốt nhất), last.pt, config.json, log.csv,
 metrics.json.
@@ -77,23 +78,23 @@ def sample_tile(rgb, mask, tile, rng):
     return np.rot90(r, k).copy(), np.rot90(m, k).copy()
 
 
-def evaluate(model, gold_items, images_dir, labels_dir, store, tile, device):
-    """IoU / F1 lớp hoa trên bộ vàng, theo ruộng và tất cả."""
+def evaluate(model, test_items, images_dir, labels_dir, store, tile, device):
+    """IoU / F1 lớp hoa trên bộ test, theo ruộng và tất cả."""
     from app import flower_model as fm
     pairs = {}
-    for flat, its in fd.group_by_image(gold_items).items():
+    for flat, its in fd.group_by_image(test_items).items():
         polys, _ = fd.crown_polys(labels_dir, flat)
         rgb = fd.imread_rgb(Path(images_dir) / fd.rel_of(flat))
         if rgb is None:
             continue
         h, w = rgb.shape[:2]
-        gold = store.load_mask(flat, (h, w))
+        ref = store.load_mask(flat, (h, w))
         for it in its:
             b = fs.crown_box(polys[it["crown"]], w, h)
             inside = fs.crown_mask(polys[it["crown"]], b)
             prob = fm.predict_tiles(model, rgb[b[1]:b[3], b[0]:b[2]], tile=tile, device=device)
             p = (prob >= 0.5).astype(np.uint8)[inside]
-            g = gold[b[1]:b[3], b[0]:b[2]][inside]
+            g = ref[b[1]:b[3], b[0]:b[2]][inside]
             pairs.setdefault(it["field"], []).append((g, p))
     by = {f: fr.agreement(v) for f, v in sorted(pairs.items())}
     return {"by_field": by, "all": fr.agreement([x for v in pairs.values() for x in v])}
@@ -121,7 +122,7 @@ def main(argv=None):
     images_dir, labels_dir, flower_dir, rounds = fd.default_dirs()
     store = fs.FlowerStore(flower_dir)
     train_items = fd.collect(store, rounds, labels_dir, "train", a.include_auto, a.holdout_field)
-    gold_items = fd.collect(store, rounds, labels_dir, "gold", holdout=a.holdout_field)
+    test_items = fd.collect(store, rounds, labels_dir, "test", holdout=a.holdout_field)
     if not train_items:
         raise SystemExit("Chưa có tán nào đã chốt để học (cần trạng thái done/fixed/accepted).")
     device = ("cuda" if torch.cuda.is_available() else "cpu") if a.device == "auto" else a.device
@@ -132,11 +133,11 @@ def main(argv=None):
     out = Path(a.runs) / a.name
     out.mkdir(parents=True, exist_ok=True)
     cfg = dict(vars(a), device=device, n_train_crowns=len(train_items), n_crops=len(crops),
-               n_gold_crowns=len(gold_items), flower_dir=str(flower_dir),
+               n_test_crowns=len(test_items), flower_dir=str(flower_dir),
                train_fields=sorted({it["field"] for it in train_items}),
                started=time.strftime("%Y-%m-%dT%H:%M:%S"))
     (out / "config.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=1), encoding="utf-8")
-    print("train %d tán (%d crop), chấm %d tán vàng, %s" % (len(train_items), len(crops), len(gold_items), device))
+    print("train %d tán (%d crop), chấm %d tán test, %s" % (len(train_items), len(crops), len(test_items), device))
 
     model = fm.TinyUNet(tuple(int(c) for c in a.ch.split(","))).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=1e-4)
@@ -161,18 +162,18 @@ def main(argv=None):
             opt.step()
             sched.step()
             losses.append(float(loss))
-        ev = evaluate(model, gold_items, images_dir, labels_dir, store, a.tile, device) if gold_items else None
+        ev = evaluate(model, test_items, images_dir, labels_dir, store, a.tile, device) if test_items else None
         iou = (ev or {}).get("all", {}).get("iou")
-        row = dict(epoch=ep, loss=float(np.mean(losses)), gold_iou=iou,
-                   gold_f1=(ev or {}).get("all", {}).get("f1"), seconds=round(time.time() - t0, 1))
+        row = dict(epoch=ep, loss=float(np.mean(losses)), test_iou=iou,
+                   test_f1=(ev or {}).get("all", {}).get("f1"), seconds=round(time.time() - t0, 1))
         log.append(row)
-        print("epoch %3d  loss %.4f  vàng IoU %s  (%.0f s)" % (ep, row["loss"], "—" if iou is None else "%.3f" % iou, row["seconds"]))
+        print("epoch %3d  loss %.4f  test IoU %s  (%.0f s)" % (ep, row["loss"], "—" if iou is None else "%.3f" % iou, row["seconds"]))
         fm.save_model(out / "last.pt", model, dict(epoch=ep))
         score = iou if iou is not None else -row["loss"]
         if score > best:
             best = score
-            fm.save_model(out / "model.pt", model, dict(epoch=ep, gold=ev))
-            (out / "metrics.json").write_text(json.dumps(dict(epoch=ep, gold=ev), ensure_ascii=False, indent=1),
+            fm.save_model(out / "model.pt", model, dict(epoch=ep, test=ev))
+            (out / "metrics.json").write_text(json.dumps(dict(epoch=ep, test=ev), ensure_ascii=False, indent=1),
                                               encoding="utf-8")
         with open(out / "log.csv", "w", encoding="utf-8", newline="") as f:
             wr = csv.DictWriter(f, fieldnames=list(log[0]))
