@@ -21,6 +21,8 @@ rounds:
       sigma_max: 5.0
       num_sigma: 4
       max_samples: 50000         # tối đa số pixel học, chia đều hai lớp
+      unlabeled_ratio: 4         # lấy thêm pixel chưa tô làm mẫu "không hoa" yếu, gấp 4 lần số pixel nét Hoa
+      unlabeled_weight: 0.1      # trọng số của các mẫu đó (nét của người = 1)
 
   # Bộ vàng: vẽ tay từ đầu, không có bản tô sẵn, chỉ dùng để CHẤM (không bao
   # giờ học). 5 tán mỗi ruộng từ 2 ảnh ở hai đường bay khác nhau (3 + 2), bỏ tán
@@ -46,6 +48,8 @@ rounds:
       sigma_max: 5.0
       num_sigma: 4
       max_samples: 50000
+      unlabeled_ratio: 4
+      unlabeled_weight: 0.1
 
   # Vòng 2: model (train trên Vòng 1) tô 300 tán mới; người chỉ duyệt. Trong
   # từng ruộng, 30% tán kém chắc nhất (entropy cao nhất trong crowns.csv) vào

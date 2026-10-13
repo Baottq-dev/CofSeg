@@ -33,7 +33,7 @@ CFG_PATH = Path(os.environ.get("FLOWER_ROUNDS_CFG") or REPO / "configs" / "flowe
 REVIEWED = ("accepted", "fixed")
 KINDS = ("scribble", "manual", "review")
 CLF_DEFAULTS = dict(n_trees=100, max_depth=12, sigma_min=0.7, sigma_max=5.0,
-                    num_sigma=4, max_samples=50000)
+                    num_sigma=4, max_samples=50000, unlabeled_ratio=4, unlabeled_weight=0.1)
 SP_DEFAULTS = dict(area_px=50, compactness=10)
 ROWS_PER_CROWN = 20000      # nét tô to cũng không để một tán lấn át cả vòng
 
@@ -529,30 +529,49 @@ def undo(req: CrownReq):
 
 
 def _rows(st, rnd, item, ccfg):
-    """Pixel đã có nhãn 0/1 của một tán trong vòng: (X, y). Nhớ lại theo chữ ký
-    các thao tác của tán, đổi nét thì tính lại."""
+    """Mẫu học của một tán trong vòng: (X, y, w). Nhớ lại theo chữ ký các thao
+    tác của tán, đổi nét thì tính lại.
+
+    Ngoài pixel dưới nét (trọng số 1), lấy thêm ngẫu nhiên pixel CHƯA TÔ trong
+    tán làm mẫu "không hoa" yếu: `unlabeled_ratio` lần số pixel nét Hoa, trọng số
+    `unlabeled_weight`. Hoa chỉ chiếm phần nhỏ của tán nên phần lớn mẫu đó đúng
+    là không hoa. Không có chúng, máy chỉ thấy vài chấm Không hoa người vẽ và đoán
+    bừa phần còn lại: thử trên một tán Field 3 (31 nét Hoa, 5 chấm Không hoa), máy
+    tô 93% tán là hoa; có chúng thì 10%, nằm trên các cụm trắng. Trọng số nhỏ (0,1)
+    vì trong đó có cả hoa chưa tô: ở 0,3 máy bắt đầu bỏ viền các bông hoa. Nhờ vậy
+    chỉ cần nét Hoa là học được; nét Không hoa dùng để sửa chỗ máy nhầm."""
     flat, name, crown = item["image"], item["name"], int(item["crown"])
     ops = _crown_ops(st.load_ops(flat), crown)
-    sig = tuple(o["id"] for o in ops)
+    sig = (tuple(o["id"] for o in ops), ccfg.get("unlabeled_ratio"), ccfg.get("unlabeled_weight"))
     key = (rnd, flat, crown)
     hit = _BANK.get(key)
     if hit is not None and hit[0] == sig:
-        return hit[1], hit[2]
+        return hit[1], hit[2], hit[3]
     polys, (h, w) = _crowns(name)
-    X, y = None, None
+    X, y, wt = None, None, None
     if crown < len(polys) and ops:
         poly = polys[crown]
         b = fs.crown_box(poly, w, h)
+        inside = fs.crown_mask(poly, b)
         lay = fs.human_layer(ops, poly, b)
         sel = (lay == 0) | (lay == 1)
         if sel.any():
+            rng = np.random.default_rng(crown)
             F = _feats(name, flat, crown, b, ccfg)
             X, y = F[sel], lay[sel]
             if len(y) > ROWS_PER_CROWN:
-                idx = np.random.default_rng(crown).choice(len(y), ROWS_PER_CROWN, replace=False)
+                idx = rng.choice(len(y), ROWS_PER_CROWN, replace=False)
                 X, y = X[idx], y[idx]
-    _BANK[key] = (sig, X, y)
-    return X, y
+            wt = np.ones(len(y), np.float32)
+            n_u = int(float(ccfg.get("unlabeled_ratio") or 0) * max(1, int((y == 1).sum())))
+            free = np.flatnonzero((inside & (lay == fs.UNSET)).ravel())
+            if n_u and len(free):
+                pick = rng.choice(free, min(n_u, len(free), ROWS_PER_CROWN), replace=False)
+                X = np.concatenate([X, F.reshape(-1, F.shape[-1])[pick]])
+                y = np.concatenate([y, np.zeros(len(pick), y.dtype)])
+                wt = np.concatenate([wt, np.full(len(pick), float(ccfg.get("unlabeled_weight", 0.1)), np.float32)])
+    _BANK[key] = (sig, X, y, wt)
+    return X, y, wt
 
 
 def _load_clf(st, rid):
@@ -578,18 +597,19 @@ def classify(req: CrownReq):
         ccfg = rnd["classifier"]
         st = _store()
         t0 = time.perf_counter()
-        Xs, ys, n_crowns = [], [], 0
+        Xs, ys, ws, n_crowns = [], [], [], 0
         for item in st.load_round(req.round)["items"]:
-            X, y = _rows(st, req.round, item, ccfg)
+            X, y, wt = _rows(st, req.round, item, ccfg)
             if X is not None:
                 Xs.append(X)
                 ys.append(y)
+                ws.append(wt)
                 n_crowns += 1
         if not Xs:
             return _err("Chưa có nét nào trong vòng này.")
         t_feat = time.perf_counter() - t0
         try:
-            clf = fc.fit(np.concatenate(Xs), np.concatenate(ys), **ccfg)
+            clf = fc.fit(np.concatenate(Xs), np.concatenate(ys), np.concatenate(ws), **ccfg)
         except ValueError as e:
             return _err(str(e))
         _save_clf(st, req.round, clf)

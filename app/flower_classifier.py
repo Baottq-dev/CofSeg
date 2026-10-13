@@ -13,7 +13,7 @@ from skimage.feature import multiscale_basic_features
 from sklearn.ensemble import RandomForestClassifier
 
 DEFAULTS = dict(n_trees=100, max_depth=12, sigma_min=0.7, sigma_max=5.0,
-                num_sigma=4, max_samples=50000)
+                num_sigma=4, max_samples=50000, unlabeled_ratio=4, unlabeled_weight=0.1)
 
 
 def features(rgb, sigma_min=0.7, sigma_max=5.0, num_sigma=4, **_):
@@ -48,7 +48,7 @@ class FeatureCache:
         return f
 
 
-def balanced_sample(X, y, max_samples, seed=0):
+def balanced_sample(X, y, max_samples, seed=0, w=None):
     """Tối đa max_samples/2 pixel mỗi lớp, chọn ngẫu nhiên có hạt giống."""
     rng = np.random.default_rng(seed)
     keep = []
@@ -58,20 +58,23 @@ def balanced_sample(X, y, max_samples, seed=0):
             idx = rng.choice(idx, max_samples // 2, replace=False)
         keep.append(idx)
     keep = np.sort(np.concatenate(keep))
-    return X[keep], y[keep]
+    return X[keep], y[keep], (None if w is None else np.asarray(w)[keep])
 
 
-def fit(X, y, n_trees=100, max_depth=12, max_samples=50000, seed=0, **_):
-    """Học random forest. Thiếu một trong hai lớp thì báo lỗi rõ ràng: học từ
-    một lớp thì máy đoán đúng lớp đó cho mọi pixel."""
+def fit(X, y, w=None, n_trees=100, max_depth=12, max_samples=50000, seed=0, **_):
+    """Học random forest, `w` = trọng số từng mẫu (mẫu "không hoa" yếu lấy từ
+    pixel chưa tô có trọng số nhỏ hơn nét của người). Không có mẫu hoa nào thì
+    báo lỗi rõ ràng."""
     y = np.asarray(y)
-    if not ((y == 0).any() and (y == 1).any()):
-        raise ValueError("Cần nét của cả Hoa và Không hoa trong vòng này rồi mới học được.")
-    X, y = balanced_sample(np.asarray(X, np.float32), y, max_samples, seed)
+    if not (y == 1).any():
+        raise ValueError("Cần ít nhất một nét Hoa trong vòng này rồi mới học được.")
+    if not (y == 0).any():
+        raise ValueError("Cần có mẫu Không hoa: vẽ vài nét Không hoa, hoặc để máy lấy pixel chưa tô.")
+    X, y, w = balanced_sample(np.asarray(X, np.float32), y, max_samples, seed, w)
     t0 = time.perf_counter()
     clf = RandomForestClassifier(n_estimators=n_trees, max_depth=max_depth,
                                  class_weight="balanced", n_jobs=-1, random_state=seed)
-    clf.fit(X, y)
+    clf.fit(X, y, sample_weight=w)
     clf.fit_seconds_ = time.perf_counter() - t0
     clf.n_samples_ = int(len(y))
     return clf

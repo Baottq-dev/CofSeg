@@ -182,11 +182,27 @@ def test_a_few_strokes_teach_the_classifier_the_white_dots(root):
     assert (root / "flower_v1" / "rounds" / "try.joblib").exists()
 
 
-def test_classify_needs_both_classes(root):
-    _stroke([[30, 30]], 1)
+def test_flower_strokes_alone_are_enough(root):
+    # Chỉ chấm Hoa lên 6 đốm, không nét Không hoa nào: pixel chưa tô trong tán làm
+    # mẫu không hoa yếu, nên máy tìm ra cả 30 đốm chứ không tô kín cả tán. (Viền
+    # đốm có thể hụt: chưa có nét Không hoa nào cho máy biết mép lá ở đâu.)
+    for x, y in DOTS[:6]:
+        _stroke([[x, y]], 1, r=1)
+    res = fa.classify(fa.CrownReq(round="try", name=NAME, crown=0))
+    assert res["ok"], res
+    m = _mask(root)
+    yy, xx = np.mgrid[0:H, 0:W]
+    d = np.min([np.hypot(xx - x, yy - y) for x, y in DOTS], axis=0)
+    inside = fs.crown_mask(C0, (0, 0, W, H))
+    assert all(m[y, x] == 1 for x, y in DOTS)
+    assert not (m[inside & (d > 4.5)] == 1).any()
+
+
+def test_classify_needs_a_flower_stroke(root):
+    _stroke([[15, 32], [100, 32]], 0)
     res = fa.classify(fa.CrownReq(round="try", name=NAME, crown=0))
     assert res.status_code == 400
-    assert "Không hoa" in json.loads(res.body)["error"]
+    assert "Hoa" in json.loads(res.body)["error"]
 
 
 def test_view_is_a_crop_with_its_position(root):
