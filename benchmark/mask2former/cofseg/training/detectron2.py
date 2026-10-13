@@ -982,6 +982,8 @@ class Detectron2Trainer(Trainer):
 
         if not torch.cuda.is_available():
             return {"supported": False, "reason": "không có CUDA"}
+        from detectron2.utils.events import EventStorage
+
         cfg, m2f, _ = self._cfg()
         cls = self._trainer_cls(m2f)
         model = cls.build_model(cfg)
@@ -993,15 +995,20 @@ class Detectron2Trainer(Trainer):
         t0, n_obj = time.time(), 0
         try:
             it = iter(loader)
-            for _ in range(2):
-                data = next(it)
-                n_obj += sum(len(d["instances"]) for d in data)
-                with torch.autocast("cuda", enabled=cfg.SOLVER.AMP.ENABLED):
-                    losses = sum(model(data).values())
-                opt.zero_grad(set_to_none=True)
-                scaler.scale(losses).backward()
-                scaler.step(opt)
-                scaler.update()
+            # RPN và ROI head của Mask R-CNN ghi số đếm vào EventStorage ngay
+            # trong lúc tính loss (get_event_storage() ở rpn.py), nên forward
+            # chế độ train ngoài một EventStorage là AssertionError. Lúc train
+            # thật thì TrainerBase.train() mở sẵn nó; ở đây phải tự mở.
+            with EventStorage(0):
+                for _ in range(2):
+                    data = next(it)
+                    n_obj += sum(len(d["instances"]) for d in data)
+                    with torch.autocast("cuda", enabled=cfg.SOLVER.AMP.ENABLED):
+                        losses = sum(model(data).values())
+                    opt.zero_grad(set_to_none=True)
+                    scaler.scale(losses).backward()
+                    scaler.step(opt)
+                    scaler.update()
             torch.cuda.synchronize()
         finally:
             peak = torch.cuda.max_memory_allocated() / 2**30
