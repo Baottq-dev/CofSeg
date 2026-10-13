@@ -198,6 +198,16 @@ def test_flower_strokes_alone_are_enough(root):
     assert not (m[inside & (d > 4.5)] == 1).any()
 
 
+def test_classify_on_a_crown_without_strokes_marks_it_in_progress(root):
+    for x, y in DOTS[:6]:
+        _stroke([[x, y]], 1, r=1)                 # nét chỉ ở tán 0
+    res = fa.classify(fa.CrownReq(round="try", name=NAME, crown=1))
+    assert res["ok"], res
+    row = fa._store().read_status()[(server._flat(NAME), 1, "try")]
+    assert row["state"] == "doing" and row["who"] == "A" and row["n_ops"] == "0"
+    assert row["source"] == "classifier"
+
+
 def test_classify_needs_a_flower_stroke(root):
     _stroke([[15, 32], [100, 32]], 0)
     res = fa.classify(fa.CrownReq(round="try", name=NAME, crown=0))

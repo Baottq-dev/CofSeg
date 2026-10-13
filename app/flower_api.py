@@ -624,7 +624,12 @@ def classify(req: CrownReq):
         st.save_base(flat, base)
         t_pred = time.perf_counter() - t1
         mask, polys, doc = _recompose(st, flat, req.name, rnd, req.who)
-        st.set_status(flat, req.crown, _status_round(rnd, req.who), source="classifier", bbox=list(b))
+        # Tán chưa có nét nào cũng tô được (máy học từ nét của các tán khác), nên
+        # có thể đây là dòng trạng thái đầu tiên của tán: ghi đủ người và trạng thái.
+        skey = _status_round(rnd, req.who)
+        row = _state_of(st.read_status(), flat, req.crown, skey) or {}
+        st.set_status(flat, req.crown, skey, who=req.who, state=row.get("state") or "doing",
+                      n_ops=str(len(_crown_ops(doc, req.crown))), source="classifier", bbox=list(b))
         return _result(mask, polys, doc, req.crown,
                        n_samples=clf.n_samples_, n_crowns=n_crowns, t_feat=round_(t_feat, 2),
                        t_fit=round_(clf.fit_seconds_, 2), t_pred=round_(t_pred, 2))
