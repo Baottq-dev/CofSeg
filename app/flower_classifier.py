@@ -8,12 +8,13 @@
 import time
 from collections import OrderedDict
 
+import cv2
 import numpy as np
 from skimage.feature import multiscale_basic_features
 from sklearn.ensemble import RandomForestClassifier
 
 DEFAULTS = dict(n_trees=100, max_depth=12, sigma_min=0.7, sigma_max=5.0,
-                num_sigma=4, max_samples=50000, unlabeled_ratio=4, unlabeled_weight=0.1)
+                num_sigma=4, max_samples=50000, unlabeled_ratio=4, unlabeled_weight=0.1, min_blob_px=10)
 
 
 def features(rgb, sigma_min=0.7, sigma_max=5.0, num_sigma=4, **_):
@@ -88,4 +89,20 @@ def predict(clf, feats, inside=None):
     sel = np.ones(h * w, bool) if inside is None else inside.reshape(-1)
     if sel.any():
         out.reshape(-1)[sel] = (clf.predict_proba(flat[sel])[:, 1] >= 0.5).astype(np.uint8)
+    return out
+
+
+def drop_small(mask, min_px):
+    """Bỏ các đốm hoa (vùng liền 8 hướng) dưới `min_px` pixel: thành không hoa.
+    Đốm vài pixel của máy nằm dọc cành khô, cành trắng, không phải bông hoa
+    (một bông ở GSD 0,55 cm/px đã ~15-20 px). min_px <= 1: giữ nguyên."""
+    if not min_px or min_px <= 1 or not (mask == 1).any():
+        return mask
+    n, lab, st, _ = cv2.connectedComponentsWithStats((mask == 1).astype(np.uint8), connectivity=8)
+    small = np.flatnonzero(st[:, cv2.CC_STAT_AREA] < min_px)
+    small = small[small > 0]
+    if not len(small):
+        return mask
+    out = mask.copy()
+    out[np.isin(lab, small)] = 0
     return out

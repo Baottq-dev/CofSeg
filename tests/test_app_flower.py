@@ -182,10 +182,15 @@ def test_a_few_strokes_teach_the_classifier_the_white_dots(root):
     assert (root / "flower_v1" / "rounds" / "try.joblib").exists()
 
 
-def test_flower_strokes_alone_are_enough(root):
+def test_flower_strokes_alone_are_enough(root, monkeypatch):
     # Chỉ chấm Hoa lên 6 đốm, không nét Không hoa nào: pixel chưa tô trong tán làm
     # mẫu không hoa yếu, nên máy tìm ra cả 30 đốm chứ không tô kín cả tán. (Viền
-    # đốm có thể hụt: chưa có nét Không hoa nào cho máy biết mép lá ở đâu.)
+    # đốm có thể hụt: chưa có nét Không hoa nào cho máy biết mép lá ở đâu. Đốm ở
+    # đây chỉ 29 px, phần lõi máy tìm ra dưới 10 px, nên tắt lọc đốm nhỏ.)
+    cfg = fa.CFG_PATH.read_text(encoding="utf-8").replace("num_sigma: 3}", "num_sigma: 3, min_blob_px: 0}")
+    (root / "no_blob_filter.yaml").write_text(cfg, encoding="utf-8")
+    monkeypatch.setattr(fa, "CFG_PATH", root / "no_blob_filter.yaml")
+    monkeypatch.setattr(fa, "_CACHE", None)
     for x, y in DOTS[:6]:
         _stroke([[x, y]], 1, r=1)
     res = fa.classify(fa.CrownReq(round="try", name=NAME, crown=0))
@@ -206,6 +211,26 @@ def test_classify_on_a_crown_without_strokes_marks_it_in_progress(root):
     row = fa._store().read_status()[(server._flat(NAME), 1, "try")]
     assert row["state"] == "doing" and row["who"] == "A" and row["n_ops"] == "0"
     assert row["source"] == "classifier"
+
+
+def test_learn_and_fill_drops_blobs_of_a_few_pixels(root):
+    from app import flower_classifier as fc
+    m = np.zeros((40, 40), np.uint8)
+    m[2:4, 2:4] = 1                               # 4 px: bỏ
+    m[20:25, 20:25] = 1                           # 25 px: giữ
+    m[0, 39] = 255                                # pixel bỏ qua giữ nguyên
+    out = fc.drop_small(m, 10)
+    assert (out[2:4, 2:4] == 0).all() and (out[20:25, 20:25] == 1).all() and out[0, 39] == 255
+    assert (fc.drop_small(m, 0) == m).all()
+    # qua API: không còn đốm hoa nào dưới 10 px trong phần máy tô
+    for x, y in DOTS[:6]:
+        _stroke([[x, y]], 1, r=1)
+    for y in (32, 60, 88):
+        _stroke([[15, y], [100, y]], 0, r=1)
+    assert fa.classify(fa.CrownReq(round="try", name=NAME, crown=0))["ok"]
+    base = fa._store().load_base(server._flat(NAME), (H, W))
+    n, lab, st, _ = cv2.connectedComponentsWithStats((base == 1).astype(np.uint8), connectivity=8)
+    assert n > 1 and st[1:, cv2.CC_STAT_AREA].min() >= 10
 
 
 def test_classify_needs_a_flower_stroke(root):

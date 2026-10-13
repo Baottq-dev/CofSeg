@@ -33,7 +33,7 @@ CFG_PATH = Path(os.environ.get("FLOWER_ROUNDS_CFG") or REPO / "configs" / "flowe
 REVIEWED = ("accepted", "fixed")
 KINDS = ("scribble", "manual", "review")
 CLF_DEFAULTS = dict(n_trees=100, max_depth=12, sigma_min=0.7, sigma_max=5.0,
-                    num_sigma=4, max_samples=50000, unlabeled_ratio=4, unlabeled_weight=0.1)
+                    num_sigma=4, max_samples=50000, unlabeled_ratio=4, unlabeled_weight=0.1, min_blob_px=10)
 SP_DEFAULTS = dict(area_px=50, compactness=10)
 ROWS_PER_CROWN = 20000      # nét tô to cũng không để một tán lấn át cả vòng
 
@@ -654,7 +654,8 @@ def classify(req: CrownReq):
         poly = polys[req.crown]
         b = fs.crown_box(poly, w, h)
         inside = fs.crown_mask(poly, b)
-        pred = fc.predict(clf, _feats(req.name, flat, req.crown, b, ccfg), inside)
+        pred = fc.drop_small(fc.predict(clf, _feats(req.name, flat, req.crown, b, ccfg), inside),
+                             int(ccfg.get("min_blob_px") or 0))
         base = st.load_base(flat, (h, w))
         sub = base[b[1]:b[3], b[0]:b[2]]
         sub[inside] = pred[inside]
@@ -939,7 +940,8 @@ def agreement(round: str, against: str = ""):  # noqa: A002
             inside = fs.crown_mask(polys[k], b)
             a = st.load_mask(flat, (h, w))[b[1]:b[3], b[0]:b[2]][inside]
             if against:
-                p = fc.predict(clf, _feats(name, flat, k, b, ccfg), inside)[inside]
+                p = fc.drop_small(fc.predict(clf, _feats(name, flat, k, b, ccfg), inside),
+                                  int(ccfg.get("min_blob_px") or 0))[inside]
             else:
                 if (_state_of(rows, flat, k, _status_round(rnd, _sec(rnd))) or {}).get("state") != "done":
                     continue
