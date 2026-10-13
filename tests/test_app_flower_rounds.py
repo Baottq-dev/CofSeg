@@ -90,6 +90,20 @@ def test_training_round_keeps_its_distance_from_gold(root):
         assert all(abs(it["seq"] - s) > 3 for s in gold_at.get(it["flight"], []))
 
 
+def test_images_per_field_takes_whole_images(root):
+    rnd = {"pick": {"images_per_field": 2, "crowns_per_image": "all", "seed": 3}}
+    items = fr.build(rnd, _images(), set(), set(), 0)
+    for field in ("field_1", "field_2"):
+        imgs = {it["image"] for it in items if it["field"] == field}
+        assert len(imgs) == 2                           # đúng 2 ảnh mỗi ruộng
+        for flat in imgs:                               # gán kín: cả 3 tán, kể cả tán chạm mép
+            assert sorted(it["crown"] for it in items if it["image"] == flat) == [0, 1, 2]
+    f1 = {it["flight"] for it in items if it["field"] == "field_1"}
+    assert len(f1) == 2                                 # vẫn rải qua hai đường bay
+    capped = fr.build({"pick": {"images_per_field": 2, "crowns_per_image": 1, "seed": 3}}, _images(), set(), set(), 0)
+    assert len(capped) == 4                             # 2 ảnh x 1 tán x 2 ruộng
+
+
 def test_buffer_only_counts_frames_in_the_same_flight():
     def im(flight, seq):
         return dict(name="%s/%d" % (flight, seq), flat="%s__%d" % (flight, seq), field="f", flight=flight,

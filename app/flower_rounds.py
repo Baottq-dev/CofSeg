@@ -2,6 +2,8 @@
 #
 # Luật (configs/flower_rounds.yaml, khối `pick` của từng vòng):
 #   crowns_per_field   số tán mỗi ruộng
+#   images_per_field   số ẢNH mỗi ruộng; có khoá này thì bỏ qua crowns_per_field
+#                      (dùng với crowns_per_image: all để gán kín từng ảnh)
 #   crowns_per_image   tối đa bao nhiêu tán trong một ảnh ("all" = mọi tán)
 #   skip_border        bỏ tán chạm mép ảnh (tán bị cắt dở)
 #   buffer_frames      ảnh cách ảnh của vòng phía bên kia ≤ ngần ấy khung trong
@@ -45,6 +47,8 @@ def build(rcfg, images, taken, block, buffer):
     """
     pick = dict(rcfg.get("pick") or {})
     per_field = int(pick.get("crowns_per_field", 5))
+    img_field = pick.get("images_per_field")
+    img_field = None if img_field is None else int(img_field)
     per_img = pick.get("crowns_per_image", 3)
     per_img = None if str(per_img).lower() == "all" else int(per_img)
     skip_border = bool(pick.get("skip_border", False))
@@ -74,22 +78,28 @@ def build(rcfg, images, taken, block, buffer):
             if flights[f]:
                 order.append(flights[f].pop(0))
             i += 1
-        got = 0
+        got = n_img = 0
         for im in order:
-            if got >= per_field:
+            if (n_img >= img_field) if img_field is not None else (got >= per_field):
                 break
             ks = [k for k, p in enumerate(im["crowns"])
                   if not (skip_border and touches_border(p, im["size"]))]
             if not ks:
                 continue
             rng.shuffle(ks)
-            take = ks if per_img is None else ks[:min(per_img, per_field - got)]
+            if per_img is None:
+                take = ks
+            elif img_field is not None:
+                take = ks[:per_img]
+            else:
+                take = ks[:min(per_img, per_field - got)]
             for k in sorted(take):
                 xs, ys = im["crowns"][k][0::2], im["crowns"][k][1::2]
                 items.append(dict(image=im["flat"], name=im["name"], crown=k, field=field,
                                   flight=im["flight"], seq=im["seq"],
                                   bbox=[int(min(xs)), int(min(ys)), int(max(xs)) + 1, int(max(ys)) + 1]))
             got += len(take)
+            n_img += 1
     return items
 
 
