@@ -24,15 +24,20 @@ rounds:
       unlabeled_ratio: 4         # lấy thêm pixel chưa tô làm mẫu "không hoa" yếu, gấp 4 lần số pixel nét Hoa
       unlabeled_weight: 0.1      # trọng số của các mẫu đó (nét của người = 1)
 
-  # Bộ test: 1 ảnh mỗi ruộng (6 ảnh), gán KÍN mọi tán kể cả tán chạm mép, bằng
-  # nét vẽ + Học & tô như vòng train nhưng soát kỹ hơn. Chỉ để CHẤM, không bao
-  # giờ vào train. Dựng TRƯỚC vòng train. Học & tô ở đây chỉ học từ nét của
-  # chính vòng này, nên bộ test không dính nét của bộ train.
+  # Bộ test và bộ train: BẠN TỰ CHỌN ẢNH (ảnh nào, bao nhiêu ảnh, ruộng nào).
+  # Mở ảnh trong thẻ Hoa rồi bấm "＋ Thêm ảnh này vào vòng": mọi tán của ảnh
+  # (kể cả tán chạm mép) vào vòng; vẽ thẳng lên một tán cũng nhận cả ảnh.
+  # Ảnh chưa có nét thì bỏ ra được. Ảnh cách ảnh của bộ bên kia ≤ buffer_frames
+  # khung trong cùng đường bay (chụp trùng cây) thì không nhận; đặt 0 để tắt.
+  #
+  # Bộ test: gán bằng nét vẽ + Học & tô như train nhưng soát kỹ hơn. Chỉ để
+  # CHẤM, không bao giờ vào train. Học & tô ở đây chỉ học từ nét của chính vòng
+  # này, nên bộ test không dính nét của bộ train.
   - id: test
-    label: Bộ test (6 ảnh)
+    label: Bộ test
     kind: scribble
     role: test
-    pick: {images_per_field: 1, crowns_per_image: all, skip_border: false, seed: 7}
+    pick: {mode: manual, whole_image: true}
     classifier:
       n_trees: 100
       max_depth: 12
@@ -43,12 +48,10 @@ rounds:
       unlabeled_ratio: 4
       unlabeled_weight: 0.1
 
-  # Bộ train: 4 ảnh mỗi ruộng (24 ảnh), gán kín. Ảnh cách ảnh test ≤ 3 khung
-  # trong cùng đường bay bị loại (chụp trùng cây).
   - id: train
-    label: Bộ train (24 ảnh)
+    label: Bộ train
     kind: scribble
-    pick: {images_per_field: 4, crowns_per_image: all, skip_border: false, buffer_frames: 3, seed: 11}
+    pick: {mode: manual, whole_image: true, buffer_frames: 3}
     classifier:
       n_trees: 100
       max_depth: 12
