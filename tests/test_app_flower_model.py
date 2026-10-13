@@ -94,6 +94,21 @@ def test_val_is_cut_from_train_by_image_clusters():
 
 
 # --------------------------------------------------------------------- model
+def test_unet_r34_builds_predicts_and_reloads(tmp_path):
+    pytest.importorskip("segmentation_models_pytorch")
+    m = fm.build_model("unet-r34", pretrained=False)        # không tải trọng số trong test
+    assert m(torch.zeros(1, 3, 64, 64)).shape == (1, 1, 64, 64)
+    # Mảnh tán sát mép chỉ cao 10 px: phải đệm lên 32, quá cỡ để phản chiếu.
+    for shape in ((45, 70, 3), (10, 70, 3)):
+        prob = fm.predict_tiles(m, np.zeros(shape, np.uint8), tile=64, overlap=16)
+        assert prob.shape == shape[:2]
+    fm.save_model(tmp_path / "m.pt", m, dict(epoch=3))
+    m2, ck = fm.load_model(tmp_path / "m.pt")
+    assert ck["arch"] == "unet-r34" and ck["epoch"] == 3 and m2.stride == 32
+    with pytest.raises(ValueError):
+        fm.build_model("segformer")
+
+
 def test_tiny_unet_and_the_masked_loss():
     m = fm.TinyUNet((4, 8, 16))
     x = torch.zeros(2, 3, 32, 32)
@@ -121,7 +136,7 @@ def test_train_and_predict_scripts_end_to_end(root, monkeypatch):
     monkeypatch.setattr(fd, "default_dirs", lambda repo=None: dirs)
     train = _script("flower_train")
     out = train.main(["--name", "t", "--runs", str(root / "runs"), "--epochs", "1", "--steps", "2",
-                      "--batch", "2", "--tile", "32", "--ch", "4,8", "--device", "cpu"])
+                      "--batch", "2", "--tile", "32", "--arch", "tinyunet", "--ch", "4,8", "--device", "cpu"])
     for f in ("model.pt", "last.pt", "config.json", "log.csv", "metrics.json"):
         assert (out / f).exists()
     cfg = json.loads((out / "config.json").read_text(encoding="utf-8"))

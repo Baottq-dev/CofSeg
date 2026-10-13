@@ -15,6 +15,7 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 pip install -r requirements.txt
 pip install "git+https://github.com/facebookresearch/sam2.git"
 pip install scikit-learn==1.9.1
+pip install segmentation-models-pytorch==0.5.0
 pip install pytest==9.1.1
 pip install -e .
 ```

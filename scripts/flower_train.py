@@ -1,13 +1,15 @@
-"""Huấn luyện model segment hoa (U-Net nhẹ) trên nhãn hoa đã chốt.
+"""Huấn luyện model segment hoa trên nhãn hoa đã chốt.
 
-    python scripts/flower_train.py --name r2 --epochs 40
+    python scripts/flower_train.py --name f1                      # U-Net-ResNet34, ô 512, batch 8
+    python scripts/flower_train.py --name f1_tiny --arch tinyunet # mốc học từ đầu
     python scripts/flower_train.py --name lofo_field_3 --holdout-field field_3
     python scripts/flower_train.py --name r3_auto --include-auto
 
 Nhãn đọc từ thư mục nhãn hoa (configs/flower_rounds.yaml, mặc định
 data/masks/flower_v1), ảnh gốc theo configs/config.yaml. Mỗi tán đã chốt được
 cắt theo khung (nới lề) ở độ phân giải gốc; mỗi bước lấy ngẫu nhiên các ô
-`--tile` px trong các crop đó, lật/xoay ngẫu nhiên. Pixel 255 không tính loss.
+`--tile` px trong các crop đó, lật/xoay ngẫu nhiên. Pixel 255 không tính loss. Trên GPU chạy bf16 (tắt bằng
+--no-amp); U-Net-ResNet34 ô 512 batch 8 dùng ~2,4 GB VRAM trên RTX 4060.
 
 Bộ chấm (vòng `role: test`, hoặc vòng vẽ tay kind=manual) KHÔNG BAO GIỜ vào
 train, ảnh cách ảnh test ≤ buffer khung cũng không. Val tách ra từ chính các ảnh
@@ -38,6 +40,8 @@ from app import flower_rounds as fr  # noqa: E402
 from app import flower_store as fs  # noqa: E402
 
 PAD = 32          # lề quanh khung tán khi cắt crop
+ARCHS = ("unet-r34", "tinyunet")
+DEFAULTS = {"unet-r34": dict(tile=512, lr=3e-4), "tinyunet": dict(tile=384, lr=1e-3)}
 
 
 def load_crops(items, images_dir, labels_dir, store, limit=None):
@@ -80,7 +84,7 @@ def sample_tile(rgb, mask, tile, rng):
     return np.rot90(r, k).copy(), np.rot90(m, k).copy()
 
 
-def evaluate(model, test_items, images_dir, labels_dir, store, tile, device):
+def evaluate(model, test_items, images_dir, labels_dir, store, tile, device, amp=True):
     """IoU / F1 lớp hoa trên bộ test, theo ruộng và tất cả."""
     from app import flower_model as fm
     pairs = {}
@@ -94,7 +98,7 @@ def evaluate(model, test_items, images_dir, labels_dir, store, tile, device):
         for it in its:
             b = fs.crown_box(polys[it["crown"]], w, h)
             inside = fs.crown_mask(polys[it["crown"]], b)
-            prob = fm.predict_tiles(model, rgb[b[1]:b[3], b[0]:b[2]], tile=tile, device=device)
+            prob = fm.predict_tiles(model, rgb[b[1]:b[3], b[0]:b[2]], tile=tile, device=device, amp=amp)
             p = (prob >= 0.5).astype(np.uint8)[inside]
             g = ref[b[1]:b[3], b[0]:b[2]][inside]
             pairs.setdefault(it["field"], []).append((g, p))
@@ -110,9 +114,11 @@ def main(argv=None):
     ap.add_argument("--epochs", type=int, default=40)
     ap.add_argument("--steps", type=int, default=200, help="số batch mỗi epoch")
     ap.add_argument("--batch", type=int, default=8)
-    ap.add_argument("--tile", type=int, default=384)
-    ap.add_argument("--lr", type=float, default=1e-3)
-    ap.add_argument("--ch", default="16,32,64,128", help="số kênh từng tầng U-Net")
+    ap.add_argument("--arch", default="unet-r34", choices=ARCHS)
+    ap.add_argument("--tile", type=int, default=None, help="cạnh ô train (mặc định 512 cho unet-r34, 384 cho tinyunet)")
+    ap.add_argument("--lr", type=float, default=None, help="mặc định 3e-4 cho unet-r34, 1e-3 cho tinyunet")
+    ap.add_argument("--ch", default="16,32,64,128", help="số kênh từng tầng (chỉ tinyunet)")
+    ap.add_argument("--no-amp", action="store_true", help="tắt bf16 trên GPU")
     ap.add_argument("--val-frac", type=float, default=0.15,
                     help="tỉ lệ ảnh train tách ra làm val (theo cụm ảnh liền khung); 0 = không val")
     ap.add_argument("--holdout-field", default=None, help="bỏ ruộng này khỏi train, chỉ chấm trên nó")
@@ -124,6 +130,10 @@ def main(argv=None):
 
     import torch
     from app import flower_model as fm
+    a.tile = a.tile or DEFAULTS[a.arch]["tile"]
+    a.lr = a.lr or DEFAULTS[a.arch]["lr"]
+    if a.arch == "unet-r34" and a.tile % 32:
+        raise SystemExit("--tile phải chia hết cho 32 với unet-r34.")
     images_dir, labels_dir, flower_dir, rounds = fd.default_dirs()
     store = fs.FlowerStore(flower_dir)
     train_items = fd.collect(store, rounds, labels_dir, "train", a.include_auto, a.holdout_field)
@@ -151,7 +161,8 @@ def main(argv=None):
         len(train_items), n_img(train_items), len(val_items), n_img(val_items),
         len(test_items), n_img(test_items), device))
 
-    model = fm.TinyUNet(tuple(int(c) for c in a.ch.split(","))).to(device)
+    amp = not a.no_amp
+    model = fm.build_model(a.arch, tuple(int(c) for c in a.ch.split(","))).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, a.epochs * a.steps))
     rng = random.Random(a.seed)
@@ -168,13 +179,15 @@ def main(argv=None):
                 ys.append(torch.from_numpy(mm.astype(np.int64)))
             x = torch.stack(xs).to(device)
             y = torch.stack(ys).to(device)[:, None]
-            loss = fm.masked_loss(model(x), y)
+            with fm.autocast(device, amp):
+                logits = model(x)
+            loss = fm.masked_loss(logits.float(), y)
             opt.zero_grad()
             loss.backward()
             opt.step()
             sched.step()
             losses.append(float(loss))
-        ev = evaluate(model, val_items, images_dir, labels_dir, store, a.tile, device) if val_items else None
+        ev = evaluate(model, val_items, images_dir, labels_dir, store, a.tile, device, amp) if val_items else None
         iou = (ev or {}).get("all", {}).get("iou")
         row = dict(epoch=ep, loss=float(np.mean(losses)), val_iou=iou,
                    val_f1=(ev or {}).get("all", {}).get("f1"), seconds=round(time.time() - t0, 1))
@@ -191,7 +204,7 @@ def main(argv=None):
             wr.writerows(log)
     # Test chấm đúng một lần, bằng checkpoint đã chọn theo val.
     model, ck = fm.load_model(out / "model.pt", device)
-    test = evaluate(model, test_items, images_dir, labels_dir, store, a.tile, device) if test_items else None
+    test = evaluate(model, test_items, images_dir, labels_dir, store, a.tile, device, amp) if test_items else None
     (out / "metrics.json").write_text(json.dumps(dict(epoch=ck.get("epoch"), val=ck.get("val"), test=test),
                                                  ensure_ascii=False, indent=1), encoding="utf-8")
     t_all = (test or {}).get("all") or {}
