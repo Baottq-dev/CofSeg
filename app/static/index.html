@@ -66,6 +66,7 @@
           <button data-tool="boqua" role="radio"><i class="sw hatch"></i>Bỏ qua <span class="kbd">3</span></button>
           <button data-tool="tay" role="radio"><i class="sw" style="border:1.5px solid #9fb0c6"></i>Tẩy <span class="kbd">E</span></button>
         </div>
+        <button id="flSnap" class="tbtn" aria-pressed="false" hidden title="Cọ ăn theo biên: mọi mảnh siêu điểm ảnh mà nét chạm vào đều được tô trọn">⊞ Bám siêu điểm ảnh <span class="kbd">G</span></button>
         <label class="flrange">Cọ <input id="flBrush" type="range" min="2" max="80" value="12"/><b id="flBrushLbl">12 px</b><span class="kbd">[ ]</span></label>
         <button id="flLearn" class="tbtn learn" title="Học lại từ nét của mọi tán trong vòng rồi tô tán đang mở">✨ Học &amp; tô <span class="kbd">T</span></button>
         <button id="flUndo" class="tbtn">↶ Hoàn tác <span class="kbd">Ctrl Z</span></button>
@@ -121,6 +122,8 @@
     <div class="insp" data-ws="flower">
       <label class="flbl">Vòng <select id="flRound" class="search"></select></label>
       <div id="flRoundInfo" class="muted"></div>
+      <div id="flBuildBox" class="tbgroup" hidden><button id="flBuild" class="tbtn learn">▶ Dựng vòng</button><span id="flBuildInfo" class="muted"></span></div>
+      <div id="flProg" class="flprog"></div>
       <div id="flCrownBox" class="flbox" hidden>
         <div class="flhead"><b id="flTitle">Tán</b><span id="flState" class="pchip"></span></div>
         <div class="flcover"><span class="muted">Độ phủ hoa của tán (theo mask)</span><b id="flCover">—</b></div>
@@ -137,6 +140,13 @@
       <div class="sec">Các tán trong ảnh <span class="pill" id="flCount">0</span></div>
       <div id="flChips" class="flchips"></div>
       <button id="flNext" class="btn">▶ Tán kế tiếp <span class="kbd">N</span></button>
+      <div class="sec">Hàng đợi <span class="pill" id="flQCount">—</span></div>
+      <div id="flQueue" class="flqueue"></div>
+      <div id="flAgreeBox" class="flbox" hidden>
+        <div class="sec">Đồng thuận</div>
+        <div class="tbgroup"><button id="flAgreeAB" class="tbtn">Người gán chính ↔ người thứ hai</button><button id="flAgreeClf" class="tbtn">Bộ phân loại ↔ vòng này</button></div>
+        <div id="flAgree" class="flagree"></div>
+      </div>
     </div>
     <div class="insp" data-ws="review">
       <div class="sec">Dự đoán model <span class="pill" id="predCount">—</span></div>

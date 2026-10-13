@@ -25,6 +25,6 @@ function renderAnnot(){if(!annotators.includes(annot))annot=annotators[0];
  [$('annotBox'),$('annotList')].forEach(box=>{box.querySelectorAll('button').forEach(b=>b.remove());
   annotators.forEach(n=>{const b=document.createElement('button');b.textContent=n;b.className=(n===annot?'on':'');
    b.title='Người gán '+n;b.setAttribute('aria-pressed',n===annot);
-   b.onclick=()=>{annot=n;lsSet('cofseg_annot',n);renderAnnot();};box.appendChild(b);});});}
+   b.onclick=()=>{annot=n;lsSet('cofseg_annot',n);renderAnnot();if(typeof flOnAnnot==='function')flOnAnnot();};box.appendChild(b);});});}
 function addAnnot(){const n=($('annotNew').value||'').trim().toUpperCase().slice(0,4);
  if(!n||annotators.includes(n))return;annotators.push(n);lsSet('cofseg_annotators',annotators);$('annotNew').value='';renderAnnot();}

@@ -317,3 +317,23 @@ button.hbtn:hover{color:var(--text);border-color:var(--teal)}
 .ovchecks{display:flex;flex-direction:column;gap:4px;font-size:12.5px}
 .ovchecks .ok{color:var(--green)}
 .ovchecks .warn{color:#f7c66b}
+/* --- thẻ Hoa: vòng, tiến độ, hàng đợi, đồng thuận --- */
+.tbtn[aria-pressed="true"]{background:#123536;border-color:var(--teal);color:#e6fffb}
+.flprog{display:flex;flex-direction:column;gap:5px}
+.flprog .row{display:grid;grid-template-columns:58px minmax(0,1fr) 46px;align-items:center;gap:7px;font-size:11.5px;color:var(--muted)}
+.flprog .row b{height:6px;border-radius:3px;background:var(--border);overflow:hidden;display:block}
+.flprog .row b i{display:block;height:100%;background:var(--teal)}
+.flprog .row span:last-child{text-align:right;color:var(--text);font-variant-numeric:tabular-nums}
+.flqueue{display:flex;flex-direction:column;gap:3px;max-height:220px;overflow:auto}
+.flqueue button{display:flex;align-items:center;gap:7px;min-height:28px;padding:0 8px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--text);font-size:11.5px;cursor:pointer;text-align:left}
+.flqueue button:hover{background:var(--panel2)}
+.flqueue button.cur{border-color:#f59e0b;background:#2a2110}
+.flqueue button i{width:8px;height:8px;border-radius:50%;background:#3b4d66;flex:none}
+.flqueue button.doing i{background:#f59e0b}
+.flqueue button span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.flagree table{border-collapse:collapse;font-size:11.5px;width:100%}
+.flagree td,.flagree th{padding:4px 6px;border-bottom:1px solid var(--border);text-align:right}
+.flagree td:first-child,.flagree th:first-child{text-align:left}
+.flagree th{color:var(--muted);font-weight:600}
+/* `hidden` luôn thắng mọi `display` đặt bằng class (nút .tbtn là inline-flex). */
+[hidden]{display:none!important}
