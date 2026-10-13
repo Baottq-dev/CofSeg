@@ -165,6 +165,39 @@ def require_mmdet():
         ) from e
 
 
+def focal_loss_in_fp32(fl=None) -> bool:
+    """Focal loss của đầu phân loại tính ở fp32 dù đang AMP. True nếu vừa vá.
+
+    Lượt R2 (100 epoch, AMP) cả sáu fold đều ra `loss_cls` nan từ epoch 61-88.
+    mmdet đưa thẳng logit fp16 vào kernel CUDA `sigmoid_focal_loss` của mmcv,
+    và kernel tính ở đúng kiểu đó: `log(max(p, (T)FLT_MIN))` với T = half thì
+    FLT_MIN tròn về 0, nên ô tán có logit > ~8.3 (p tròn thành 1) hay ô nền có
+    logit < ~-17 (p tròn về 0) cho 0 x (-inf) = nan. Model càng tự tin càng
+    hay gặp. Mỗi lần nan GradScaler bỏ bước và chia đôi loss scale, mà phải
+    2000 bước sạch mới nhân đôi lại (gần 70 epoch ở 29 bước/epoch): scale tụt
+    tới lúc gradient fp16 tràn dưới về 0 (`grad_norm` 0 trong scalars.json),
+    model đứng yên và val AP giữ nguyên tới hết lịch.
+
+    Ép logit sang fp32 ngay trước kernel: 3872 ô lưới mỗi ảnh nên gần như
+    không tốn gì, phần còn lại vẫn AMP. Vá tên `_sigmoid_focal_loss` trong
+    module focal_loss của mmdet (hàm bọc tra tên đó lúc gọi) chứ không đổi
+    config, nên mmdet_config.py cạnh best.pth vẫn là config chuẩn cho
+    evaluate.py dựng lại. `fl` chỉ để test truyền module giả.
+    """
+    if fl is None:
+        fl = importlib.import_module("mmdet.models.losses.focal_loss")
+    goc = fl._sigmoid_focal_loss
+    if getattr(goc, "fp32", False):
+        return False
+
+    def fp32(pred, target, *args):
+        return goc(pred.float(), target, *args)
+
+    fp32.fp32 = True
+    fl._sigmoid_focal_loss = fp32
+    return True
+
+
 def zoo_config(rel: str) -> Path:
     """Đường dẫn tuyệt đối tới config đóng gói trong gói mmdet (mmdet/.mim/configs).
 
@@ -515,6 +548,7 @@ class MMDetTrainer(Trainer):
         if not torch.cuda.is_available():
             return {"supported": False, "reason": "không có CUDA"}
         require_mmdet()
+        focal_loss_in_fp32()
         from mmengine.runner import Runner
 
         cfg = self._cfg()
@@ -771,6 +805,7 @@ class MMDetTrainer(Trainer):
         if quiet:
             self.warned = progress.warnings_to_file(self.run_dir / "warnings.log")
         require_mmdet()
+        focal_loss_in_fp32()
         from mmengine.runner import Runner
 
         cfg = self._cfg()

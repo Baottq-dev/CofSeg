@@ -14,7 +14,7 @@ import pytest
 
 from cofseg.training.mmdet import (
     ARCHS, CLASSES, MM_DEFAULTS, ZOO, MMDetTrainer, build_overrides, flip_transform,
-    iters_per_epoch, load_config, ZOO_BACKBONES,
+    focal_loss_in_fp32, iters_per_epoch, load_config, ZOO_BACKBONES,
 )
 
 SPLITS = {"train": "train", "val": "val", "test": "test"}
@@ -170,6 +170,41 @@ def test_zoo_config_merges_with_overrides_without_mmcv(three_splits, tmp_path):
     cfg.dump(str(tmp_path / "dump.py"))
     assert "num_classes=1" in (tmp_path / "dump.py").read_text(encoding="utf-8")
     assert load_config("solov2", {}).model.mask_head.num_classes == 1
+
+
+def test_focal_loss_runs_in_fp32_under_amp():
+    torch = pytest.importorskip("torch")
+    from types import SimpleNamespace
+
+    def kernel(pred, target, gamma, alpha, weight, reduction):
+        """Phép tính của kernel CUDA sigmoid_focal_loss (mmcv 2.2.0), ở đúng
+        kiểu của `pred` như kernel thật. target = num_classes là nền."""
+        T = pred.dtype
+        one = torch.ones((), dtype=T)
+        floor = torch.tensor(1.1754943508222875e-38, dtype=T)        # (T)FLT_MIN
+        p = (1 / (1 + torch.exp(-pred.float()))).to(T)
+        flag_p = torch.nn.functional.one_hot(target, pred.shape[1] + 1)[:, :pred.shape[1]].to(T)
+        term_p = (one - p) ** gamma * torch.log(torch.maximum(p, floor).float()).to(T)
+        term_n = p ** gamma * torch.log(torch.maximum(one - p, floor).float()).to(T)
+        return -flag_p * alpha * term_p - (one - flag_p) * (one - alpha) * term_n
+
+    # Ô tán rất chắc, ô nền rất chắc, ô lưng chừng. Ở fp16 hai ô đầu ra nan:
+    # FLT_MIN tròn về 0 nên log(0) = -inf, nhân với cờ lớp 0.
+    pred = torch.tensor([[9.0], [-18.0], [0.5]], dtype=torch.float16)
+    target = torch.tensor([0, 1, 0])
+    fl = SimpleNamespace(_sigmoid_focal_loss=kernel)
+    assert torch.isnan(fl._sigmoid_focal_loss(pred, target, 2.0, 0.25, None, "none")).sum() == 2
+
+    assert focal_loss_in_fp32(fl) is True
+    pred.requires_grad_(True)
+    out = fl._sigmoid_focal_loss(pred, target, 2.0, 0.25, None, "none")
+    assert out.dtype == torch.float32 and torch.isfinite(out).all()
+    assert torch.allclose(out, kernel(pred.detach().float(), target, 2.0, 0.25, None, "none"))
+    # gradient vẫn về tới logit fp16 của đầu phân loại
+    out.sum().backward()
+    assert pred.grad.dtype == torch.float16 and torch.isfinite(pred.grad).all()
+    # vá một lần: train rồi probe trong cùng tiến trình không bọc chồng
+    assert focal_loss_in_fp32(fl) is False
 
 
 @pytest.mark.gpu
