@@ -52,10 +52,12 @@ def root(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "ROOT", str(base))
     monkeypatch.setattr(server, "OUT_DIR", str(tmp_path / "labels"))
     cfg = tmp_path / "flower_rounds.yaml"
+    # Đốm "hoa" tổng hợp chỉ ~29 px, phần máy tìm ra có khi dưới 20 px: tắt lọc đốm
+    # nhỏ (mặc định 20 px, cỡ một bông thật) để các test học phân loại đo đúng việc học.
     cfg.write_text(
         "version: v1\ndata_dir: flower_v1\nrounds:\n"
         "  - {id: try, kind: scribble, pick: {mode: manual, fields: [field_9]},"
-        " classifier: {n_trees: 30, max_depth: 10, sigma_min: 0.7, sigma_max: 4.0, num_sigma: 3}}\n"
+        " classifier: {n_trees: 30, max_depth: 10, sigma_min: 0.7, sigma_max: 4.0, num_sigma: 3, min_blob_px: 0}}\n"
         "  - {id: gold, kind: manual, pick: {mode: manual}}\n"
         "  - {id: other, kind: scribble, pick: {mode: manual, fields: [field_8]}}\n",
         encoding="utf-8")
@@ -182,15 +184,10 @@ def test_a_few_strokes_teach_the_classifier_the_white_dots(root):
     assert (root / "flower_v1" / "rounds" / "try.joblib").exists()
 
 
-def test_flower_strokes_alone_are_enough(root, monkeypatch):
+def test_flower_strokes_alone_are_enough(root):
     # Chỉ chấm Hoa lên 6 đốm, không nét Không hoa nào: pixel chưa tô trong tán làm
     # mẫu không hoa yếu, nên máy tìm ra cả 30 đốm chứ không tô kín cả tán. (Viền
-    # đốm có thể hụt: chưa có nét Không hoa nào cho máy biết mép lá ở đâu. Đốm ở
-    # đây chỉ 29 px, phần lõi máy tìm ra dưới 10 px, nên tắt lọc đốm nhỏ.)
-    cfg = fa.CFG_PATH.read_text(encoding="utf-8").replace("num_sigma: 3}", "num_sigma: 3, min_blob_px: 0}")
-    (root / "no_blob_filter.yaml").write_text(cfg, encoding="utf-8")
-    monkeypatch.setattr(fa, "CFG_PATH", root / "no_blob_filter.yaml")
-    monkeypatch.setattr(fa, "_CACHE", None)
+    # đốm có thể hụt: chưa có nét Không hoa nào cho máy biết mép lá ở đâu.)
     for x, y in DOTS[:6]:
         _stroke([[x, y]], 1, r=1)
     res = fa.classify(fa.CrownReq(round="try", name=NAME, crown=0))
@@ -213,8 +210,9 @@ def test_classify_on_a_crown_without_strokes_marks_it_in_progress(root):
     assert row["source"] == "classifier"
 
 
-def test_learn_and_fill_drops_blobs_of_a_few_pixels(root):
+def test_learn_and_fill_drops_blobs_of_a_few_pixels(root, monkeypatch):
     from app import flower_classifier as fc
+    assert fc.DEFAULTS["min_blob_px"] == fa.CLF_DEFAULTS["min_blob_px"] == 20
     m = np.zeros((40, 40), np.uint8)
     m[2:4, 2:4] = 1                               # 4 px: bỏ
     m[20:25, 20:25] = 1                           # 25 px: giữ
@@ -222,7 +220,12 @@ def test_learn_and_fill_drops_blobs_of_a_few_pixels(root):
     out = fc.drop_small(m, 10)
     assert (out[2:4, 2:4] == 0).all() and (out[20:25, 20:25] == 1).all() and out[0, 39] == 255
     assert (fc.drop_small(m, 0) == m).all()
-    # qua API: không còn đốm hoa nào dưới 10 px trong phần máy tô
+    # qua API, ngưỡng của vòng (ở đây 10 px vì đốm tổng hợp nhỏ): không còn đốm
+    # hoa nhỏ hơn trong phần máy tô
+    cfg = fa.CFG_PATH.read_text(encoding="utf-8").replace("min_blob_px: 0}", "min_blob_px: 10}")
+    (root / "blob10.yaml").write_text(cfg, encoding="utf-8")
+    monkeypatch.setattr(fa, "CFG_PATH", root / "blob10.yaml")
+    monkeypatch.setattr(fa, "_CACHE", None)
     for x, y in DOTS[:6]:
         _stroke([[x, y]], 1, r=1)
     for y in (32, 60, 88):

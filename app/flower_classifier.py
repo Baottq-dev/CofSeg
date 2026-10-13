@@ -14,7 +14,7 @@ from skimage.feature import multiscale_basic_features
 from sklearn.ensemble import RandomForestClassifier
 
 DEFAULTS = dict(n_trees=100, max_depth=12, sigma_min=0.7, sigma_max=5.0,
-                num_sigma=4, max_samples=50000, unlabeled_ratio=4, unlabeled_weight=0.1, min_blob_px=10)
+                num_sigma=4, max_samples=50000, unlabeled_ratio=4, unlabeled_weight=0.1, min_blob_px=20)
 
 
 def features(rgb, sigma_min=0.7, sigma_max=5.0, num_sigma=4, **_):

@@ -23,7 +23,7 @@ rounds:
       max_samples: 50000         # tối đa số pixel học, chia đều hai lớp
       unlabeled_ratio: 4         # lấy thêm pixel chưa tô làm mẫu "không hoa" yếu, gấp 4 lần số pixel nét Hoa
       unlabeled_weight: 0.1      # trọng số của các mẫu đó (nét của người = 1)
-      min_blob_px: 10            # máy tô ra đốm hoa dưới ngần ấy pixel thì bỏ (0 = giữ hết)
+      min_blob_px: 20            # máy tô ra đốm hoa dưới ngần ấy pixel thì bỏ (0 = giữ hết)
 
   # Bộ test và bộ train: BẠN TỰ CHỌN ẢNH (ảnh nào, bao nhiêu ảnh, ruộng nào).
   # Mở ảnh trong thẻ Hoa rồi bấm "＋ Thêm ảnh này vào vòng": mọi tán của ảnh
@@ -48,7 +48,7 @@ rounds:
       max_samples: 50000
       unlabeled_ratio: 4
       unlabeled_weight: 0.1
-      min_blob_px: 10
+      min_blob_px: 20
 
   - id: train
     label: Bộ train
@@ -63,7 +63,7 @@ rounds:
       max_samples: 50000
       unlabeled_ratio: 4
       unlabeled_weight: 0.1
-      min_blob_px: 10
+      min_blob_px: 20
 
   # Bộ vàng vẽ tay (không dùng từ 13/10: bộ test ở trên thay nó). Bỏ dấu # để
   # bật lại; vòng vẽ tay cũng được tính là bộ chấm.
