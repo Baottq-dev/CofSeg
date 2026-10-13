@@ -95,6 +95,10 @@
       <p id="ovNote" class="muted"></p>
       <h2>Kiểm tra</h2>
       <div id="ovChecks" class="ovchecks"></div>
+      <h2>Xuất bộ nhãn hoa</h2>
+      <p class="muted">Ảnh + mask hoa (0 không hoa, 1 hoa, 255 bỏ qua) của các tán đã chốt, tách train/ và gold/. Bộ vàng và ảnh liền kề ảnh vàng không bao giờ vào train.</p>
+      <div class="tbgroup"><input id="flExpName" class="search" style="width:200px" value="flower_v1"/><label class="chk muted"><input id="flExpAuto" type="checkbox"/> gồm cả tán model tự nhận (auto)</label><button id="flExpGo" class="save">🌼 Xuất bộ hoa…</button></div>
+      <p id="flExpInfo" class="muted"></p>
       <h2>Xuất dữ liệu</h2>
       <p class="muted">Xuất bộ phân đoạn tán (COCO, YOLO-seg, mask) từ các ảnh đã gán nhãn, chia theo tỉ lệ, ruộng hoặc đường bay.</p>
       <div><button id="save" class="save">📦 Xuất dữ liệu…</button></div>
@@ -123,6 +127,7 @@
       <label class="flbl">Vòng <select id="flRound" class="search"></select></label>
       <div id="flRoundInfo" class="muted"></div>
       <div id="flBuildBox" class="tbgroup" hidden><button id="flBuild" class="tbtn learn">▶ Dựng vòng</button><span id="flBuildInfo" class="muted"></span></div>
+      <div id="flCloseBox" class="tbgroup" hidden><button id="flCloseRound" class="tbtn">🔒 Chốt vòng</button><span class="muted">tán chưa duyệt thành tự nhận</span></div>
       <div id="flProg" class="flprog"></div>
       <div id="flCrownBox" class="flbox" hidden>
         <div class="flhead"><b id="flTitle">Tán</b><span id="flState" class="pchip"></span></div>
@@ -134,6 +139,7 @@
           <button data-layer="others"><i class="sw" style="border:1.5px solid #cbd5e1"></i>Viền các tán khác</button>
         </div>
         <label class="flrange">Độ đậm mask <input id="flOpacity" type="range" min="0" max="100" value="80"/><span class="kbd">O</span></label>
+        <div id="flReviewBtns" class="tbgroup flreview" hidden><button id="flAccept" class="save">✔ Chấp nhận <span class="kbd">A</span></button><button id="flReject" class="btn">✎ Sửa <span class="kbd">R</span></button></div>
         <button id="flDone" class="save">✔ Xong tán này <span class="kbd">Enter</span></button>
         <div id="flLearnInfo" class="muted"></div>
       </div>

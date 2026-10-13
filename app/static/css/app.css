@@ -337,3 +337,7 @@ button.hbtn:hover{color:var(--text);border-color:var(--teal)}
 .flagree th{color:var(--muted);font-weight:600}
 /* `hidden` luôn thắng mọi `display` đặt bằng class (nút .tbtn là inline-flex). */
 [hidden]{display:none!important}
+.flreview{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.flreview .btn{justify-content:center;display:flex;align-items:center;gap:6px}
+.flqueue button em{font-style:normal;font-size:10.5px;color:var(--muted);white-space:nowrap}
+.datapage .tbgroup .save{width:auto}

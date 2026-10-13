@@ -222,6 +222,10 @@ $('flRound').onchange=()=>{flRound=$('flRound').value;lsSet('cofseg_flround',flR
  flLoadConfig().then(()=>{flLoadQueue();flLoadCrowns();});};
 $('flSnap').onclick=()=>setFlSnap(!flSnap);
 $('flBuild').onclick=flBuild;
+$('flAccept').onclick=()=>flReview('accept');
+$('flReject').onclick=()=>flReview('reject');
+$('flCloseRound').onclick=flCloseRound;
+$('flExpGo').onclick=flExportStart;
 $('flAgreeAB').onclick=()=>flAgree('');
 $('flAgreeClf').onclick=()=>{const s=flRounds.filter(r=>r.kind==='scribble'&&r.built);flAgree((s[s.length-1]||{}).id||'');};
 document.querySelectorAll('.fllayers button').forEach(b=>b.onclick=()=>toggleFlLayer(b.dataset.layer));

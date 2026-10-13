@@ -112,3 +112,16 @@ async function loadOverview(){const tok=++ovTok;$('ovNote').textContent='⏳ đa
  if(!d.checks.length){const s=document.createElement('span');s.className='ok';s.textContent='✔ Không tán nào có polygon đổi sau khi đã gán hoa.';box.appendChild(s);}
  d.checks.forEach(c=>{const s=document.createElement('span');s.className='warn';s.textContent='⚠ '+c.image+' · tán #'+(c.crown+1)+' · vòng '+c.round+': '+c.problem;box.appendChild(s);});}
 tabRegister({id:'data',inspTitle:'Dữ liệu',help:[],enter(){$('hint').textContent='Dữ liệu · tổng quan theo ruộng và xuất bộ dữ liệu';renderStats();loadOverview();}});
+// Xuất bộ nhãn hoa (thẻ Dữ liệu).
+async function flExport(body){const info=$('flExpInfo');info.textContent='⏳ đang xuất…';
+ let r=null;try{r=await(await fetch('/api/fl/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();}catch(e){r={ok:false,error:String(e)};}
+ if(r.exists){info.textContent='';askConfirm({title:'Thư mục "'+body.name+'" đã tồn tại',ok:'Ghi đè',danger:true,text:'Ghi đè toàn bộ nội dung cũ của '+r.dir+'?'},
+  ()=>flExport(Object.assign({},body,{overwrite:true})));return;}
+ if(!r.ok){info.textContent='⚠ '+(r.error||'Lỗi xuất');return;}
+ const s=r.splits||{};
+ info.textContent='✔ train '+((s.train||{}).images||0)+' ảnh / '+((s.train||{}).crowns||0)+' tán · gold '+((s.gold||{}).images||0)+' ảnh / '+((s.gold||{}).crowns||0)+' tán → '+r.dir+
+  ((r.problems||[]).length?(' · ⚠ '+r.problems.length+' ảnh có vấn đề'):'');}
+async function flExportStart(){const name=($('flExpName').value||'').trim();
+ if(!name||/[\\/:*?"<>|]/.test(name)){$('flExpInfo').textContent='⚠ Tên bộ dữ liệu không hợp lệ.';return;}
+ const out_dir=await fbOpen(expDirStart);if(!out_dir)return;expDirStart=out_dir;
+ flExport({name:name,out_dir:out_dir,include_auto:$('flExpAuto').checked,overwrite:false});}
