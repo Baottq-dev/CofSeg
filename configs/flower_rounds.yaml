@@ -24,23 +24,15 @@ rounds:
       unlabeled_ratio: 4         # lấy thêm pixel chưa tô làm mẫu "không hoa" yếu, gấp 4 lần số pixel nét Hoa
       unlabeled_weight: 0.1      # trọng số của các mẫu đó (nét của người = 1)
 
-  # Bộ vàng: vẽ tay từ đầu, không có bản tô sẵn, chỉ dùng để CHẤM (không bao
-  # giờ học). 5 tán mỗi ruộng từ 2 ảnh ở hai đường bay khác nhau (3 + 2), bỏ tán
-  # chạm mép ảnh. 10 tán do người thứ hai vẽ lại độc lập để đo độ khớp giữa
-  # hai người — mốc "tốt" cho mọi cách gán nhãn và mọi model.
-  - id: gold
-    label: Bộ vàng
-    kind: manual                 # vẽ tay; Xong = phần chưa tô thành Không hoa
-    pick: {crowns_per_field: 5, crowns_per_image: 3, skip_border: true, seed: 7}
-    superpixel: {area_px: 50, compactness: 10}   # cọ bám siêu điểm ảnh (phím G)
-    double: {annotator: B, crowns: 10}
-
-  # Vòng 1: nét vẽ + bộ phân loại, 10 tán mỗi ruộng. Dựng SAU bộ vàng: ảnh cách
-  # ảnh vàng ≤ 3 khung trong cùng đường bay bị loại (chụp trùng cây).
-  - id: r1
-    label: Vòng 1
+  # Bộ test: 1 ảnh mỗi ruộng (6 ảnh), gán KÍN mọi tán kể cả tán chạm mép, bằng
+  # nét vẽ + Học & tô như vòng train nhưng soát kỹ hơn. Chỉ để CHẤM, không bao
+  # giờ vào train. Dựng TRƯỚC vòng train. Học & tô ở đây chỉ học từ nét của
+  # chính vòng này, nên bộ test không dính nét của bộ train.
+  - id: test
+    label: Bộ test (6 ảnh)
     kind: scribble
-    pick: {crowns_per_field: 10, crowns_per_image: 5, skip_border: true, buffer_frames: 3, seed: 11}
+    role: test
+    pick: {images_per_field: 1, crowns_per_image: all, skip_border: false, seed: 7}
     classifier:
       n_trees: 100
       max_depth: 12
@@ -51,7 +43,32 @@ rounds:
       unlabeled_ratio: 4
       unlabeled_weight: 0.1
 
-  # Vòng 2: model (train trên Vòng 1) tô 300 tán mới; người chỉ duyệt. Trong
+  # Bộ train: 4 ảnh mỗi ruộng (24 ảnh), gán kín. Ảnh cách ảnh test ≤ 3 khung
+  # trong cùng đường bay bị loại (chụp trùng cây).
+  - id: train
+    label: Bộ train (24 ảnh)
+    kind: scribble
+    pick: {images_per_field: 4, crowns_per_image: all, skip_border: false, buffer_frames: 3, seed: 11}
+    classifier:
+      n_trees: 100
+      max_depth: 12
+      sigma_min: 0.7
+      sigma_max: 5.0
+      num_sigma: 4
+      max_samples: 50000
+      unlabeled_ratio: 4
+      unlabeled_weight: 0.1
+
+  # Bộ vàng vẽ tay (không dùng từ 13/10: bộ test ở trên thay nó). Bỏ dấu # để
+  # bật lại; vòng vẽ tay cũng được tính là bộ chấm.
+  # - id: gold
+  #   label: Bộ vàng
+  #   kind: manual                 # vẽ tay; Xong = phần chưa tô thành Không hoa
+  #   pick: {crowns_per_field: 5, crowns_per_image: 3, skip_border: true, seed: 7}
+  #   superpixel: {area_px: 50, compactness: 10}   # cọ bám siêu điểm ảnh (phím G)
+  #   double: {annotator: B, crowns: 10}
+
+  # Vòng 2: model (train trên bộ train) tô 300 tán mới; người chỉ duyệt. Trong
   # từng ruộng, 30% tán kém chắc nhất (entropy cao nhất trong crowns.csv) vào
   # hàng đợi trước, rồi 10% tán ngẫu nhiên để kiểm; còn lại nhận tự động khi chốt
   # vòng. Chạy trước khi duyệt:
