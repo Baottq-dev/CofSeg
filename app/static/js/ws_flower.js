@@ -7,6 +7,9 @@ let flRounds=[],flRound=lsGet('cofseg_flround',''),flCrowns=[],flCrownsFor=null,
 let flBrush=lsGet('cofseg_flbrush',12),flOpacity=lsGet('cofseg_flopacity',0.8);
 let flLayers=Object.assign({mask:true,human:true,others:true},lsGet('cofseg_fllayers',{}));
 let flImgs={},flStroke=null,flMouse=null,flSpace=false,flBusy=false,flTok=0,flCfgTok=0;
+// Công cụ Kéo ảnh (H): chuột trái kéo là di chuyển ảnh; bấm không kéo lên một
+// tán là mở tán đó. flPanAt = chỗ bắt đầu kéo, để phân biệt bấm với kéo.
+let flPanAt=null;
 let flQueue=null,flPending=null,flSnap=false,flQTok=0;
 // Đồng hồ theo tán: chỉ đếm khi có thao tác trong 60 giây gần nhất.
 let flSecs={},flLast=0,flTick=null;
@@ -102,7 +105,8 @@ function flNext(){if(flQueue&&flQueue.items.length){const it=flQueue.items;
  for(let d=1;d<=order.length;d++){const c=flCrowns[(i0+d)%order.length];
   if(!FL_DONE.includes(c.state)&&c.crown!==flCrown&&c.in_round!==false){flOpen(c.crown);return;}}
  flClose();$('hint').textContent='✔ Ảnh này đã xong mọi tán · PgDn để sang ảnh sau.';}
-function setFlTool(t){flTool=t;document.querySelectorAll('#flTools button').forEach(b=>{const on=b.dataset.tool===t;b.classList.toggle('on',on);b.setAttribute('aria-checked',on);});draw();}
+function setFlTool(t){flTool=t;document.querySelectorAll('#flTools button').forEach(b=>{const on=b.dataset.tool===t;b.classList.toggle('on',on);b.setAttribute('aria-checked',on);});
+ if(flMouse)flCursor(flMouse[0],flMouse[1]);draw();}
 function setFlBrush(px){flBrush=Math.round(Math.max(2,Math.min(80,px)));lsSet('cofseg_flbrush',flBrush);
  $('flBrush').value=flBrush;$('flBrushLbl').textContent=flBrush+' px';draw();}
 function setFlOpacity(v){flOpacity=Math.max(0,Math.min(1,v));lsSet('cofseg_flopacity',flOpacity);$('flOpacity').value=Math.round(flOpacity*100);draw();}
@@ -149,16 +153,16 @@ function flDraw(){if(wsActive!=='flower')return;
    ctx.strokeStyle=hexA(t.color,0.8);ctx.lineWidth=Math.max(1,2*flStroke.r*scale);ctx.beginPath();
    flStroke.pts.forEach((q,i)=>{i?ctx.lineTo(sx(q[0]),sy(q[1])):ctx.moveTo(sx(q[0]),sy(q[1]));});
    if(flStroke.pts.length===1)ctx.lineTo(sx(flStroke.pts[0][0])+0.01,sy(flStroke.pts[0][1]));ctx.stroke();}
-  if(flMouse&&!flSpace&&!pan){ctx.beginPath();ctx.arc(sx(flMouse[0]),sy(flMouse[1]),flBrush/2,0,7);
+  if(flMouse&&!flSpace&&!pan&&flTool!=='pan'){ctx.beginPath();ctx.arc(sx(flMouse[0]),sy(flMouse[1]),flBrush/2,0,7);
    ctx.lineWidth=1.5;ctx.strokeStyle=FL_TOOLS[flTool].color;ctx.stroke();}}
  ctx.restore();}
-function flCursor(x,y){cv.style.cursor=flSpace?'grab':(flCrown>=0?'none':(flHit(x,y)>=0?'pointer':'grab'));}
+function flCursor(x,y){cv.style.cursor=(flSpace||flTool==='pan')?'grab':(flCrown>=0?'none':(flHit(x,y)>=0?'pointer':'grab'));}
 wsRegister({id:'flower',
  resetImage(){flCrowns=[];flCrownsFor=null;flCrown=-1;flImgs={};flStroke=null;},
  onImage(){if(wsActive==='flower')flLoadCrowns();},
  draw(){flDraw();}});
 tabRegister({id:'flower',inspTitle:'Tán đang gán',
- help:[['A · R','Chấp nhận · Sửa (vòng duyệt)'],['1 · 2 · 3 · E','Hoa · Không hoa · Bỏ qua · Tẩy'],['[ · ]','Cọ nhỏ hơn · lớn hơn'],['T','Học & tô (vòng nét vẽ)'],['G','Bám siêu điểm ảnh (bộ vàng)'],['O','Ẩn / hiện mask hoa'],
+ help:[['A · R','Chấp nhận · Sửa (vòng duyệt)'],['1 · 2 · 3 · E','Hoa · Không hoa · Bỏ qua · Tẩy'],['H','Kéo ảnh: chuột trái kéo để di chuyển, bấm vào tán để mở'],['[ · ]','Cọ nhỏ hơn · lớn hơn'],['T','Học & tô (vòng nét vẽ)'],['G','Bám siêu điểm ảnh (bộ vàng)'],['O','Ẩn / hiện mask hoa'],
   ['Enter','Xong tán này, sang tán kế'],['N','Tán chưa xong kế tiếp'],['Esc','Đóng tán đang mở'],['Ctrl Z','Bỏ thao tác cuối của tán'],['Space + kéo','Di chuyển ảnh'],['0','Vừa tán đang mở']],
  async enter(){if(!flRounds.length)await flLoadConfig();flLoadQueue();setFlTool(flTool);setFlBrush(flBrush);setFlOpacity(flOpacity);flRenderLayers();
   if(flCrownsFor!==current)await flLoadCrowns();else{flRender();draw();}
@@ -169,7 +173,7 @@ tabRegister({id:'flower',inspTitle:'Tán đang gán',
   if(e.ctrlKey||e.metaKey||e.altKey)return false;
   const k=e.key;
   if(k===' '){e.preventDefault();flSpace=true;cv.style.cursor='grab';return true;}
-  if(k==='1')setFlTool('hoa');else if(k==='2')setFlTool('khong');else if(k==='3')setFlTool('boqua');else if(k==='e'||k==='E')setFlTool('tay');
+  if(k==='1')setFlTool('hoa');else if(k==='2')setFlTool('khong');else if(k==='3')setFlTool('boqua');else if(k==='e'||k==='E')setFlTool('tay');else if(k==='h'||k==='H')setFlTool('pan');
   else if(k==='[')setFlBrush(flBrush/1.25);else if(k===']')setFlBrush(flBrush*1.25);
   else if(k==='t'||k==='T')flClassify();else if((k==='g'||k==='G')&&!$('flSnap').hidden)setFlSnap(!flSnap);else if(k==='o'||k==='O')toggleFlLayer('mask');
   else if((k==='a'||k==='A')&&flRoundObj()&&flRoundObj().kind==='review')flReview('accept');
@@ -182,7 +186,7 @@ tabRegister({id:'flower',inspTitle:'Tán đang gán',
   if(type==='down'){if(e.button!==0)return true;
    const [x,y]=toImg(e);
    const startPan=()=>{pan=[e.clientX,e.clientY,ox,oy];cv.style.cursor='grabbing';};
-   if(flSpace){startPan();return true;}
+   if(flSpace||flTool==='pan'){flPanAt=[e.clientX,e.clientY,x,y];startPan();return true;}
    const k=flHit(x,y);
    if(flCrown<0){if(k>=0)flOpen(k);else startPan();return true;}
    // Bấm trúng một tán KHÁC thì chuyển sang tán đó; còn lại là vẽ (kể cả bắt
@@ -194,7 +198,10 @@ tabRegister({id:'flower',inspTitle:'Tán đang gán',
    flCursor(x,y);draw();return true;}
   if(type==='up'){if(flStroke){const s=flStroke;flStroke=null;flSendStroke(s);}return true;}
   if(type==='leave'){flMouse=null;draw();return true;}
-  if(type==='panEnd'){if(flMouse)flCursor(flMouse[0],flMouse[1]);return true;}
+  if(type==='panEnd'){const at=flPanAt;flPanAt=null;
+   // Kéo ảnh mà chỉ bấm (không kéo) lên một tán khác: mở tán đó.
+   if(at&&flTool==='pan'&&Math.abs(e.clientX-at[0])<3&&Math.abs(e.clientY-at[1])<3){const k=flHit(at[2],at[3]);if(k>=0&&k!==flCrown)flOpen(k);}
+   if(flMouse)flCursor(flMouse[0],flMouse[1]);return true;}
   return true;}});
 // --- vòng đã dựng: tiến độ, hàng đợi, đồng thuận -------------------------------
 function flGo(it){if(it.name===current){flOpen(it.crown);return;}flPending={name:it.name,crown:it.crown};selectImg(it.name);}
