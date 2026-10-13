@@ -46,3 +46,16 @@ rounds:
       sigma_max: 5.0
       num_sigma: 4
       max_samples: 50000
+
+  # Vòng 2: model (train trên Vòng 1) tô 300 tán mới; người chỉ duyệt. Trong
+  # từng ruộng, 30% tán kém chắc nhất (entropy cao nhất trong crowns.csv) vào
+  # hàng đợi trước, rồi 10% tán ngẫu nhiên để kiểm; còn lại nhận tự động khi chốt
+  # vòng. Chạy trước khi duyệt:
+  #   python scripts/flower_train.py --name r2
+  #   python scripts/flower_predict.py --run runs/flower/r2 --round r2
+  - id: r2
+    label: Vòng 2
+    kind: review
+    model_run: runs/flower/r2
+    pick: {crowns_per_field: 50, crowns_per_image: all, skip_border: true, buffer_frames: 3, seed: 13}
+    review: {fix_top: 0.30, check_random: 0.10}

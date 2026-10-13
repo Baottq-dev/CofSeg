@@ -121,3 +121,37 @@ def agreement(pairs):
     den = tp + fp + fn
     return dict(iou=(tp / den) if den else None, f1=(2 * tp / (2 * tp + fp + fn)) if den else None,
                 tp=tp, fp=fp, fn=fn)
+
+
+def review_queue(items, unc, fix_top=0.30, check_random=0.10, seed=0):
+    """Hàng đợi của vòng duyệt: trong TỪNG ruộng, `fix_top` phần tán kém chắc
+    nhất (unc cao nhất; tán thiếu số đo coi như kém chắc nhất) rồi `check_random`
+    phần tán ngẫu nhiên trong số còn lại. Xếp theo ruộng xen kẽ, phần kém chắc
+    trước phần ngẫu nhiên. Trả [(item, lý do, unc)]; tán không vào hàng đợi sẽ
+    được nhận tự động lúc chốt vòng.
+
+    Xếp hạng trong từng ruộng chứ không chung cả vòng: thứ dễ nhầm khác nhau
+    theo ruộng, xếp chung thì ruộng "khó" nuốt hết lượt duyệt."""
+    by = {}
+    for it in items:
+        by.setdefault(it["field"], []).append(it)
+    fixes, checks = {}, {}
+    for f, lst in by.items():
+        key = lambda it: unc.get((it["image"], int(it["crown"])), float("inf"))  # noqa: E731
+        lst = sorted(lst, key=lambda it: (-key(it), it["image"], int(it["crown"])))
+        n_fix = int(round(len(lst) * fix_top))
+        n_chk = int(round(len(lst) * check_random))
+        rest = lst[n_fix:]
+        rng = random.Random("%s:%s" % (seed, f))
+        fixes[f] = [(it, "uncertain", key(it)) for it in lst[:n_fix]]
+        checks[f] = [(it, "random", key(it)) for it in rng.sample(rest, min(n_chk, len(rest)))]
+
+    def weave(groups):
+        out, i, fs_ = [], 0, sorted(groups)
+        while any(groups[f] for f in fs_):
+            f = fs_[i % len(fs_)]
+            if groups[f]:
+                out.append(groups[f].pop(0))
+            i += 1
+        return out
+    return weave(fixes) + weave(checks)

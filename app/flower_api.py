@@ -27,7 +27,10 @@ from app import flower_rounds as fr
 from app import flower_store as fs
 
 router = APIRouter(prefix="/api/fl")
-CFG_PATH = Path(__file__).resolve().parent.parent / "configs" / "flower_rounds.yaml"
+REPO = Path(__file__).resolve().parent.parent
+# FLOWER_ROUNDS_CFG: chạy thử app với một bản cấu hình vòng khác (thư mục nháp).
+CFG_PATH = Path(os.environ.get("FLOWER_ROUNDS_CFG") or REPO / "configs" / "flower_rounds.yaml")
+REVIEWED = ("accepted", "fixed")
 KINDS = ("scribble", "manual", "review")
 CLF_DEFAULTS = dict(n_trees=100, max_depth=12, sigma_min=0.7, sigma_max=5.0,
                     num_sigma=4, max_samples=50000)
@@ -222,6 +225,51 @@ def _recompose(st, flat, name, rnd=None, who=None):
     return mask, polys, view
 
 
+def _run_dir(rnd):
+    p = Path((rnd or {}).get("model_run") or "")
+    return p if p.is_absolute() else REPO / p
+
+
+def _unc(rnd):
+    """{(ảnh, tán): entropy} từ crowns.csv của lượt dự đoán; thiếu file thì rỗng."""
+    import csv
+    p = _run_dir(rnd) / "crowns.csv"
+    out = {}
+    if p.exists():
+        with open(p, encoding="utf-8", newline="") as f:
+            for r in csv.DictReader(f):
+                try:
+                    out[(r["image"], int(r["crown"]))] = float(r["entropy"])
+                except (KeyError, ValueError):
+                    continue
+    return out
+
+
+def _ensure_pred_base(st, rnd, flat, name, crowns):
+    """Vòng duyệt: tán nào chưa có nền máy thì lấy dự đoán của model (xác suất
+    ≥ 0,5) làm nền. Trả True nếu có tán vừa được thêm nền."""
+    pred = fs._read_png(_run_dir(rnd) / "pred" / (os.path.splitext(flat)[0] + ".png"))
+    polys, (h, w) = _crowns(name)
+    if pred is None or pred.shape != (h, w):
+        return False
+    base = st.load_base(flat, (h, w))
+    changed = False
+    for k in crowns:
+        if k >= len(polys):
+            continue
+        b = fs.crown_box(polys[k], w, h)
+        inside = fs.crown_mask(polys[k], b)
+        sub = base[b[1]:b[3], b[0]:b[2]]
+        if (sub[inside] != fs.IGNORE).any():
+            continue
+        p = pred[b[1]:b[3], b[0]:b[2]]
+        sub[inside] = ((p[inside] != fs.IGNORE) & (p[inside] >= 127)).astype(np.uint8)
+        changed = True
+    if changed:
+        st.save_base(flat, base)
+    return changed
+
+
 def _crown_ops(doc, crown):
     return [o for o in doc["ops"] if int(o["crown"]) == int(crown)]
 
@@ -297,6 +345,10 @@ def crowns(name: str, round: str = "", who: str = "A"):  # noqa: A002 - tên tha
             return {"ok": True, "image": flat, "crowns": [], "size": [h, w]}
         st = _store()
         rnd = _round(round) if round else None
+        if rnd and rnd["kind"] == "review":
+            mine = [int(it["crown"]) for it in st.load_round(rnd["id"])["items"] if it["image"] == flat]
+            if mine and _ensure_pred_base(st, rnd, flat, name, mine):
+                _recompose(st, flat, name, rnd, who)
         doc = st.load_ops(flat)
         ops = _ops_view(doc["ops"], rnd, who)
         mask = st.load_mask(flat, (h, w), _mask_who(rnd, who) if rnd else None)
@@ -438,6 +490,10 @@ def stroke(req: StrokeReq):
         if not pts:
             return _err("Nét không có điểm nào.")
         st = _store()
+        if rnd["kind"] == "review":
+            row = _state_of(st.read_status(), flat, req.crown, _status_round(rnd, req.who)) or {}
+            if row.get("state") not in ("fixing", "fixed"):
+                return _err("Vòng duyệt: bấm Sửa (R) trước rồi mới vẽ lên tán này.")
         st.add_op(flat, dict(round=req.round, crown=int(req.crown), who=req.who, kind="stroke",
                              label=lab, r=round_(max(0.5, req.r), 2),
                              snap=bool(req.snap and rnd["kind"] == "manual"), pts=pts))
@@ -579,10 +635,11 @@ def finish(req: FinishReq):
         row = _state_of(st.read_status(), flat, req.crown, skey) or {}
         secs = float(row.get("seconds") or 0) + max(0.0, float(req.seconds))
         b = fs.crown_box(polys[req.crown], w, h)
-        st.set_status(flat, req.crown, skey, state="done", who=req.who, seconds="%.1f" % secs,
-                      n_ops=str(len(_crown_ops(doc, req.crown))), source=row.get("source") or "human",
-                      bbox=list(b))
-        return _result(mask, polys, doc, req.crown, state="done", seconds=secs)
+        # Vòng duyệt: Xong sau khi Sửa = tán người đã sửa lại dự đoán của model.
+        state, source = ("fixed", "human_fix") if rnd["kind"] == "review" else ("done", row.get("source") or "human")
+        st.set_status(flat, req.crown, skey, state=state, who=req.who, seconds="%.1f" % secs,
+                      n_ops=str(len(_crown_ops(doc, req.crown))), source=source, bbox=list(b))
+        return _result(mask, polys, doc, req.crown, state=state, seconds=secs)
 
 
 # ------------------------------------------------------------ vòng và hàng đợi
@@ -662,6 +719,13 @@ def _queue(rid, who):
     items = st.load_round(rid)["items"]
     if _is_sec(rnd, who):
         items = fr.double_subset(items, int(rnd["double"].get("crowns", 10)))
+    reasons = {}
+    if rnd["kind"] == "review":
+        rv = rnd.get("review") or {}
+        order = fr.review_queue(items, _unc(rnd), float(rv.get("fix_top", 0.3)),
+                                float(rv.get("check_random", 0.1)), rnd["pick"].get("seed", 0))
+        items = [it for it, _, _ in order]
+        reasons = {(it["image"], int(it["crown"])): (why, u) for it, why, u in order}
     rows = st.read_status()
     skey = _status_round(rnd, who)
     out, prog, secs = [], {}, []
@@ -669,16 +733,28 @@ def _queue(rid, who):
         row = _state_of(rows, it["image"], it["crown"], skey) or {}
         state = row.get("state") or "todo"
         name = _name_of(it["image"]) or it.get("name")
-        out.append(dict(name=name, image=it["image"], crown=int(it["crown"]), field=it["field"], state=state))
+        why, u = reasons.get((it["image"], int(it["crown"])), (None, None))
+        out.append(dict(name=name, image=it["image"], crown=int(it["crown"]), field=it["field"], state=state,
+                        reason=why, unc=(None if u is None or u == float("inf") else round_(u, 3))))
         p = prog.setdefault(it["field"], {"done": 0, "total": 0})
         p["total"] += 1
         if state == "done":
             p["done"] += 1
             if row.get("seconds"):
                 secs.append(float(row["seconds"]))
-    return dict(ok=True, round=rid, who=who, second=_is_sec(rnd, who), items=out,
+    if rnd["kind"] == "review":
+        for p in prog.values():
+            p["done"] = 0
+        for it in out:
+            if it["state"] in REVIEWED:
+                prog[it["field"]]["done"] += 1
+    n_acc = sum(1 for it in out if it["state"] == "accepted")
+    n_fix = sum(1 for it in out if it["state"] == "fixed")
+    return dict(ok=True, round=rid, kind=rnd["kind"], who=who, second=_is_sec(rnd, who), items=out,
                 progress=dict(sorted(prog.items())), done=sum(p["done"] for p in prog.values()),
-                total=len(out), median_seconds=statistics.median(secs) if secs else None), None
+                total=len(out), median_seconds=statistics.median(secs) if secs else None,
+                accepted=n_acc, fixed=n_fix,
+                reject_rate=(n_fix / (n_acc + n_fix)) if (n_acc + n_fix) else None), None
 
 
 @router.get("/queue")
@@ -754,3 +830,123 @@ def agreement(round: str, against: str = ""):  # noqa: A002
         allp = [x for v in pairs.values() for x in v]
         return {"ok": True, "round": round, "against": against or None,
                 "by_field": by_field, "all": dict(fr.agreement(allp), crowns=len(allp))}
+
+
+class ReviewReq(CrownReq):
+    action: str              # accept | reject
+
+
+@router.post("/review")
+def review(req: ReviewReq):
+    """Vòng duyệt: Chấp nhận (A) nhận nguyên dự đoán của model; Sửa (R) mở tán
+    để vẽ nét, Xong sau đó ghi là fixed."""
+    with _LOCK:
+        chk = _check(req)
+        if isinstance(chk, JSONResponse):
+            return chk
+        rnd, polys, (h, w), flat = chk
+        if rnd["kind"] != "review":
+            return _err("Chấp nhận / Sửa chỉ có ở vòng duyệt.")
+        if req.action not in ("accept", "reject"):
+            return _err("action phải là accept hoặc reject")
+        st = _store()
+        if not _ensure_pred_base(st, rnd, flat, req.name, [req.crown]) and not st.base_path(flat).exists():
+            return _err("Chưa có dự đoán của model cho ảnh này (chạy scripts/flower_predict.py --round %s)." % req.round)
+        mask, polys, doc = _recompose(st, flat, req.name, rnd, req.who)
+        run = "model:" + _run_dir(rnd).name
+        b = fs.crown_box(polys[req.crown], w, h)
+        state = "accepted" if req.action == "accept" else "fixing"
+        st.set_status(flat, req.crown, _status_round(rnd, req.who), state=state, who=req.who,
+                      source=run, bbox=list(b))
+        return _result(mask, polys, doc, req.crown, state=state)
+
+
+@router.post("/round/close")
+def round_close(req: RoundReq):
+    """Chốt vòng duyệt: mọi tán chưa được người nhận hay sửa thành `auto`, nền
+    là dự đoán của model."""
+    with _LOCK:
+        rnd = _round(req.round)
+        if rnd is None or rnd["kind"] != "review":
+            return _err("Chỉ chốt được vòng duyệt.")
+        st = _store()
+        items = st.load_round(req.round)["items"]
+        if not items:
+            return _err("Vòng %s chưa dựng." % req.round)
+        rows = st.read_status()
+        run = "model:" + _run_dir(rnd).name
+        n_auto, missing = 0, 0
+        for flat, its in sorted({it["image"]: [] for it in items}.items()):
+            mine = [int(it["crown"]) for it in items if it["image"] == flat]
+            name = _name_of(flat)
+            if name is None:
+                continue
+            todo = [k for k in mine if ((_state_of(rows, flat, k, req.round) or {}).get("state") not in REVIEWED + ("fixing",))]
+            if not todo:
+                continue
+            if not _ensure_pred_base(st, rnd, flat, name, todo) and not st.base_path(flat).exists():
+                missing += len(todo)
+                continue
+            _recompose(st, flat, name, rnd, "")
+            polys, (h, w) = _crowns(name)
+            for k in todo:
+                st.set_status(flat, k, req.round, state="auto", source=run,
+                              bbox=list(fs.crown_box(polys[k], w, h)))
+                n_auto += 1
+        return {"ok": True, "round": req.round, "auto": n_auto, "missing_prediction": missing}
+
+
+class ExportReq(BaseModel):
+    name: str = "flower_v1"
+    out_dir: str = ""
+    include_auto: bool = False
+    overwrite: bool = False
+
+
+@router.post("/export")
+def export(req: ExportReq):
+    """Xuất bộ nhãn hoa: images/ + masks/ (0 không hoa, 1 hoa, 255 bỏ qua),
+    tách train/ và gold/. Bộ vàng và ảnh đệm quanh nó không bao giờ vào train;
+    meta.json ghi trạng thái và nguồn của từng tán."""
+    import shutil
+    from app import flower_data as fd
+    with _LOCK:
+        s = _srv()
+        cfg, _ = load_config()
+        st = _store()
+        root = Path(req.out_dir.strip() or s.EXPORT_DIR) / req.name
+        if root.exists():
+            if not req.overwrite:
+                return {"ok": False, "exists": True, "dir": str(root).replace("\\", "/"),
+                        "error": "Thư mục '%s' đã tồn tại." % req.name}
+            shutil.rmtree(root, ignore_errors=True)
+        labels = s.OUT_DIR
+        train = fd.collect(st, cfg["rounds"], labels, "train", req.include_auto)
+        gold = fd.collect(st, cfg["rounds"], labels, "gold")
+        crowns, problems, counts = [], [], {}
+        for split, items in (("train", train), ("gold", gold)):
+            img_dir, mask_dir = root / "images" / split, root / "masks" / split
+            img_dir.mkdir(parents=True, exist_ok=True)
+            mask_dir.mkdir(parents=True, exist_ok=True)
+            n_img = 0
+            for flat, its in sorted(fd.group_by_image(items).items()):
+                polys, (h, w) = fd.crown_polys(labels, flat)
+                src = Path(s.BASE) / fd.rel_of(flat)
+                if not polys or not src.exists():
+                    problems.append("%s: thiếu ảnh hoặc nhãn tán" % flat)
+                    continue
+                if not h or not w:
+                    h, w = cv2.imread(str(src)).shape[:2]
+                shutil.copyfile(src, img_dir / flat)
+                stem = os.path.splitext(flat)[0] + ".png"
+                fs._atomic_bytes(mask_dir / stem, fs._png(fd.image_mask(st, flat, polys, [it["crown"] for it in its], (h, w))))
+                n_img += 1
+                for it in its:
+                    crowns.append(dict(it, split=split))
+            counts[split] = {"images": n_img, "crowns": sum(1 for c in crowns if c["split"] == split)}
+        meta = dict(name=req.name, created=fs.now(), include_auto=req.include_auto,
+                    mask_values="0=no flower, 1=flower, 255=ignore (outside the exported crowns, unsure, unlabelled)",
+                    rule="gold (manual rounds) and images within the buffer frames of a gold image never go to train",
+                    splits=counts, crowns=crowns, problems=problems)
+        (root / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+        return {"ok": True, "dir": str(root).replace("\\", "/"), "splits": counts, "problems": problems}
