@@ -10,6 +10,7 @@
 # - pixel của tán không được chọn, và mọi pixel ngoài tán, là 255.
 import json
 import os
+import random
 from pathlib import Path
 
 import numpy as np
@@ -109,6 +110,53 @@ def collect(store, rounds_cfg, labels_dir, split="train", include_auto=False, ho
         out.append(dict(image=flat, crown=int(crown), round=rnd, state=state,
                         source=row.get("source") or "", field=field))
     return out
+
+
+def split_val(items, frac, buffer=3, seed=0):
+    """Tách val khỏi các tán train, THEO ẢNH: (train, val).
+
+    Ảnh cùng đường bay cách nhau ≤ `buffer` khung (chụp trùng cây) gộp thành
+    một cụm; cả cụm vào val hoặc ở lại train, để val không thấy lại cây của
+    train. Cụm được lấy xen kẽ theo ruộng (thứ tự ngẫu nhiên theo `seed`) cho
+    tới khi val có khoảng `frac` số ảnh. Không tách được (frac = 0, dưới 2
+    ảnh, hoặc mọi ảnh dính thành một cụm) thì val rỗng."""
+    imgs = sorted({it["image"] for it in items})
+    if frac <= 0 or len(imgs) < 2:
+        return list(items), []
+    by_flight = {}
+    for f in imgs:
+        by_flight.setdefault(flight_of(f), []).append(f)
+    clusters = []
+    for fl in sorted(by_flight):
+        seq = sorted(by_flight[fl], key=lambda f: (fr.frame_no(f, -1), f))
+        cur = [seq[0]]
+        for f in seq[1:]:
+            a, b = fr.frame_no(cur[-1], None), fr.frame_no(f, None)
+            if a is not None and b is not None and b - a <= buffer:
+                cur.append(f)
+            else:
+                clusters.append(cur)
+                cur = [f]
+        clusters.append(cur)
+    if len(clusters) < 2:
+        return list(items), []
+    rng = random.Random(seed)
+    by_field = {}
+    for c in clusters:
+        by_field.setdefault(field_of(c[0]), []).append(c)
+    fields = sorted(by_field)
+    for f in fields:
+        rng.shuffle(by_field[f])
+    want = max(1, round(frac * len(imgs)))
+    val, i = set(), 0
+    while len(val) < want and any(by_field[f] for f in fields):
+        f = fields[i % len(fields)]
+        i += 1
+        if by_field[f] and len(val) + len(by_field[f][-1]) < len(imgs):
+            val.update(by_field[f].pop())
+        elif by_field[f]:
+            by_field[f].pop()
+    return [it for it in items if it["image"] not in val], [it for it in items if it["image"] in val]
 
 
 def image_mask(store, flat, polys, crowns, shape, who=None):

@@ -69,6 +69,30 @@ def root(tmp_path, monkeypatch):
     return tmp_path
 
 
+# ----------------------------------------------------------------------- val
+def _items(names):
+    return [dict(image=server._flat(n), crown=k, field=n.split("/", 1)[0]) for n in names for k in (0, 1)]
+
+
+def test_val_is_cut_from_train_by_image_clusters():
+    # field_1/10/1 khung 1..10, field_1/10/2 khung 1..6, field_2/10/1 khung 1..10;
+    # lấy khung 1, 2, 6, 10 mỗi đường bay: (1, 2) dính nhau, 6 và 10 đứng riêng.
+    pick = [n for n in NAMES if int(n[-10:-6]) in (1, 2, 6, 10)]
+    items = _items(pick)
+    train, val = fd.split_val(items, 0.3, buffer=3, seed=0)
+    assert train and val and len(train) + len(val) == len(items)
+    vimg, timg = {it["image"] for it in val}, {it["image"] for it in train}
+    assert not vimg & timg
+    for v in vimg:                                   # không ảnh val nào sát ảnh train cùng đường bay
+        for t in timg:
+            if fd.flight_of(v) == fd.flight_of(t):
+                assert abs(fd.fr.frame_no(v) - fd.fr.frame_no(t)) > 3
+    assert {it["field"] for it in val} == {"field_1", "field_2"}        # xen kẽ theo ruộng
+    assert fd.split_val(items, 0.3, buffer=3, seed=0) == (train, val)   # cùng seed, cùng kết quả
+    assert fd.split_val(items, 0.0) == (items, [])
+    assert fd.split_val(_items(NAMES[:1]), 0.3) == (_items(NAMES[:1]), [])
+
+
 # --------------------------------------------------------------------- model
 def test_tiny_unet_and_the_masked_loss():
     m = fm.TinyUNet((4, 8, 16))
@@ -102,6 +126,9 @@ def test_train_and_predict_scripts_end_to_end(root, monkeypatch):
         assert (out / f).exists()
     cfg = json.loads((out / "config.json").read_text(encoding="utf-8"))
     assert cfg["n_train_crowns"] == 1 and cfg["n_test_crowns"] == 1   # vàng không vào train
+    assert cfg["n_val_crowns"] == 0                                    # một ảnh train: không tách val
+    met = json.loads((out / "metrics.json").read_text(encoding="utf-8"))
+    assert met["val"] is None and met["test"]["all"]["crowns"] == 1   # test chấm một lần lúc cuối
     assert fa.round_build(fa.RoundReq(round="r2"))["ok"]
     rows = _script("flower_predict").main(["--run", str(out), "--round", "r2", "--tile", "32", "--device", "cpu"])
     n_items = len(st.load_round("r2")["items"])
