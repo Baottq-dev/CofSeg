@@ -155,6 +155,44 @@ def test_a_scribble_round_with_role_test_is_the_scoring_side(root, monkeypatch):
     assert [(x["image"], x["crown"]) for x in fd.collect(st, rounds, labels, "train")] == [(b["image"], b["crown"])]
 
 
+def test_hand_picked_whole_images_for_test_and_train(root, monkeypatch):
+    # Người gán tự chọn ảnh: thêm cả ảnh vào vòng; ảnh cách ảnh phía bên kia
+    # ≤ 3 khung cùng đường bay thì không nhận (kể cả khi vẽ thẳng không bấm Thêm).
+    cfg = root / "rounds_pick.yaml"
+    cfg.write_text(
+        "version: v1\ndata_dir: flower_v1\nrounds:\n"
+        "  - {id: test, kind: scribble, role: test, pick: {mode: manual, whole_image: true}}\n"
+        "  - {id: train, kind: scribble, pick: {mode: manual, whole_image: true, buffer_frames: 3}}\n",
+        encoding="utf-8")
+    monkeypatch.setattr(fa, "CFG_PATH", cfg)
+    monkeypatch.setattr(fa, "_CACHE", None)
+    st = fa._store()
+    f1, f2 = "field_1/10/1", "field_1/10/2"
+
+    def pick(rnd, name, action="add"):
+        return fa.round_image(fa.PickReq(round=rnd, name=name, action=action))
+
+    res = pick("test", _name(f1, 1))
+    assert res["ok"] and res["crowns"] == 3 and res["images"] == 1          # mọi tán, kể cả tán chạm mép
+    assert pick("train", _name(f1, 4)).status_code == 409                   # cách 3 khung: trùng cây
+    assert pick("train", _name(f1, 5))["ok"]                                # cách 4 khung
+    assert pick("train", _name(f2, 1))["ok"]                                # đường bay khác
+    assert pick("test", _name(f1, 5)).status_code == 409                    # đã thuộc train
+    res = fa.stroke(fa.StrokeReq(round="train", name=_name(f1, 2), crown=0, label=1, pts=[[25, 25]]))
+    assert res.status_code == 409                                           # vẽ thẳng cũng bị chặn
+    assert fa.stroke(fa.StrokeReq(round="train", name=_name(f1, 8), crown=0, label=1, pts=[[25, 25]]))["ok"]
+    q = fa.queue(round="train", who="A")
+    assert q["total"] == 9 and q["progress"]["field_1"]["images"] == 3     # vẽ một tán là nhận cả ảnh
+    # bỏ ảnh chưa có nét: sạch khỏi vòng, kể cả dòng trạng thái do Học & tô để lại
+    flat5 = server._flat(_name(f1, 5))
+    st.set_status(flat5, 0, "train", state="doing", source="classifier")
+    res = pick("train", _name(f1, 5), "remove")
+    assert res["ok"] and not res["in_round"] and res["images"] == 2
+    assert st.load_ops(flat5)["round"] is None
+    assert not any(k[0] == flat5 for k in st.read_status())
+    assert pick("train", _name(f1, 8), "remove").status_code == 409         # đã có nét
+
+
 def test_role_must_be_test(root, tmp_path, monkeypatch):
     cfg = tmp_path / "bad.yaml"
     cfg.write_text("rounds:\n  - {id: x, kind: scribble, role: gold}\n", encoding="utf-8")

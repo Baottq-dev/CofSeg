@@ -221,7 +221,7 @@ $('flNext').onclick=flNext;
 $('flRound').onchange=()=>{flRound=$('flRound').value;lsSet('cofseg_flround',flRound);flCrown=-1;
  flLoadConfig().then(()=>{flLoadQueue();flLoadCrowns();});};
 $('flSnap').onclick=()=>setFlSnap(!flSnap);
-$('flBuild').onclick=flBuild;
+$('flBuild').onclick=flBuild;$('flPick').onclick=flPickImage;
 $('flAccept').onclick=()=>flReview('accept');
 $('flReject').onclick=()=>flReview('reject');
 $('flCloseRound').onclick=flCloseRound;

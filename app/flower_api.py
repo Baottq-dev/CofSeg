@@ -439,6 +439,36 @@ class FinishReq(CrownReq):
     seconds: float = 0.0
 
 
+def _too_close(st, rnd, flat):
+    """Ảnh phía bên kia (bộ chấm nếu `rnd` là vòng học, và ngược lại) nằm cùng
+    đường bay và cách `flat` ≤ buffer_frames khung: (ảnh, vòng, số khung) hoặc
+    None. Khung liền kề chồng ~45%, tức chụp trùng cây."""
+    from app import flower_data as fd
+    cfg, _ = load_config()
+    buffer = max([int(r["pick"].get("buffer_frames", 0)) for r in cfg["rounds"]] + [0])
+    seq = fr.frame_no(flat, None)
+    if not buffer or seq is None:
+        return None
+    tests = {r["id"] for r in cfg["rounds"] if fr.is_test(r)}
+    mine = rnd["id"] in tests
+    flight = fd.flight_of(flat)
+    for rid, doc in st.all_rounds().items():
+        if rid == rnd["id"] or (rid in tests) == mine:
+            continue
+        for img in sorted({it["image"] for it in doc.get("items") or []}):
+            s = fr.frame_no(img, None)
+            if s is not None and fd.flight_of(img) == flight and abs(s - seq) <= buffer:
+                return img, rid, abs(s - seq)
+    return None
+
+
+def _close_err(hit):
+    img, rid, k = hit
+    return _err("Ảnh này cách ảnh %s của vòng %s %d khung trong cùng đường bay (chụp trùng cây): bộ test và "
+                "bộ train không được chung cây. Chọn ảnh khác, hoặc đặt buffer_frames: 0 trong "
+                "configs/flower_rounds.yaml nếu chấp nhận." % (_name_of(img) or img, rid, k), 409)
+
+
 def _check(req):
     """(vòng, polygon, (h, w), ảnh phẳng) hoặc JSONResponse lỗi."""
     rnd = _round(req.round)
@@ -460,6 +490,10 @@ def _check(req):
         # Một ảnh chỉ thuộc một vòng: ảnh của vòng này mà lẫn vào vòng khác
         # là rò rỉ giữa bộ chấm và bộ học.
         return _err("Ảnh này đã thuộc vòng %s." % doc["round"], 409)
+    if not doc.get("round") and rnd["pick"].get("mode") == "manual":
+        hit = _too_close(st, rnd, flat)
+        if hit:
+            return _close_err(hit)
     members = _members(st, rnd, req.who)
     if members is not None:
         if not st.load_round(rnd["id"])["items"]:
@@ -502,8 +536,8 @@ def stroke(req: StrokeReq):
                              snap=bool(req.snap and rnd["kind"] == "manual"), pts=pts))
         b = fs.crown_box(polys[req.crown], w, h)
         if rnd["pick"].get("mode") == "manual":
-            st.add_round_item(req.round, dict(image=flat, name=req.name, crown=int(req.crown),
-                                              field=_srv()._field_of(_srv()._full_rel(req.name)), bbox=list(b)))
+            ks = range(len(polys)) if rnd["pick"].get("whole_image") else [int(req.crown)]
+            st.add_round_items(req.round, _image_items(req.name, flat, polys, (h, w), ks))
         mask, polys, doc = _recompose(st, flat, req.name, rnd, req.who)
         skey = _status_round(rnd, req.who)
         row = _state_of(st.read_status(), flat, req.crown, skey) or {}
@@ -739,6 +773,61 @@ def round_build(req: RoundReq):
                 "by_field": {f: {"images": len(v["images"]), "crowns": v["crowns"]} for f, v in sorted(by.items())}}
 
 
+def _image_items(name, flat, polys, size, crowns):
+    h, w = size
+    field = _srv()._field_of(_srv()._full_rel(name))
+    return [dict(image=flat, name=name, crown=int(k), field=field, bbox=list(fs.crown_box(polys[k], w, h)))
+            for k in crowns]
+
+
+class PickReq(BaseModel):
+    round: str
+    name: str
+    action: str = "add"      # add | remove
+
+
+@router.post("/round/image")
+def round_image(req: PickReq):
+    """Vòng chọn tay: thêm cả ảnh (mọi tán) vào vòng, hoặc bỏ một ảnh chưa có
+    nét nào ra. Ảnh nào, bao nhiêu ảnh, ruộng nào là do người gán quyết định."""
+    with _LOCK:
+        rnd = _round(req.round)
+        if rnd is None:
+            return _err("Không có vòng %s trong configs/flower_rounds.yaml." % req.round)
+        if rnd["pick"].get("mode") != "manual":
+            return _err("Vòng %s dựng tự động, không thêm ảnh bằng tay." % req.round)
+        polys, (h, w) = _crowns(req.name)
+        if not polys:
+            return _err("Ảnh này chưa có nhãn tán.")
+        s = _srv()
+        fields = rnd["pick"].get("fields")
+        if fields and s._field_of(s._full_rel(req.name)) not in fields:
+            return _err("Vòng %s chỉ nhận ảnh của %s." % (req.round, ", ".join(fields)))
+        flat = s._flat(req.name)
+        st = _store()
+        doc = st.load_ops(flat)
+        if req.action == "remove":
+            if doc.get("round") not in (None, req.round):
+                return _err("Ảnh này thuộc vòng %s, không thuộc vòng %s." % (doc["round"], req.round))
+            if not st.drop_image(flat, req.round):
+                return _err("Ảnh đã có nét: hoàn tác (Ctrl+Z) hết nét của mọi tán rồi mới bỏ khỏi vòng được.", 409)
+        elif req.action == "add":
+            if doc.get("round") and doc["round"] != req.round:
+                return _err("Ảnh này đã thuộc vòng %s." % doc["round"], 409)
+            if not doc.get("round"):
+                hit = _too_close(st, rnd, flat)
+                if hit:
+                    return _close_err(hit)
+                st.claim(flat, req.round)
+            st.add_round_items(req.round, _image_items(req.name, flat, polys, (h, w), range(len(polys))))
+        else:
+            return _err("action phải là add hoặc remove")
+        items = st.load_round(req.round)["items"]
+        return {"ok": True, "round": req.round, "image": flat, "action": req.action,
+                "in_round": any(it["image"] == flat for it in items),
+                "images": len({it["image"] for it in items}), "crowns": len(items)}
+
+
 def _queue(rid, who):
     rnd = _round(rid)
     if rnd is None:
@@ -764,8 +853,9 @@ def _queue(rid, who):
         why, u = reasons.get((it["image"], int(it["crown"])), (None, None))
         out.append(dict(name=name, image=it["image"], crown=int(it["crown"]), field=it["field"], state=state,
                         reason=why, unc=(None if u is None or u == float("inf") else round_(u, 3))))
-        p = prog.setdefault(it["field"], {"done": 0, "total": 0})
+        p = prog.setdefault(it["field"], {"done": 0, "total": 0, "images": set()})
         p["total"] += 1
+        p["images"].add(it["image"])
         if state == "done":
             p["done"] += 1
             if row.get("seconds"):
@@ -776,6 +866,8 @@ def _queue(rid, who):
         for it in out:
             if it["state"] in REVIEWED:
                 prog[it["field"]]["done"] += 1
+    for p in prog.values():
+        p["images"] = len(p["images"])
     n_acc = sum(1 for it in out if it["state"] == "accepted")
     n_fix = sum(1 for it in out if it["state"] == "fixed")
     return dict(ok=True, round=rid, kind=rnd["kind"], who=who, second=_is_sec(rnd, who), items=out,

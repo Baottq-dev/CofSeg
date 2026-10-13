@@ -274,13 +274,16 @@ class FlowerStore:
                 r[k] = v if isinstance(v, str) else json.dumps(v)
             r["updated"] = now()
             rows[key] = r
-            buf = io.StringIO()
-            wr = csv.DictWriter(buf, fieldnames=STATUS_COLS, lineterminator="\n")
-            wr.writeheader()
-            for k in sorted(rows, key=lambda k: (k[2], k[0], k[1])):
-                wr.writerow({c: rows[k].get(c, "") for c in STATUS_COLS})
-            _atomic_bytes(self.status_path(), buf.getvalue().encode("utf-8"))
+            self._write_status(rows)
             return r
+
+    def _write_status(self, rows):
+        buf = io.StringIO()
+        wr = csv.DictWriter(buf, fieldnames=STATUS_COLS, lineterminator="\n")
+        wr.writeheader()
+        for k in sorted(rows, key=lambda k: (k[2], k[0], k[1])):
+            wr.writerow({c: rows[k].get(c, "") for c in STATUS_COLS})
+        _atomic_bytes(self.status_path(), buf.getvalue().encode("utf-8"))
 
     # --- vòng
     def round_path(self, rnd):
@@ -303,6 +306,49 @@ class FlowerStore:
             for p in sorted(d.glob("*.json")):
                 out[p.stem] = json.loads(p.read_text(encoding="utf-8"))
         return out
+
+    def claim(self, flat, rnd):
+        """Ghi ảnh vào vòng `rnd` (một ảnh chỉ thuộc một vòng), chưa cần nét nào."""
+        with self.lock:
+            doc = self.load_ops(flat)
+            if not doc.get("round"):
+                doc["round"] = rnd
+                self.save_ops(flat, doc)
+            return doc
+
+    def add_round_items(self, rnd, items):
+        """Thêm nhiều tán vào vòng chọn tay một lần; tán đã có thì bỏ qua."""
+        with self.lock:
+            doc = self.load_round(rnd)
+            have = {(it["image"], int(it["crown"])) for it in doc["items"]}
+            new = [it for it in items if (it["image"], int(it["crown"])) not in have]
+            if new:
+                doc["items"].extend(new)
+                self.save_round(rnd, doc)
+            return doc
+
+    def drop_image(self, flat, rnd):
+        """Bỏ ảnh CHƯA CÓ NÉT nào khỏi vòng chọn tay: tán khỏi danh sách vòng,
+        dòng trạng thái của ảnh ở vòng đó, nền máy tô và mask của ảnh. Ảnh đã có
+        nét thì không đụng gì, trả False."""
+        with self.lock:
+            doc = self.load_ops(flat)
+            if doc["ops"]:
+                return False
+            if doc.get("round") == rnd:
+                doc["round"] = None
+                self.save_ops(flat, doc)
+            rd = self.load_round(rnd)
+            rd["items"] = [it for it in rd["items"] if it["image"] != flat]
+            self.save_round(rnd, rd)
+            rows = self.read_status()
+            keep = {k: v for k, v in rows.items() if not (k[0] == flat and k[2].split("@", 1)[0] == rnd)}
+            if len(keep) != len(rows):
+                self._write_status(keep)
+            for p in [self.base_path(flat)] + list(self.root.glob("masks*/" + os.path.splitext(flat)[0] + ".png")):
+                if p.exists():
+                    p.unlink()
+            return True
 
     def add_round_item(self, rnd, item):
         """Thêm tán vào vòng chọn tay (lần đầu có nét); có rồi thì thôi."""

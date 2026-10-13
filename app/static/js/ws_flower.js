@@ -11,6 +11,8 @@ let flImgs={},flStroke=null,flMouse=null,flSpace=false,flBusy=false,flTok=0,flCf
 // tán là mở tán đó. flPanAt = chỗ bắt đầu kéo, để phân biệt bấm với kéo.
 let flPanAt=null;
 let flQueue=null,flPending=null,flSnap=false,flQTok=0;
+// Vòng chọn tay: ảnh đang mở thuộc vòng nào (null = chưa thuộc vòng nào).
+let flImgRound=null;
 // Đồng hồ theo tán: chỉ đếm khi có thao tác trong 60 giây gần nhất.
 let flSecs={},flLast=0,flTick=null;
 function flKey(k){return current+'#'+k;}
@@ -41,7 +43,7 @@ async function flLoadConfig(){const tok=++flCfgTok;let d=null;
 async function flLoadCrowns(){if(!current||!flRound)return;const who=current,tok=++flTok;
  let d=null;try{d=await(await fetch('/api/fl/crowns?name='+encodeURIComponent(who)+'&round='+encodeURIComponent(flRound)+'&who='+encodeURIComponent(annot),{cache:'no-store'})).json();}catch(e){d=null;}
  if(tok!==flTok||who!==current)return;
- flCrowns=(d&&d.crowns)||[];flCrownsFor=who;
+ flCrowns=(d&&d.crowns)||[];flCrownsFor=who;flImgRound=(d&&d.round)||null;flRenderPick();
  if(flCrown>=0&&!flCur())flCrown=-1;
  flRender();if(flCrown>=0)flFetchLayers();draw();
  // N / hàng đợi vừa đổi ảnh: mở luôn tán đang chờ khi ảnh đã nạp xong.
@@ -206,19 +208,21 @@ tabRegister({id:'flower',inspTitle:'Tán đang gán',
 // --- vòng đã dựng: tiến độ, hàng đợi, đồng thuận -------------------------------
 function flGo(it){if(it.name===current){flOpen(it.crown);return;}flPending={name:it.name,crown:it.crown};selectImg(it.name);}
 async function flLoadQueue(){const r=flRoundObj(),tok=++flQTok;
- if(!r||(r.pick&&r.pick.mode==='manual')||!r.built){flQueue=null;flRenderQueue();return;}
+ if(!r||!r.built){flQueue=null;flRenderQueue();return;}
  let d=null;try{d=await(await fetch('/api/fl/queue?round='+encodeURIComponent(flRound)+'&who='+encodeURIComponent(annot),{cache:'no-store'})).json();}catch(e){d=null;}
  if(tok!==flQTok)return;flQueue=(d&&d.ok)?d:null;flRenderQueue();}
 function flRenderQueue(){const r=flRoundObj(),manualPick=!!(r&&r.pick&&r.pick.mode==='manual'),built=!!(r&&r.built);
  $('flBuildBox').hidden=!(r&&!manualPick&&!built);$('flCloseBox').hidden=!(r&&r.kind==='review'&&built);
  $('flSnap').hidden=!(r&&r.kind==='manual');if($('flSnap').hidden&&flSnap)setFlSnap(false);
- $('flAgreeBox').hidden=!(r&&built&&(r.double||r.kind==='manual'));$('flAgreeAB').hidden=!(r&&r.double);
+ $('flAgreeBox').hidden=!(r&&built&&(r.double||r.kind==='manual'));$('flAgreeAB').hidden=!(r&&r.double);flRenderPick();
  const pg=$('flProg');pg.innerHTML='';const q=$('flQueue');q.innerHTML='';
  if(!flQueue){$('flQCount').textContent=manualPick?'chọn tay':'—';
-  if(manualPick){const s=document.createElement('span');s.className='muted';s.textContent='Vòng chọn tay: bấm vào tán trên ảnh để gán.';q.appendChild(s);}
+  if(manualPick){const s=document.createElement('span');s.className='muted';
+   s.textContent=r.pick.whole_image?'Vòng chọn tay: mở một ảnh rồi bấm ＋ Thêm ảnh này vào vòng; ảnh nào, bao nhiêu ảnh là do bạn chọn.'
+    :'Vòng chọn tay: bấm vào tán trên ảnh để gán.';q.appendChild(s);}
   return;}
  Object.entries(flQueue.progress).forEach(([f,p])=>{const row=document.createElement('div');row.className='row';
-  const a=document.createElement('span');a.textContent=f;const b=document.createElement('b');const i=document.createElement('i');
+  const a=document.createElement('span');a.textContent=f+(p.images?' · '+p.images+' ảnh':'');const b=document.createElement('b');const i=document.createElement('i');
   i.style.width=(p.total?100*p.done/p.total:0)+'%';b.appendChild(i);const c=document.createElement('span');c.textContent=p.done+'/'+p.total;
   row.appendChild(a);row.appendChild(b);row.appendChild(c);pg.appendChild(row);});
  const info=document.createElement('div');info.className='muted';
@@ -232,6 +236,19 @@ function flRenderQueue(){const r=flRoundObj(),manualPick=!!(r&&r.pick&&r.pick.mo
   b.title=x.name+' · tán '+(x.crown+1);b.appendChild(i);b.appendChild(s);
   if(x.reason){const em=document.createElement('em');em.textContent=x.reason==='uncertain'?('kém chắc'+(x.unc!=null?' '+x.unc.toFixed(2).replace('.',','):'')):'ngẫu nhiên';b.appendChild(em);}
   b.onclick=()=>flGo(x);q.appendChild(b);});}
+// Nút thêm / bỏ ảnh đang mở của vòng chọn tay.
+function flRenderPick(){const r=flRoundObj(),b=$('flPick'),info=$('flPickInfo');
+ const show=!!(r&&r.pick&&r.pick.mode==='manual'&&r.kind!=='review'&&current&&flCrownsFor===current&&flCrowns.length);
+ $('flPickBox').hidden=!show;if(!show)return;
+ const n=flCrowns.length;b.disabled=false;
+ if(flImgRound===flRound){b.textContent='－ Bỏ ảnh này khỏi vòng';info.textContent='ảnh đang thuộc vòng này · '+n+' tán';}
+ else if(flImgRound){b.textContent='Ảnh thuộc vòng khác';b.disabled=true;info.textContent='ảnh đã thuộc vòng '+flImgRound;}
+ else{b.textContent='＋ Thêm ảnh này vào vòng';info.textContent=n+' tán sẽ vào vòng '+flRound;}}
+async function flPickImage(){const r=flRoundObj();if(!r||!current||flBusy)return;
+ const action=flImgRound===flRound?'remove':'add';
+ try{const j=await flApi('/api/fl/round/image',{round:flRound,name:current,action});
+  $('hint').textContent=(action==='add'?'✔ Đã thêm ảnh vào vòng ':'✔ Đã bỏ ảnh khỏi vòng ')+flRound+' · vòng có '+j.images+' ảnh, '+j.crowns+' tán.';
+  await flLoadConfig();await flLoadQueue();await flLoadCrowns();}catch(e){flErr(e);}}
 function setFlSnap(on){flSnap=on;$('flSnap').setAttribute('aria-pressed',on);}
 async function flBuild(){try{const j=await flApi('/api/fl/round/build',{round:flRound});
   $('flBuildInfo').textContent='✔ '+j.n_items+' tán · '+Object.entries(j.by_field).map(([f,v])=>f+' '+v.crowns).join(' · ');
