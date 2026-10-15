@@ -310,8 +310,22 @@ class YoloTrainer(Trainer):
     def fit(self) -> dict:
         from ultralytics import YOLO
 
-        model = YOLO(self.model_name)
+        if self.resume:
+            last_pt = self.run_dir / "ultralytics" / "weights" / "last.pt"
+            if not last_pt.exists():
+                last_pt = self.run_dir / "weights" / "last.pt"
+            if not last_pt.exists():
+                raise SystemExit(
+                    f"Không thấy last.pt trong {self.run_dir}: không có gì để resume.\n"
+                    "  --resume chỉ dùng cho lượt bị ngắt giữa chừng."
+                )
+            print(f"Chạy tiếp từ {last_pt}")
+            model = YOLO(str(last_pt))
+        else:
+            model = YOLO(self.model_name)
         args = dict(self.train_args)
+        if self.resume:
+            args["resume"] = True
         # Ultralytics tự quản lý cây thư mục riêng của nó; neo vào run_dir để
         # mọi thứ của một lần chạy nằm chung một chỗ.
         args.update(

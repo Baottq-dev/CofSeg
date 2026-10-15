@@ -112,6 +112,9 @@ def main() -> int:
     # ultralytics: --fraction 0.05 (tỉ lệ tập train).
     ap.add_argument("--runs", default="runs", help="thư mục gốc chứa kết quả")
     ap.add_argument("--name", default=None, help="tên lần chạy (mặc định lấy từ config)")
+    ap.add_argument("--resume", default=None, metavar="THƯ_MỤC_RUN",
+                    help="chạy tiếp một lượt bị ngắt, viết tiếp vào chính thư mục đó "
+                         "— gõ lại ĐÚNG lệnh cũ rồi thêm cờ này")
     a, extra = ap.parse_known_args()
 
     # --data đứng TRƯỚC --set trong danh sách ghi đè, nên --set thắng nếu ai
@@ -182,18 +185,28 @@ def main() -> int:
     # Bộ fold đứng trước nhãn tham số: hai bộ fold cùng đặt tên f1..f6, nên
     # thiếu nó thì hai lần chạy khác hẳn nhau ra tên thư mục giống hệt.
     ds = artifacts.dataset_tag(cfg)
-    run_dir = artifacts.create_run_dir(
-        a.runs, "probe" if a.probe else "train", name,
-        "_".join(p for p in (ds, trainer_cls.run_tag(cfg)) if p)
-    )
-    artifacts.write_env(run_dir, cfg)
-    artifacts.snapshot_config(run_dir, cfg)
-    print(f"Lần chạy: {run_dir}")
+    if a.resume:
+        if a.probe:
+            raise SystemExit("--resume và --probe loại trừ nhau: dò VRAM không "
+                             "nối tiếp cái gì cả.")
+        run_dir = Path(a.resume)
+        env_name = artifacts.check_resume(run_dir, cfg)
+        artifacts.write_env(run_dir, cfg, name=env_name)
+        print(f"Chạy tiếp: {run_dir}  (môi trường lượt này: {env_name})")
+    else:
+        run_dir = artifacts.create_run_dir(
+            a.runs, "probe" if a.probe else "train", name,
+            "_".join(p for p in (ds, trainer_cls.run_tag(cfg)) if p)
+        )
+        artifacts.write_env(run_dir, cfg)
+        artifacts.snapshot_config(run_dir, cfg)
+        print(f"Lần chạy: {run_dir}")
 
     # Từ đây trở đi mọi thứ hiện trên màn hình được chép nguyên văn vào
     # run.log, kể cả output của ultralytics. Xuất xứ lần chạy nằm ở env.json
     # và config.yaml cùng thư mục, nên log không cần header.
-    with runlog.capture(run_dir / "run.log", raw=not a.log_clean) as log_path:
+    with runlog.capture(run_dir / "run.log", raw=not a.log_clean,
+                        append=bool(a.resume)) as log_path:
       # Bắt lỗi BÊN TRONG khối with: nếu để ngoại lệ thoát ra, luồng đã được
       # trả về nguyên trạng trước khi Python in traceback, và traceback sẽ
       # không có trong log — đúng lúc cần nó nhất.
@@ -202,6 +215,7 @@ def main() -> int:
             print("Ghi đè từ dòng lệnh:", json.dumps(hp, ensure_ascii=False))
 
         trainer = trainer_cls(cfg, run_dir)
+        trainer.resume = bool(a.resume)
 
         info = trainer.prepare()
         if info:
