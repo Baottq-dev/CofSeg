@@ -207,15 +207,19 @@ class EpochLog:
     Cột `sem_loss` của results.csv giờ là tổng ba kênh, nên từng kênh ghi ở
     đây: loss tiền cảnh (chưa nhân gain), loss dải, loss khoảng cách; xác suất
     dải trung bình trên pixel dải và trên tiền cảnh ngoài dải (hai số này tách
-    nhau là dấu hiệu đầu đã học được dải); trọng số one2many lúc cuối epoch.
+    nhau là dấu hiệu đầu đã học được dải); trọng số one2many DÙNG TRONG epoch
+    đó. Trọng số đọc lúc bắt đầu epoch, vì trainer gọi `criterion.update()`
+    trước `on_train_epoch_end`: đọc lúc cuối là đọc trọng số của epoch sau.
     Chỉ ghi nhánh one2many: nhánh one2one tính trên cùng dự đoán đã tách
     gradient nên cho đúng các số đó.
     """
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
+        self.w_o2m = float("nan")
 
     def start(self, crit, epoch: int) -> None:
+        self.w_o2m = float(getattr(crit, "o2m", float("nan")))
         for _, part in _parts(crit):
             part.stats.zero_()
 
@@ -233,7 +237,7 @@ class EpochLog:
                 f"{name}_p_band_in": round(p_in / n_in, 4) if n_in else float("nan"),
                 f"{name}_p_band_out": round(p_out / n_out, 4) if n_out else float("nan"),
             })
-        row["w_o2m"] = round(float(getattr(crit, "o2m", float("nan"))), 4)
+        row["w_o2m"] = round(self.w_o2m, 4)
         new = not self.path.exists()
         with self.path.open("a", newline="", encoding="utf-8") as fh:
             wr = csv.DictWriter(fh, fieldnames=list(row))

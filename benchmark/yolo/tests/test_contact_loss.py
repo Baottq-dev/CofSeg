@@ -250,3 +250,19 @@ def test_nhat_ky_epoch(tmp_path):
     assert float(r["one2many_band"]) > 0 and float(r["one2many_dist"]) > 0
     assert 0 < float(r["one2many_p_band_in"]) < 1
     assert float(r["w_o2m"]) == pytest.approx(0.8)
+
+
+def test_nhat_ky_ghi_trong_so_one2many_cua_chinh_epoch_do(tmp_path):
+    """Trainer gọi update() trước on_train_epoch_end; cột w_o2m vẫn phải là
+    trọng số đã dùng trong epoch, không phải trọng số của epoch sau."""
+    m = _expanded()
+    m.args.epochs = 3
+    crit = ct.build_criterion(m, BLOCK)
+    log = ct.EpochLog(tmp_path / "mask_head_tc2.csv")
+    for epoch in range(2):
+        log.start(crit, epoch)
+        crit(_forward(m), _batch())
+        crit.update()                                     # như trainer.py, trước callback cuối epoch
+        log.end(crit, epoch)
+    rows = list(csv.DictReader((tmp_path / "mask_head_tc2.csv").open(encoding="utf-8")))
+    assert [float(r["w_o2m"]) for r in rows] == pytest.approx([0.8, 0.45])
