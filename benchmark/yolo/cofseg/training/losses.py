@@ -70,6 +70,12 @@ LOSSES: dict = {
         "check": _check_dice,
         "module": "dice_loss",
     },
+    "nosem": {
+        "doc": "đối chứng của TC2: tắt loss ngữ nghĩa phụ của Proto26 (chỉ YOLO26), mọi loss khác giữ nguyên",
+        "params": {},
+        "check": lambda p: None,
+        "module": "nosem_loss",
+    },
 }
 
 
@@ -163,7 +169,8 @@ def describe_active(block: dict | None) -> str:
     if not block:
         return "Loss: mặc định của ultralytics"
     return "Loss: " + "; ".join(
-        f"{n} ({', '.join(f'{k} {_fmt(v)}' for k, v in block[n].items())})" for n in block["use"]
+        f"{n} ({', '.join(f'{k} {_fmt(v)}' for k, v in block[n].items())})" if block[n] else n
+        for n in block["use"]
     )
 
 
