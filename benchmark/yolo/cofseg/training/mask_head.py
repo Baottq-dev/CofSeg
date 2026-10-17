@@ -10,6 +10,10 @@ file config.
 - `type: gpr` — T1, lấy mẫu lại prototype có dẫn hướng (M1) cùng loss biên
   hiệu chỉnh theo nhiễu nhãn (L3) (configs/train/yolo26s-gpr.yaml,
   gpr_head.py, gpr_train.py).
+- `type: contact` — TC2, nhãn phụ có dải tiếp giáp và khoảng cách tới biên
+  cho đầu `semseg` của Proto26, chỉ dùng lúc train; đầu mặt nạ và đường suy
+  luận giữ nguyên (configs/train/yolo26s-tc2.yaml, contact_targets.py,
+  contact_train.py).
 
 File này chỉ kiểm tham số và đặt nhãn, không import torch hay ultralytics,
 để --print-config chạy được tức thì.
@@ -39,7 +43,16 @@ GPR_DEFAULTS: dict = {
     "max_pos": 64,        # số tán tối đa mỗi ảnh được tính loss mặt nạ
 }
 
-TYPES = {"dynamic": DEFAULTS, "gpr": GPR_DEFAULTS}
+#: Cấu hình đã chốt cho TC2. Hai kênh mới cộng lại nặng bằng nửa loss ngữ
+#: nghĩa gốc, để gradient mới vào neck dùng chung ở mức thấp.
+CONTACT_DEFAULTS: dict = {
+    "type": "contact",
+    "band": 2,            # bán kính dải tiếp giáp, ô lưới nhãn (mask_ratio 4: ≈ 8 px ảnh đầu vào)
+    "w_band": 0.25,       # trọng số kênh dải tiếp giáp so với kênh tiền cảnh gốc
+    "w_dist": 0.25,       # trọng số kênh khoảng cách tới biên
+}
+
+TYPES = {"dynamic": DEFAULTS, "gpr": GPR_DEFAULTS, "contact": CONTACT_DEFAULTS}
 
 
 def _num(v) -> bool:
@@ -66,6 +79,8 @@ def check(block) -> dict | None:
             hint = f" Ý bạn là: {', '.join(near)}?" if near else ""
             raise SystemExit(f"mask_head ({kind}) không có khoá {k!r}.{hint} Có: {', '.join(defaults)}")
     out = {**defaults, **block}
+    if kind == "contact":
+        return _check_contact(out)
     mp = out["max_pos"]
     if not _int(mp) or mp < 1:
         raise SystemExit(f"mask_head.max_pos phải là số nguyên >= 1, nhận được {mp!r}")
@@ -101,6 +116,16 @@ def _check_gpr(out: dict) -> dict:
     return out
 
 
+def _check_contact(out: dict) -> dict:
+    if not _int(out["band"]) or out["band"] < 1:
+        raise SystemExit(f"mask_head.band phải là số nguyên >= 1 (ô lưới nhãn), nhận được {out['band']!r}")
+    for k in ("w_band", "w_dist"):
+        if not _num(out[k]) or float(out[k]) < 0:
+            raise SystemExit(f"mask_head.{k} phải là số >= 0, nhận được {out[k]!r}")
+        out[k] = float(out[k])
+    return out
+
+
 def check_train(block: dict | None, train: dict) -> None:
     """Ràng buộc giữa khối `mask_head` và khối `train` của cùng config."""
     if block and block["type"] == "gpr" and train.get("mask_ratio", 4) != 1:
@@ -108,10 +133,30 @@ def check_train(block: dict | None, train: dict) -> None:
             "Config GPR cần train.mask_ratio: 1: loss NCB tính tỉ lệ phủ từ nhãn ở đủ độ phân "
             f"giải đầu vào. Đang là {train.get('mask_ratio', 4)!r}."
         )
+    if block and block["type"] == "contact":
+        # Độ rộng dải tính bằng ô lưới nhãn; đổi mask_ratio là đổi nghĩa của nó.
+        if train.get("mask_ratio", 4) != 4:
+            raise SystemExit(
+                "Config TC2 cần train.mask_ratio: 4: mask_head.band tính bằng ô lưới nhãn 1/4. "
+                f"Đang là {train.get('mask_ratio', 4)!r}."
+            )
+        # Nhãn dải và khoảng cách dựng từ bản đồ chỉ số tán của overlap_mask.
+        if train.get("overlap_mask", True) is not True:
+            raise SystemExit("Config TC2 cần train.overlap_mask: true: nhãn phụ dựng từ bản đồ chỉ số tán.")
 
 
 def tag(block: dict) -> str:
-    """Hậu tố cho tên lượt chấm: `dyn` hoặc `gpr`, kèm mọi tham số khác mặc định."""
+    """Hậu tố cho tên lượt chấm: `dyn`, `gpr` hoặc `tc2`, kèm mọi tham số khác mặc định."""
+    if block["type"] == "contact":
+        d = CONTACT_DEFAULTS
+        parts = ["tc2"]
+        if block["band"] != d["band"]:
+            parts.append(f"b{block['band']}")
+        if block["w_band"] != d["w_band"]:
+            parts.append(f"wb{block['w_band']:g}")
+        if block["w_dist"] != d["w_dist"]:
+            parts.append(f"wd{block['w_dist']:g}")
+        return "-".join(parts)
     if block["type"] == "gpr":
         d = GPR_DEFAULTS
         parts = ["gpr"]
@@ -144,6 +189,9 @@ def describe_active(block: dict | None) -> str:
     """Một dòng cho run.log, in cả khi là đầu gốc."""
     if not block:
         return "Đầu mặt nạ: gốc của ultralytics (prototype x hệ số, cắt sát box)"
+    if block["type"] == "contact":
+        return ("Đầu mặt nạ: gốc; TC2 thêm nhãn phụ cho semseg "
+                f"(dải tiếp giáp {block['band']} ô, w_band {block['w_band']:g}, w_dist {block['w_dist']:g})")
     if block["type"] == "gpr":
         return ("Đầu mặt nạ: GPR + loss NCB "
                 f"(stages {block['stages']}, detach_guide {block['detach_guide']}, groups {block['groups']}, "

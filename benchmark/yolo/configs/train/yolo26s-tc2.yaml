@@ -1,0 +1,30 @@
+# YOLO26s-seg cho TC2: nhãn phụ có dải tiếp giáp và khoảng cách tới biên cho
+# đầu `semseg` của Proto26.
+#
+# Đầu `semseg` chỉ chạy lúc train và bị xoá khi fuse; nhãn gốc của nó là hợp
+# mọi tán, nên hai tán chạm nhau là một khối liền và đầu này không nói gì về
+# chỗ hai tán gặp nhau. TC2 thêm hai kênh nhãn cho đầu đó. Mọi thứ khác —
+# trọng số khởi đầu COCO, imgsz, batch, lịch học, tăng cường, đầu mặt nạ, cách
+# cắt mặt nạ — lấy nguyên từ yolo26s.yaml, nên checkpoint sau fuse có đúng số
+# tham số và FLOPs của baseline. Thiết kế: cofseg/training/contact_targets.py
+# và cofseg/training/contact_train.py.
+#
+#     python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s-tc2.yaml --data data/export/field/f1
+#
+# Seed khác: thêm --seed 1. Chấm bằng đúng config chấm của yolo26s; lượt chấm
+# tự mang hậu tố -tc2.
+base: yolo26s.yaml
+name: yolo26s-seg-tc2
+
+mask_head:
+  type: contact
+  # Bán kính dải tiếp giáp, tính bằng ô lưới nhãn (mask_ratio 4): 2 ô ≈ 8 px
+  # ảnh đầu vào, ≈ 20 px ảnh gốc. Dải rộng khoảng 4 ô, còn khoảng 2 ô ở stride
+  # 8 của semseg; hẹp hơn thì mất khi thu nhỏ. Vẫn rộng hơn nhiều so với
+  # nhiễu vẽ nhãn (≈ 2,4 px đầu vào) và chỉ bằng 8-13% đường kính tán trung vị.
+  band: 2
+  # Trọng số hai kênh mới so với kênh tiền cảnh gốc: cộng lại bằng nửa loss
+  # ngữ nghĩa gốc, để gradient mới vào neck dùng chung ở mức thấp. Cả hai vẫn
+  # đi qua trọng số one2many của ProgLoss như kênh gốc: chỉ nhãn đổi.
+  w_band: 0.25
+  w_dist: 0.25

@@ -156,10 +156,10 @@ class YoloTrainer(Trainer):
     def apply_loss(cls, cfg: dict, spec: str | None) -> str:
         """`--loss mask_iou`: xem losses.py. Không có cờ = loss gốc của ultralytics.
 
-        Khối `mask_head:` (A1 hoặc GPR, xem mask_head.py) cũng được kiểm ở đây:
-        train.py gọi bước này cho MỌI lượt chạy trước khi tạo thư mục run, nên
-        config sai bị chặn trước khi để lại một thư mục rỗng. Cả hai có loss mặt
-        nạ riêng nên không đi chung với --loss.
+        Khối `mask_head:` (A1, GPR hoặc TC2, xem mask_head.py) cũng được kiểm ở
+        đây: train.py gọi bước này cho MỌI lượt chạy trước khi tạo thư mục run,
+        nên config sai bị chặn trước khi để lại một thư mục rỗng. Cả ba thay
+        hàm loss riêng nên không đi chung với --loss.
         """
         from . import losses, mask_head
 
@@ -351,12 +351,14 @@ class YoloTrainer(Trainer):
         if mh_block:
             if mh_block["type"] == "gpr":
                 from .gpr_train import install_log, make_trainer
+            elif mh_block["type"] == "contact":
+                from .contact_train import install_log, make_trainer
             else:
                 from .dyn_train import install_log, make_trainer
 
             # Model.train() tự khởi tạo trainer từ lớp được truyền vào; lớp đó
-            # dựng YOLO26 chuẩn, chuyển đầu (A1) hoặc Proto (GPR) rồi mới nạp
-            # trọng số COCO.
+            # dựng YOLO26 chuẩn, chuyển đầu (A1), Proto (GPR) hoặc lớp cuối
+            # của semseg (TC2) rồi mới nạp trọng số COCO.
             extra["trainer"] = make_trainer(mh_block)
             install_log(model, self.run_dir)
         t0 = time.time()
