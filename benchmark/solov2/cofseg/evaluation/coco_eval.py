@@ -42,7 +42,7 @@ STAT_NAMES = (
 #: đo trên sáu model của bộ này, AP50 chỉ chênh nhau 1.9 điểm (91.7-93.6) trong
 #: khi AP90 chênh 7.4 điểm (12.1-19.4), và Mask2Former từ hạng 4 theo AP lên
 #: hạng 1 theo AP90. Không có cột này thì chênh lệch đó phải tính bằng script
-#: ngoài — đã xảy ra một lần, xem docs/reports/model.
+#: ngoài — đã xảy ra một lần, xem docs/4_benchmark.
 #:
 #: 0.95 lấy về cho đủ dải nhưng ở bộ này nó xấp xỉ 0 trên mọi model
 #: (0.20-0.65 trung bình sáu ruộng, từng ruộng có giá trị 0.01), nên KHÔNG dùng

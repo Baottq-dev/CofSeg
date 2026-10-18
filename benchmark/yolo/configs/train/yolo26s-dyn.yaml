@@ -3,7 +3,7 @@
 # Mọi thứ khác — trọng số khởi đầu COCO, imgsz, batch, lịch học, tăng cường —
 # lấy nguyên từ yolo26s.yaml, nên khác biệt với lượt baseline chỉ là đầu mặt
 # nạ. Thiết kế và số đo dẫn tới nó: cofseg/training/dyn_head.py và
-# docs/reports/model/phan_tich_chuyen_sau_va_de_xuat_kien_truc_2026-10-04.md.
+# docs/5_cai_tien/1_phan_tich_dau/phan_tich_chuyen_sau_va_de_xuat_kien_truc_2026-10-04.md.
 #
 #     python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s-dyn.yaml --data data/export/field/f1
 #

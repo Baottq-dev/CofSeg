@@ -2,8 +2,8 @@
 
 YOLO-seg dựng mặt nạ mỗi tán bằng tổ hợp TUYẾN TÍNH 32 prototype dùng chung cả
 ảnh, rồi CẮT bằng box dự đoán (`ops.process_mask_native` -> `crop_mask`). Đo
-trên R2 (docs/reports/model/phan_tich_chuyen_sau_va_de_xuat_kien_truc_
-2026-10-04.md, mục 3.3-3.4): 21% mặt nạ có cạnh bị box cắt thẳng, 31% pixel
+trên R2 (docs/5_cai_tien/1_phan_tich_dau/phan_tich_chuyen_sau_va_de_xuat_
+kien_truc_2026-10-04.md, mục 3.3-3.4): 21% mặt nạ có cạnh bị box cắt thẳng, 31% pixel
 thừa lấn sang tán bên cạnh, 49% pixel sai nằm xa biên hơn 12 px. Chính YOLACT,
 gốc của cách dựng này, nhận lỗi "leakage": mặt nạ được cắt SAU khi dựng nên
 mạng không học dập nhiễu ngoài box.

@@ -2,7 +2,7 @@
 
     python scripts/summarize_folds.py --eval benchmark/*/runs/eval
     python scripts/summarize_folds.py --eval benchmark/*/runs/eval --dataset block
-    python scripts/summarize_folds.py --eval runs/eval --out docs/reports/bang_ket_qua_2026-09-30.md
+    python scripts/summarize_folds.py --eval runs/eval --out docs/4_benchmark/bang_ket_qua_2026-09-30.md
 
 Đọc <thư mục eval>/<...>/{config.yaml,metrics.json} của các lần chấm tên
 "<model>_<fold>" (score_remote.py đặt tên này), ánh xạ fold -> ruộng test

@@ -4,7 +4,7 @@
 # Mọi thứ khác — trọng số khởi đầu COCO, imgsz, batch, lịch học, tăng cường —
 # lấy nguyên từ yolo26s.yaml, nên khác biệt với R2 chỉ là nhánh mặt nạ và loss
 # của nó. Thiết kế và số đo dẫn tới nó: cofseg/training/gpr_head.py,
-# cofseg/training/gpr_train.py và docs/reports/model/de_xuat_module_yolo26_2026-10-05.md.
+# cofseg/training/gpr_train.py và docs/5_cai_tien/2_dot_L1_T1/de_xuat_module_yolo26_2026-10-05.md.
 #
 #     python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s-gpr.yaml --data data/export/field/f1
 #

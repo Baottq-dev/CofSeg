@@ -2,7 +2,7 @@
 
 L3 — NCB, loss biên hiệu chỉnh theo nhiễu nhãn. Gốc giám sát mặt nạ bằng nhãn
 NHỊ PHÂN ở lưới 1/4 (`mask_ratio: 4`): tự đặt trần IoU 0,962 lên chính model
-(docs/reports/model/phan_tich_sau_L1_L2_A1_va_de_xuat_2026-10-05.md), và bắt
+(docs/5_cai_tien/2_dot_L1_T1/phan_tich_sau_L1_L2_A1_va_de_xuat_2026-10-05.md), và bắt
 model học theo một lần vẽ ngẫu nhiên của người gán nhãn. NCB:
 
 1. nhãn raster ở đủ độ phân giải đầu vào (`mask_ratio: 1`), avg-pool về lưới

@@ -7,7 +7,7 @@ dùng lúc suy luận — mỗi tán có đúng một anchor dương và mục t
 là CIoU hộp của anchor đó. Trong khi AP mặt nạ xếp hạng theo điểm và chấm theo
 IoU MẶT NẠ. Đo trên đợt 2: điểm của YOLO26s chỉ tương quan rho = 0,64 với IoU
 mặt nạ thật, và xếp lại theo IoU thật thì được +3,58 AP ở cả sáu ruộng
-(docs/reports/model/phan_tich_chuyen_sau_va_de_xuat_kien_truc_2026-10-04.md).
+(docs/5_cai_tien/1_phan_tich_dau/phan_tich_chuyen_sau_va_de_xuat_kien_truc_2026-10-04.md).
 
 Thay đổi duy nhất, chỉ ở mục tiêu phân loại của anchor dương:
 

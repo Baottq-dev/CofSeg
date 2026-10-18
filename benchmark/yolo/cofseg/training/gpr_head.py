@@ -4,8 +4,8 @@ Proto26 của YOLO26-seg dựng 32 prototype ở stride 4 HOÀN TOÀN từ đặ
 stride 8: P3 + P4↑ + P5↑ -> feat_fuse -> cv1 -> ConvTranspose2d x2 -> cv2 -> cv3
 (`block.py:2005-2017`, `block.py:97-104`). Không đặc trưng stride 4 nào của
 backbone đi vào, nên thông tin thật của mặt nạ ở lưới 20 px ảnh gốc, còn lưới
-10 px chỉ là nội suy. Đo trên R2 (docs/reports/model/de_xuat_module_yolo26_
-2026-10-05.md, mục 1.1): 76% pixel sai của tán khớp nằm ở biên tán–đất, dải
+10 px chỉ là nội suy. Đo trên R2 (docs/5_cai_tien/2_dot_L1_T1/de_xuat_module_
+yolo26_2026-10-05.md, mục 1.1): 76% pixel sai của tán khớp nằm ở biên tán–đất, dải
 sai dày 10,2 px ảnh gốc — đúng một ô prototype.
 
 GPR thay phép phóng mù đó bằng phép LẤY MẪU LẠI có độ lệch, độ lệch tính từ
