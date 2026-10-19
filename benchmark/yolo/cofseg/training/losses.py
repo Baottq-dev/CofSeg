@@ -48,6 +48,16 @@ def _check_dice(p: dict) -> None:
         raise SystemExit(f"loss.dice.weight phải là số >= 0, nhận được {w!r}")
 
 
+def _number(name: str, v, lo: float = 0.0) -> None:
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or float(v) < lo:
+        raise SystemExit(f"loss.{name} phải là số >= {lo:g}, nhận được {v!r}")
+
+
+def _check_vfl(p: dict) -> None:
+    _number("vfl.alpha", p["alpha"])
+    _number("vfl.gamma", p["gamma"])
+
+
 #: tên -> mô tả, tham số (mặc định, nhãn ngắn trong tên thư mục, giải thích), hàm kiểm.
 #: Thứ tự khai ở đây là thứ tự trong tên thư mục, nên `--loss b,a` và
 #: `--loss a,b` ra cùng một tên.
@@ -75,6 +85,15 @@ LOSSES: dict = {
         "params": {},
         "check": lambda p: None,
         "module": "nosem_loss",
+    },
+    "vfl": {
+        "doc": "TH2: Varifocal thay BCE của điểm, chỉ ở đầu one-to-many; đích TAL giữ nguyên",
+        "params": {
+            "alpha": (0.75, "a", "trọng số âm tính alpha·p^gamma; dương tính nhân với chính đích của nó"),
+            "gamma": (2.0, "g", "số mũ của p ở âm tính: âm tính càng dễ càng nhẹ"),
+        },
+        "check": _check_vfl,
+        "module": "vfl_loss",
     },
 }
 
