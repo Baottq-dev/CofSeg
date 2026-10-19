@@ -58,6 +58,10 @@ def _check_vfl(p: dict) -> None:
     _number("vfl.gamma", p["gamma"])
 
 
+def _check_ncb(p: dict) -> None:
+    _number("ncb.sigma", p["sigma"])
+
+
 #: tên -> mô tả, tham số (mặc định, nhãn ngắn trong tên thư mục, giải thích), hàm kiểm.
 #: Thứ tự khai ở đây là thứ tự trong tên thư mục, nên `--loss b,a` và
 #: `--loss a,b` ra cùng một tên.
@@ -94,6 +98,17 @@ LOSSES: dict = {
         },
         "check": _check_vfl,
         "module": "vfl_loss",
+    },
+    "ncb": {
+        "doc": "TH1: BCE mặt nạ với nhãn mềm theo tỉ lệ phủ của từng ô (NCB của T1, Proto gốc, không GPR)",
+        "params": {
+            "sigma": (2.4, "s", "Gauss làm mềm nhãn, px ảnh đầu vào (bằng nhiễu nhãn đã đo); 0 = chỉ tỉ lệ phủ"),
+        },
+        "check": _check_ncb,
+        "module": "ncb_loss",
+        # Tỉ lệ phủ phải tính từ nhãn raster ở đủ độ phân giải: mask_ratio 4
+        # chỉ còn nhãn nhị phân ở lưới 1/4, đúng thứ NCB thay đi.
+        "train": {"mask_ratio": 1},
     },
 }
 
@@ -162,6 +177,15 @@ def apply(cfg: dict, spec: str | None) -> str:
         defaults = {k: v[0] for k, v in spec_["params"].items()}
         merged = {**defaults, **given}
         spec_["check"](merged)
+        # Tham số train mà biến thể bắt buộc: không tự đặt hộ, để lệnh train
+        # tự nói ra nó khác baseline ở đâu.
+        for k, need in spec_.get("train", {}).items():
+            got = (cfg.get("train") or {}).get(k)
+            if got != need:
+                raise SystemExit(
+                    f"--loss {name} cần train.{k}={need} (đang là {got!r}). "
+                    f"Thêm --set train.{k}={need} vào lệnh train."
+                )
         out[name] = merged
         diff = [f"{spec_['params'][k][1]}{_fmt(v)}" for k, v in merged.items() if v != defaults[k]]
         parts.append("-".join([name.replace("_", "-"), *diff]))
@@ -177,6 +201,8 @@ def describe() -> str:
         lines.append(f"  {name}: {spec_['doc']}")
         for k, (default, _tag, doc) in spec_["params"].items():
             lines.append(f"      {name + '.' + k:<24} mặc định {default!r:<7} {doc}")
+        for k, need in spec_.get("train", {}).items():
+            lines.append(f"      cần --set train.{k}={need}")
     lines += ["", "Bật:       --loss dice           (mỗi lượt một biến thể)",
               "Chỉnh:     --loss dice --set loss.dice.weight=2"]
     return "\n".join(lines)

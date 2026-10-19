@@ -67,11 +67,21 @@ def soft_target(gt: torch.Tensor, ratio: int, kernel: torch.Tensor | None) -> to
 
 
 class NCBSegLoss(v8SegmentationLoss):
-    """v8SegmentationLoss với loss mặt nạ NCB ở lưới của prototype."""
+    """v8SegmentationLoss với loss mặt nạ NCB ở lưới của prototype.
 
-    def __init__(self, model, tal_topk: int = 10, tal_topk2: int | None = None):
+    σ (pixel đầu vào) và số anchor dương tối đa mỗi ảnh (0 = không giới hạn)
+    lấy từ cấu hình GPR của model khi không truyền vào; TH1 (`--loss ncb`)
+    truyền thẳng để dùng NCB với Proto gốc.
+    """
+
+    def __init__(self, model, tal_topk: int = 10, tal_topk2: int | None = None, *,
+                 sigma: float | None = None, max_pos: int | None = None):
         super().__init__(model, tal_topk, tal_topk2)
-        self.gpr = find_proto(model).gpr
+        if sigma is None or max_pos is None:
+            gpr = find_proto(model).gpr
+            sigma = gpr["sigma"] if sigma is None else sigma
+            max_pos = gpr["max_pos"] if max_pos is None else max_pos
+        self.sigma, self.max_pos = float(sigma), int(max_pos)
         # n, ΣBCE, ΣIoU cứng (trong box) của các tán đã tính loss trong epoch.
         self.stats = torch.zeros(3, dtype=torch.float64, device=self.device)
 
@@ -123,12 +133,12 @@ class NCBSegLoss(v8SegmentationLoss):
         if h1 != ratio * mh or w1 != ratio * mw:
             raise RuntimeError(
                 f"Nhãn mặt nạ {h1}x{w1} không phải bội nguyên của lưới proto {mh}x{mw}. "
-                "Config GPR cần train.mask_ratio: 1."
+                "NCB cần train.mask_ratio: 1."
             )
         # box theo pixel đầu vào -> ô lưới proto; σ theo pixel đầu vào -> ô
         scale = torch.stack([mw / imgsz[1], mh / imgsz[0]] * 2).to(target_bboxes.device)
-        kernel = gaussian_kernel(float(self.gpr["sigma"]) * mh / float(imgsz[0]), proto.device)
-        cap = int(self.gpr["max_pos"])
+        kernel = gaussian_kernel(self.sigma * mh / float(imgsz[0]), proto.device)
+        cap = self.max_pos
         loss = proto.new_zeros((), dtype=torch.float32)
         used = 0
         for i in range(fg_mask.shape[0]):
