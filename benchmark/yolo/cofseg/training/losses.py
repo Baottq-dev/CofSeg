@@ -62,6 +62,18 @@ def _check_ncb(p: dict) -> None:
     _number("ncb.sigma", p["sigma"])
 
 
+def _integer(name: str, v, lo: int) -> None:
+    if isinstance(v, bool) or not isinstance(v, int) or v < lo:
+        raise SystemExit(f"loss.{name} phải là số nguyên >= {lo}, nhận được {v!r}")
+
+
+def _check_boundary(p: dict) -> None:
+    _number("boundary.weight", p["weight"])
+    _integer("boundary.clip", p["clip"], 1)
+    _integer("boundary.start_epoch", p["start_epoch"], 0)
+    _integer("boundary.ramp_epochs", p["ramp_epochs"], 0)
+
+
 #: tên -> mô tả, tham số (mặc định, nhãn ngắn trong tên thư mục, giải thích), hàm kiểm.
 #: Thứ tự khai ở đây là thứ tự trong tên thư mục, nên `--loss b,a` và
 #: `--loss a,b` ra cùng một tên.
@@ -109,6 +121,17 @@ LOSSES: dict = {
         # Tỉ lệ phủ phải tính từ nhãn raster ở đủ độ phân giải: mask_ratio 4
         # chỉ còn nhãn nhị phân ở lưới 1/4, đúng thứ NCB thay đi.
         "train": {"mask_ratio": 1},
+    },
+    "boundary": {
+        "doc": "TH3: BCE mặt nạ + λ·Boundary loss, khoảng cách có dấu tới biên nhãn cắt ở ±clip ô",
+        "params": {
+            "weight": (0.1, "w", "λ sau khi tăng xong; 0 = y hệt gốc"),
+            "clip": (5, "c", "cắt khoảng cách ở bao nhiêu ô lưới mặt nạ (1 ô ≈ 10 px ảnh gốc)"),
+            "start_epoch": (10, "st", "λ = 0 trong ngần này epoch đầu"),
+            "ramp_epochs": (10, "r", "sau đó tăng tuyến tính lên weight trong ngần này epoch"),
+        },
+        "check": _check_boundary,
+        "module": "boundary_loss",
     },
 }
 
