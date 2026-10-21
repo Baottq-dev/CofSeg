@@ -74,6 +74,13 @@ def _check_boundary(p: dict) -> None:
     _integer("boundary.ramp_epochs", p["ramp_epochs"], 0)
 
 
+def _check_repgt(p: dict) -> None:
+    _number("repgt.weight", p["weight"])
+    s = p["sigma"]
+    if isinstance(s, bool) or not isinstance(s, (int, float)) or not 0.0 <= float(s) < 1.0:
+        raise SystemExit(f"loss.repgt.sigma phải là số trong [0, 1), nhận được {s!r}")
+
+
 #: tên -> mô tả, tham số (mặc định, nhãn ngắn trong tên thư mục, giải thích), hàm kiểm.
 #: Thứ tự khai ở đây là thứ tự trong tên thư mục, nên `--loss b,a` và
 #: `--loss a,b` ra cùng một tên.
@@ -132,6 +139,15 @@ LOSSES: dict = {
         },
         "check": _check_boundary,
         "module": "boundary_loss",
+    },
+    "repgt": {
+        "doc": "TH4: CIoU + λ·RepGT (phạt hộp lấn sang tán bên cạnh), chỉ ở đầu one-to-many",
+        "params": {
+            "weight": (0.5, "w", "λ của RepGT so với CIoU; 0 = y hệt gốc"),
+            "sigma": (0.5, "s", "ngưỡng của Smooth_ln, trong [0, 1): trên ngưỡng thì phạt tuyến tính"),
+        },
+        "check": _check_repgt,
+        "module": "repgt_loss",
     },
 }
 
