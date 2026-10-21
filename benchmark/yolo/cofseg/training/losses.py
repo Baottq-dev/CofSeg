@@ -81,6 +81,10 @@ def _check_repgt(p: dict) -> None:
         raise SystemExit(f"loss.repgt.sigma phải là số trong [0, 1), nhận được {s!r}")
 
 
+def _check_alpha_ciou(p: dict) -> None:
+    _number("alpha_ciou.alpha", p["alpha"], 1.0)
+
+
 #: tên -> mô tả, tham số (mặc định, nhãn ngắn trong tên thư mục, giải thích), hàm kiểm.
 #: Thứ tự khai ở đây là thứ tự trong tên thư mục, nên `--loss b,a` và
 #: `--loss a,b` ra cùng một tên.
@@ -148,6 +152,14 @@ LOSSES: dict = {
         },
         "check": _check_repgt,
         "module": "repgt_loss",
+    },
+    "alpha_ciou": {
+        "doc": "TH5: α-CIoU thay CIoU trong loss hộp, cả hai đầu; bộ gán TAL vẫn dùng CIoU",
+        "params": {
+            "alpha": (3.0, "a", "luỹ thừa của cả ba phần CIoU; 1 = y hệt gốc, lớn hơn = dồn vào hộp IoU cao"),
+        },
+        "check": _check_alpha_ciou,
+        "module": "alpha_ciou_loss",
     },
 }
 
