@@ -104,6 +104,13 @@ def _check_lm1(p: dict) -> None:
         raise SystemExit(f"loss.lm1.bg_top ({p['bg_top']}) phải >= loss.lm1.k ({p['k']})")
 
 
+def _check_lm3(p: dict) -> None:
+    _number("lm3.alpha", p["alpha"], 1.0)
+    _unit("lm3.tau_s", p["tau_s"])
+    _unit("lm3.tau_u", p["tau_u"])
+    _number("lm3.kappa", p["kappa"], 1e-6)
+
+
 #: tên -> mô tả, tham số (mặc định, nhãn ngắn trong tên thư mục, giải thích), hàm kiểm.
 #: Thứ tự khai ở đây là thứ tự trong tên thư mục, nên `--loss b,a` và
 #: `--loss a,b` ra cùng một tên.
@@ -195,6 +202,17 @@ LOSSES: dict = {
         },
         "check": _check_lm1,
         "module": "lm1_loss",
+    },
+    "lm3": {
+        "doc": "LM3: α-CIoU chỉ cho tán đã chắc (điểm và CIoU lớn nhất của tán vượt ngưỡng), tán yếu giữ CIoU gốc",
+        "params": {
+            "alpha": (3.0, "a", "luỹ thừa của α-CIoU ở tán bật cổng; 1 = y hệt gốc"),
+            "tau_s": (0.6, "ts", "ngưỡng điểm lớn nhất của tán để bật cổng"),
+            "tau_u": (0.7, "tu", "ngưỡng CIoU hộp lớn nhất của tán để bật cổng"),
+            "kappa": (0.05, "kp", "độ mềm của cổng sigmoid"),
+        },
+        "check": _check_lm3,
+        "module": "lm3_loss",
     },
 }
 
