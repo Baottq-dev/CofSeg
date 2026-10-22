@@ -85,6 +85,25 @@ def _check_alpha_ciou(p: dict) -> None:
     _number("alpha_ciou.alpha", p["alpha"], 1.0)
 
 
+def _unit(name: str, v) -> None:
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0.0 <= float(v) <= 1.0:
+        raise SystemExit(f"loss.{name} phải là số trong [0, 1], nhận được {v!r}")
+
+
+def _check_lm1(p: dict) -> None:
+    _number("lm1.weight", p["weight"])
+    _number("lm1.margin", p["margin"])
+    _number("lm1.temp", p["temp"], 1e-6)
+    _integer("lm1.k", p["k"], 1)
+    _integer("lm1.start_epoch", p["start_epoch"], 0)
+    _integer("lm1.ramp_epochs", p["ramp_epochs"], 0)
+    _unit("lm1.bg_iou", p["bg_iou"])
+    _integer("lm1.bg_top", p["bg_top"], 1)
+    _unit("lm1.q_min", p["q_min"])
+    if p["bg_top"] < p["k"]:
+        raise SystemExit(f"loss.lm1.bg_top ({p['bg_top']}) phải >= loss.lm1.k ({p['k']})")
+
+
 #: tên -> mô tả, tham số (mặc định, nhãn ngắn trong tên thư mục, giải thích), hàm kiểm.
 #: Thứ tự khai ở đây là thứ tự trong tên thư mục, nên `--loss b,a` và
 #: `--loss a,b` ra cùng một tên.
@@ -160,6 +179,22 @@ LOSSES: dict = {
         },
         "check": _check_alpha_ciou,
         "module": "alpha_ciou_loss",
+    },
+    "lm1": {
+        "doc": "LM1: đẩy ứng viên vẽ đúng của mỗi tán vượt mức nền thật của ảnh, một chiều, chỉ đầu one-to-many",
+        "params": {
+            "weight": (0.5, "w", "λ sau khi tăng xong; 0 = y hệt gốc"),
+            "margin": (1.0, "m", "biên Δ (logit) phải vượt mức nền"),
+            "temp": (0.25, "t", "nhiệt độ T của softplus"),
+            "k": (3, "k", "mức nền = logit lớn thứ k trong các neo nền của ảnh"),
+            "start_epoch": (5, "st", "λ = 0 trong ngần này epoch đầu"),
+            "ramp_epochs": (5, "r", "sau đó tăng tuyến tính lên weight trong ngần này epoch"),
+            "bg_iou": (0.1, "bi", "neo âm chỉ tính là nền khi mặt nạ có IoU < ngưỡng này với mọi tán"),
+            "bg_top": (300, "bt", "số neo âm điểm cao nhất được xét khi tìm mức nền"),
+            "q_min": (0.5, "q", "tán chỉ được đẩy khi ứng viên tốt nhất có IoU mặt nạ >= ngưỡng này"),
+        },
+        "check": _check_lm1,
+        "module": "lm1_loss",
     },
 }
 
