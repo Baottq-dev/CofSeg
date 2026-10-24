@@ -1,0 +1,5 @@
+# Finetune YOLO26l-seg (Large) trên bộ tán cà phê.
+# Toàn bộ khối train kế thừa từ yolo26s.yaml.
+base: yolo26s.yaml
+name: yolo26l-seg
+model: weights/yolo26l-seg.pt

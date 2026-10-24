@@ -1,0 +1,6 @@
+# Finetune YOLO11l-seg (Large) trên bộ tán cà phê.
+# Toàn bộ khối train kế thừa từ yolo26s.yaml.
+base: yolo26s.yaml
+name: yolo11l-seg
+# Thiếu file thì ultralytics tự tải bản phát hành về đúng đường dẫn này.
+model: weights/yolo11l-seg.pt
