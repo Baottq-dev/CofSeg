@@ -14,6 +14,10 @@ file config.
   cho đầu `semseg` của Proto26, chỉ dùng lúc train; đầu mặt nạ và đường suy
   luận giữ nguyên (configs/train/yolo26s-tc2.yaml, contact_targets.py,
   contact_train.py).
+- `type: coord` — KT4, thêm 5 kênh toạ độ tương đối với hộp của từng tán vào
+  phép ghép mặt nạ (37 hệ số thay vì 32); prototype, đầu hộp, đầu điểm và
+  cách cắt giữ nguyên (configs/train/yolo26s-kt4.yaml, coord_head.py,
+  coord_train.py).
 
 File này chỉ kiểm tham số và đặt nhãn, không import torch hay ultralytics,
 để --print-config chạy được tức thì.
@@ -52,7 +56,13 @@ CONTACT_DEFAULTS: dict = {
     "w_dist": 0.25,       # trọng số kênh khoảng cách tới biên
 }
 
-TYPES = {"dynamic": DEFAULTS, "gpr": GPR_DEFAULTS, "contact": CONTACT_DEFAULTS}
+#: Cấu hình đã chốt cho KT4.
+COORD_DEFAULTS: dict = {
+    "type": "coord",
+    "box": "pred",        # toạ độ lúc train tính theo hộp dự đoán ("pred", đã tách gradient) hay hộp thật ("gt")
+}
+
+TYPES = {"dynamic": DEFAULTS, "gpr": GPR_DEFAULTS, "contact": CONTACT_DEFAULTS, "coord": COORD_DEFAULTS}
 
 
 def _num(v) -> bool:
@@ -81,6 +91,8 @@ def check(block) -> dict | None:
     out = {**defaults, **block}
     if kind == "contact":
         return _check_contact(out)
+    if kind == "coord":
+        return _check_coord(out)
     mp = out["max_pos"]
     if not _int(mp) or mp < 1:
         raise SystemExit(f"mask_head.max_pos phải là số nguyên >= 1, nhận được {mp!r}")
@@ -126,6 +138,12 @@ def _check_contact(out: dict) -> dict:
     return out
 
 
+def _check_coord(out: dict) -> dict:
+    if out["box"] not in ("pred", "gt"):
+        raise SystemExit(f"mask_head.box phải là \"pred\" hoặc \"gt\", nhận được {out['box']!r}")
+    return out
+
+
 def check_train(block: dict | None, train: dict) -> None:
     """Ràng buộc giữa khối `mask_head` và khối `train` của cùng config."""
     if block and block["type"] == "gpr" and train.get("mask_ratio", 4) != 1:
@@ -146,7 +164,9 @@ def check_train(block: dict | None, train: dict) -> None:
 
 
 def tag(block: dict) -> str:
-    """Hậu tố cho tên lượt chấm: `dyn`, `gpr` hoặc `tc2`, kèm mọi tham số khác mặc định."""
+    """Hậu tố cho tên lượt chấm: `dyn`, `gpr`, `tc2` hoặc `kt4`, kèm mọi tham số khác mặc định."""
+    if block["type"] == "coord":
+        return "kt4" if block["box"] == COORD_DEFAULTS["box"] else f"kt4-{block['box']}"
     if block["type"] == "contact":
         d = CONTACT_DEFAULTS
         parts = ["tc2"]
@@ -189,6 +209,9 @@ def describe_active(block: dict | None) -> str:
     """Một dòng cho run.log, in cả khi là đầu gốc."""
     if not block:
         return "Đầu mặt nạ: gốc của ultralytics (prototype x hệ số, cắt sát box)"
+    if block["type"] == "coord":
+        return ("Đầu mặt nạ: KT4, 32 prototype + 5 kênh toạ độ tương đối với hộp của từng tán, cắt sát hộp như gốc "
+                f"(toạ độ lúc train theo hộp {'dự đoán' if block['box'] == 'pred' else 'thật'})")
     if block["type"] == "contact":
         return ("Đầu mặt nạ: gốc; TC2 thêm nhãn phụ cho semseg "
                 f"(dải tiếp giáp {block['band']} ô, w_band {block['w_band']:g}, w_dist {block['w_dist']:g})")

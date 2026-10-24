@@ -49,6 +49,14 @@ class YoloSegModel(SegmentationModel):
 
             self.mask_head = "dyn"
             self._predict_kw["predictor"] = DynSegPredictor
+        elif head == "Segment26Coord":
+            # Checkpoint KT4 (cofseg/training/coord_head.py): đầu hệ số ra 32 + 5
+            # số, 5 số cuối nhân với bản đồ toạ độ tương đối với hộp của từng
+            # tán. Predictor gốc nhân thẳng hệ số với 32 prototype nên lệch cỡ.
+            from ..training.coord_head import CoordSegPredictor
+
+            self.mask_head = "kt4"
+            self._predict_kw["predictor"] = CoordSegPredictor
         elif head == "Segment26GPR":
             # Checkpoint T1 (cofseg/training/gpr_head.py): prototype ở stride 2
             # thay vì 4. Predictor gốc dùng được nguyên: process_mask_native
@@ -63,6 +71,8 @@ class YoloSegModel(SegmentationModel):
         if self.crop_expand != 1.0:
             if self.mask_head == "dyn":
                 raise SystemExit("crop_expand không dùng với đầu A1: đầu đó đã cắt bằng cửa sổ riêng.")
+            if self.mask_head == "kt4":
+                raise SystemExit("crop_expand chưa viết cho đầu KT4: predictor nới hộp dùng phép dựng gốc.")
             if not retina_masks:
                 raise SystemExit("crop_expand chỉ có ở đường retina_masks=True (đường chấm của benchmark).")
             self._predict_kw["predictor"] = _crop_expand_predictor(self.crop_expand)

@@ -1,0 +1,27 @@
+# YOLO26s-seg cho KT4: thêm 5 kênh toạ độ tương đối với hộp của từng tán vào
+# phép ghép mặt nạ.
+#
+# Mặt nạ gốc là tổ hợp tuyến tính của 32 prototype dùng chung cả ảnh, với MỘT
+# vector hệ số cho cả tán, nên không biết pixel nào nằm ở đâu so với tán đang
+# tô. KT4 cộng thêm c_u·u + c_v·v + c_uu·u² + c_vv·v² + c_uv·u·v, với u, v là
+# toạ độ trong hộp của chính tán (−1 ở mép này, +1 ở mép kia). Đầu hệ số ra 37
+# số thay vì 32; 5 số mới khởi tạo bằng 0, nên lúc bắt đầu train model trùng
+# R2. Mọi thứ khác — trọng số khởi đầu COCO, imgsz, batch, lịch học, tăng
+# cường, prototype, đầu hộp, đầu điểm, cách cắt theo hộp — lấy nguyên từ
+# yolo26s.yaml. Thiết kế: cofseg/training/coord_head.py và coord_train.py.
+#
+#     python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s-kt4.yaml --data data/export/field/f1
+#
+# Seed khác: thêm --seed 1. Biến thể toạ độ theo hộp thật: --set mask_head.box=gt.
+# Chấm bằng đúng config chấm của yolo26s; lượt chấm tự nhận ra checkpoint KT4
+# và mang hậu tố -kt4.
+base: yolo26s.yaml
+name: yolo26s-seg-kt4
+
+mask_head:
+  type: coord
+  # Lúc train, toạ độ tính theo hộp nào. Lúc suy luận luôn là hộp dự đoán.
+  # pred: hộp do chính anchor đó dự đoán, tách gradient — toạ độ lúc train và
+  #       lúc chạy cùng một loại; loss mặt nạ không kéo được đầu hộp.
+  # gt:   hộp thật — toạ độ lúc train luôn chính xác, lúc chạy thì không.
+  box: pred
