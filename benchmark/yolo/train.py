@@ -28,6 +28,12 @@ thư mục run mang hậu tố của nó (yolo26s-seg-dice_...):
     python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --data data/export/field/f1 --loss dice
     python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --list-losses
 
+Phép tăng cường thêm cũng vậy: chỉ bật bằng cờ, ghép bằng dấu +, và tên thư
+mục run mang hậu tố của nó (yolo26s-seg-ag1-pa1_...):
+
+    python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --data data/export/field/f1 --aug ag1+pa1
+    python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --list-augs
+
 Script này KHÔNG biết YOLO tồn tại. Nó đọc khoá `trainer` trong config, tra sổ
 đăng ký, rồi gọi ba phương thức của hợp đồng. Danh sách tham số hợp lệ và các
 khoá bị khoá cũng do trainer khai (Trainer.param_defaults / locked_params), nên
@@ -104,6 +110,11 @@ def main() -> int:
                          "= loss gốc của framework — bảng benchmark luôn train như vậy. Xem --list-losses")
     ap.add_argument("--list-losses", dest="list_losses", action="store_true",
                     help="liệt kê biến thể loss và tham số của chúng rồi dừng")
+    ap.add_argument("--aug", default=None, metavar="TÊN",
+                    help="phép tăng cường thêm, ghép bằng +, vd --aug ag1+pa1. Bỏ trống = chuỗi "
+                         "tăng cường gốc của framework. Xem --list-augs")
+    ap.add_argument("--list-augs", dest="list_augs", action="store_true",
+                    help="liệt kê phép tăng cường thêm và tham số của chúng rồi dừng")
     ap.add_argument("--data", default=None, metavar="THƯ_MỤC_FOLD",
                     help="thư mục fold, vd data/export/block/f1 — viết thẳng ra để "
                          "nhìn lệnh là biết đang train fold nào")
@@ -139,6 +150,9 @@ def main() -> int:
     if a.list_losses:
         print(trainer_cls.describe_losses())
         return 0
+    if a.list_augs:
+        print(trainer_cls.describe_augs())
+        return 0
 
     # Đổi kiến trúc phải xong TRƯỚC khi đọc khối train: và trước khi đặt tên
     # thư mục run — tên thư mục phải nói đúng thứ vừa chạy. Hai cờ này ghi vào
@@ -149,6 +163,8 @@ def main() -> int:
     # Gọi cả khi không có cờ: trainer chặn `loss.*` lọt vào từ config/--set mà
     # thiếu --loss, thay vì để nó nằm im trong config.yaml như thể đã dùng.
     hau_to_loss = trainer_cls.apply_loss(cfg, a.loss)
+    # Phép tăng cường thêm cũng vào tên thư mục, và cũng chặn `aug.*` thiếu cờ.
+    hau_to_aug = trainer_cls.apply_aug(cfg, a.aug)
 
     if a.list_params:
         d = trainer_cls.param_defaults()
@@ -173,6 +189,8 @@ def main() -> int:
               else "gốc của framework (không có --loss)")
         if cfg.get("mask_head"):
             print("mask_head:", json.dumps(cfg["mask_head"], ensure_ascii=False))
+        print("aug:", json.dumps(cfg["aug"], ensure_ascii=False) if cfg.get("aug")
+              else "chuỗi gốc của framework (không có --aug)")
         return 0
 
     name = a.name or goi_y or cfg.get("name") or Path(a.config).stem
@@ -180,6 +198,8 @@ def main() -> int:
     # tố loss, để lượt L1 không bao giờ trùng tên với lượt baseline cùng fold.
     if hau_to_loss and not a.name:
         name = f"{name}-{hau_to_loss}"
+    if hau_to_aug and not a.name:
+        name = f"{name}-{hau_to_aug}"
     # Nhãn sinh từ tham số ĐÃ GỘP (config + dòng lệnh), nên tên thư mục luôn
     # mô tả đúng thứ vừa chạy kể cả khi bạn ghi đè imgsz hay batch.
     # Bộ fold đứng trước nhãn tham số: hai bộ fold cùng đặt tên f1..f6, nên

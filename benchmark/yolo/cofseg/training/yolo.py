@@ -181,6 +181,31 @@ class YoloTrainer(Trainer):
 
         return losses.describe()
 
+    # ------------------------------------------------------------- tăng cường
+    @classmethod
+    def apply_aug(cls, cfg: dict, spec: str | None) -> str:
+        """`--aug pa1`, `--aug ag1+ag4`...: xem aug.py. Không có cờ = chuỗi gốc của ultralytics.
+
+        Phép thêm thay lớp trainer (dựng dataset train khác), nên không đi chung
+        với khối `mask_head:`, vốn cũng thay lớp trainer. --loss thì đi chung
+        được: nó gắn qua callback, không đụng tới dataset.
+        """
+        from . import aug
+
+        tag = aug.apply(cfg, spec)
+        if tag and cfg.get("mask_head") is not None:
+            raise SystemExit(
+                "Config này bật nhánh mặt nạ (mask_head), vốn dựng lớp trainer riêng; --aug cũng "
+                "dựng lớp trainer riêng nên chưa ghép được hai thứ."
+            )
+        return tag
+
+    @classmethod
+    def describe_augs(cls) -> str:
+        from . import aug
+
+        return aug.describe()
+
     # -------------------------------------------------------------------- đặt tên
     #: Tham số đưa vào tên thư mục, kèm tiền tố ngắn. Ba cái này quyết định cả
     #: chất lượng lẫn chi phí của lần chạy, và cũng chính là ba cái hay bị ghi
@@ -361,6 +386,16 @@ class YoloTrainer(Trainer):
             # của semseg (TC2) rồi mới nạp trọng số COCO.
             extra["trainer"] = make_trainer(mh_block)
             install_log(model, self.run_dir)
+        from . import aug
+
+        aug_block = self.cfg.get("aug")
+        print(aug.describe_active(aug_block), flush=True)
+        if aug_block:
+            from .aug_train import install_log as aug_log, make_trainer as aug_trainer
+
+            # Lớp trainer chỉ khác gốc ở dataset train; xem aug_train.py.
+            extra["trainer"] = aug_trainer(aug_block, self.run_dir)
+            aug_log(model, self.run_dir)
         t0 = time.time()
         results = model.train(**extra, **args)
         train_seconds = round(time.time() - t0, 1)
@@ -407,6 +442,8 @@ class YoloTrainer(Trainer):
             "loss": loss_block or None,
             # Như `loss`: evaluate.py đọc `tag` để lượt chấm mang hậu tố -dyn.
             "mask_head": {**mh_block, "tag": mask_head.tag(mh_block)} if mh_block else None,
+            # Như `loss`: evaluate.py đọc `tag` để lượt chấm mang hậu tố -pa1...
+            "aug": aug_block or None,
         }
         metrics = getattr(results, "results_dict", None)
         if metrics:

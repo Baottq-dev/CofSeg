@@ -116,6 +116,9 @@ def run_config(a, extra: list[str]) -> int:
     train_mask_head = artifacts.train_mask_head(cfg["model"].get("weights"))
     if train_mask_head:
         cfg["train_mask_head"] = train_mask_head
+    train_aug = artifacts.train_aug(cfg["model"].get("weights"))
+    if train_aug:
+        cfg["train_aug"] = train_aug
     # Độ phân giải vào TÊN thư mục. Sáu lượt chấm Mask R-CNN chạy ở 1333 thay
     # vì 1024 mà không ai nhận ra, một phần vì tên thư mục không nói gì —
     # thư mục của YOLO có `_i1024`, của detectron2 thì không có gì cả. Với
@@ -141,6 +144,8 @@ def run_config(a, extra: list[str]) -> int:
             print("Loss lúc train:", train_loss["tag"] if train_loss else "gốc của framework")
             if train_mask_head:
                 print("Đầu mặt nạ lúc train:", train_mask_head["tag"])
+            if train_aug:
+                print("Tăng cường thêm lúc train:", train_aug["tag"])
             print(artifacts.check_imgsz(cfg["model"].get("weights"),
                                         model.describe.get("imgsz"),
                                         explicit=a.imgsz is not None))

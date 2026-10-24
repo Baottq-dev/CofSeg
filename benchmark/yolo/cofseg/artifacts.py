@@ -275,8 +275,13 @@ def train_mask_head(weights) -> dict | None:
     return _summary_block(weights, "mask_head")
 
 
+def train_aug(weights) -> dict | None:
+    """Khối `aug` của lượt train đã sinh ra `weights` (cờ --aug); None = chuỗi tăng cường gốc."""
+    return _summary_block(weights, "aug")
+
+
 def eval_run_name(name: str, weights, explicit: bool) -> tuple[str, dict | None]:
-    """Tên lượt chấm, mang hậu tố đầu mặt nạ và loss của lượt train.
+    """Tên lượt chấm, mang hậu tố đầu mặt nạ, loss và tăng cường của lượt train.
 
     Config chấm chỉ biết tên model (`yolo26s-seg`), còn biến thể nằm trong
     trọng số. Không gắn hậu tố thì lượt chấm L1 hay A1 ra đúng tên của lượt
@@ -285,7 +290,7 @@ def eval_run_name(name: str, weights, explicit: bool) -> tuple[str, dict | None]
     """
     loss = train_loss(weights)
     if not explicit:
-        for block in (train_mask_head(weights), loss):
+        for block in (train_mask_head(weights), loss, train_aug(weights)):
             if block and not name.endswith("-" + block["tag"]):
                 name = f"{name}-{block['tag']}"
     return name, loss

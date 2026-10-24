@@ -136,6 +136,22 @@ class Trainer(ABC):
     def describe_losses(cls) -> str:
         return "Họ model này chưa có biến thể loss nào; nó luôn train bằng loss gốc."
 
+    # ------------------------------------------------------------- tăng cường
+    @classmethod
+    def apply_aug(cls, cfg: dict, spec: str | None) -> str:
+        """Bật phép tăng cường thêm `spec` (cờ --aug), trả về hậu tố cho tên run.
+
+        Như apply_loss: không có cờ thì chuỗi tăng cường gốc của framework,
+        trả về ""; họ model chưa có phép nào thì bật cờ là báo lỗi.
+        """
+        if spec or cfg.get("aug"):
+            raise SystemExit("--aug chưa có phép nào cho họ model này.")
+        return ""
+
+    @classmethod
+    def describe_augs(cls) -> str:
+        return "Họ model này chưa có phép tăng cường thêm nào; nó luôn train bằng chuỗi gốc."
+
     @classmethod
     def describe_backbones(cls, cfg: dict) -> str:
         bang = cls.backbones(cfg)
