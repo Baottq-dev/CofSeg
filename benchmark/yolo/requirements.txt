@@ -4,11 +4,12 @@
 # GPU chứ không phụ thuộc model. Ghim ở đây thì bốn file model sẽ trôi ra xa
 # nhau rồi không cài chung một env được nữa.
 #
-#     pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 \
-#       --index-url https://download.pytorch.org/whl/cu128
+#     pip install torch==2.11.0+cu130 torchvision==0.26.0+cu130 \
+#       --index-url https://download.pytorch.org/whl/cu130
 #
-# CUDA 12.8 là bản đầu tiên có sm_120 (Blackwell) và vẫn giữ các đời cũ.
-# Máy phải có nvcc 12.x: lệch major giữa nvcc và torch.version.cuda là
+# Bản cu130 (torch.version.cuda = 13.0) chạy được cả sm_89 (4090) lẫn sm_120
+# (Blackwell), nhưng bỏ sm_50–sm_70 (GTX 10xx, V100); driver phải >= 580.65.06.
+# Máy phải có nvcc 13.x: lệch major giữa nvcc và torch.version.cuda là
 # detectron2/mmcv gãy lúc build_ext. Xem Bước 0 trong benchmark/README.md.
 #     pip install -r benchmark/yolo/requirements.txt
 #
