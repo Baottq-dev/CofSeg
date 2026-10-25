@@ -9,11 +9,10 @@
 #
 # Bản cu130 (torch.version.cuda = 13.0) chạy được cả sm_89 (4090) lẫn sm_120
 # (Blackwell), nhưng bỏ sm_50–sm_70 (GTX 10xx, V100); driver phải >= 580.65.06.
-# Máy phải có nvcc 13.x: lệch major giữa nvcc và torch.version.cuda là
-# detectron2/mmcv gãy lúc build_ext. Xem Bước 0 trong benchmark/README.md.
+# Model này không biên dịch gì nên không cần CUDA toolkit.
 #     pip install -r benchmark/yolo/requirements.txt
 #
-# Xem benchmark/README.md mục "Dựng môi trường" cho bảng chọn phiên bản.
+# Cách dựng trên molab: benchmark/README.md mục "Dựng môi trường".
 #
 # KHÔNG cần `pip install -e .`: benchmark/yolo/train.py tự thêm thư mục của
 # nó vào sys.path nên nạp benchmark/yolo/cofseg/, không phải canopyseg.

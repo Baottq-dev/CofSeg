@@ -3,49 +3,20 @@
 **Framework:** ultralytics 8.4.143 (`trainer: yolo`) · chạy được trên Linux và
 Windows
 
-## Vai trò
+Đại diện nhóm real-time: dùng một model chạy được trên phần cứng nhúng thì độ
+chính xác giảm bao nhiêu so với mốc số 0 (Mask R-CNN). Cỡ **s** để so ngang với
+các model kia. Mask dựng từ 32 prototype ở stride 4 (~10 px ảnh gốc mỗi ô) rồi
+cắt theo box: mịn hơn ROI 28×28, nhưng ở chỗ tán chạm nhau mask dễ dính mép cây
+bên. Thư mục giữ cả **họ** YOLO (v8, 11, 26; config riêng vì khác nhau ở phần
+phát hiện), còn **cỡ** model thì đổi bằng `--model`.
 
-Đại diện nhóm real-time. Model này trả lời câu hỏi: **dùng một model chạy
-được trên phần cứng nhúng thì độ chính xác giảm bao nhiêu**, qua so sánh
-ms/ảnh và mAP với mốc 0.
+## Cài đặt
 
-## Vì sao chọn
-
-- Model duy nhất trong bảng chạy được thời gian thực trên phần cứng nhúng.
-  Cỡ **s** để so ngang với các model kia; cần số cho thiết bị thật thì chạy
-  thêm cỡ **n**.
-- Mask dựng từ 32 prototype ở stride 4 (~10 px một ô ở ảnh gốc) rồi cắt theo
-  box: mịn hơn ROI 28×28, nhưng ở chỗ tán chạm nhau mask dễ dính mép cây bên.
-- Thư mục này giữ cả **họ** YOLO chứ không một phiên bản: v11 là bản hiện
-  hành, v8 là bản các bài trước hay dùng, 26 là bản đầu-cuối không NMS. Ba
-  phiên bản có config riêng vì chúng khác nhau ở phần phát hiện; **cỡ** model
-  thì đổi bằng `--model`, không cần file riêng.
-
-## Dựng môi trường riêng
-
-Env riêng chỉ cho model này, không dùng `benchmark/requirements.txt` chung.
-Chạy từ trên xuống, từ gốc repo. Số bước trong ngoặc khớp với mục *Dựng môi
-trường* của `benchmark/README.md`.
-
-Nhẹ nhất trong bốn model: không gói nào phải biên dịch, nên **không cần CUDA
-toolkit**, không cần `CUDA_HOME` (bước 3) và không cần bản vá
-`libnvrtc-builtins` (bước 4). Đây là model duy nhất chạy được trên Windows.
-Driver phải hỗ trợ CUDA 13.0 (trên Linux là ≥ 580.65.06), và card phải từ
-`sm_75` trở lên: CUDA 13 bỏ `sm_50`–`sm_70`.
-
-Env, torch và gói Python (bước 1, 2, 5):
+Làm bước 0–2 của `benchmark/README.md`; model này không biên dịch gì nên không
+cần CUDA toolkit. Rồi:
 
 ```bash
-conda create -y -n cofseg-yolo python=3.12 && conda activate cofseg-yolo
-pip install torch==2.11.0+cu130 torchvision==0.26.0+cu130 --index-url https://download.pytorch.org/whl/cu130
-
 pip install -r benchmark/yolo/requirements.txt
-```
-
-Kiểm bằng cách **gọi op trên GPU**, không chỉ `import`: torchvision lệch bản
-dựng vẫn import được rồi mới hỏng lúc gọi.
-
-```bash
 python -c "
 import torch, torchvision, ultralytics
 from torchvision.ops import nms
@@ -55,36 +26,23 @@ print('torchvision', torchvision.__version__, '| nms CUDA', nms(b,s,0.5).tolist(
 print('ultralytics', ultralytics.__version__)"
 ```
 
-Phải in đủ ba dòng, dòng đầu có `2.11.0+cu130 13.0`, và dòng cuối là
-`ultralytics 8.4.143`.
+Phải in đủ ba dòng, dòng đầu có `2.11.0+cu130 13.0`, dòng cuối `ultralytics
+8.4.143`. Mỗi terminal mới chỉ cần `source /venv/cofseg/bin/activate`.
+`requirements.txt` cố ý **không** cài `albumentations`: ultralytics tự bật thêm
+một loạt phép tăng cường khi thấy gói này, và nó làm hai pipeline huấn luyện
+khác nhau mà không dòng config nào ghi lại.
 
-`requirements.txt` cố ý **không** cài `albumentations`: ultralytics tự bật
-thêm một loạt phép tăng cường khi thấy gói này, và im lặng bỏ qua khi không
-có. Có hay không có gói đó cho ra hai pipeline huấn luyện khác nhau mà không
-dòng config nào ghi lại.
+## Chạy
 
-## Cách chạy
-
-Từ **gốc repo** (để dùng chung `data/` và `weights/`). Đặt `--runs` vào thư
-mục này, và `--name` chỉ là **tên model**: bảng tổng hợp đọc fold và bộ fold từ
-đường dẫn dữ liệu chứ không từ tên, nên gõ lại fold vào tên chỉ tạo ra một bản
-thứ hai có thể sai lệch.
-
-`--data` nhận **thư mục fold**. Viết thẳng đường dẫn ra, không đặt biến shell:
-nhìn lệnh là biết đang chạy bộ nào, fold nào. Cả bốn model dùng cùng cú pháp
-này, dù bên trong ba model kia đọc `data.root` còn ultralytics đọc
-`data.yaml`.
-
-Lệnh dưới đây chạy bộ **block**, fold **f1**. Đổi lượt khác thì sửa `block`
-hoặc `f1` ở cả ba chỗ trong khối lệnh. Ba bộ fold (`block`, `flight`, `field`)
-cắt bằng `scripts/make_fold.py`, xem `benchmark/README.md` mục *Chạy*.
+Từ **gốc repo**. `--data` nhận thư mục fold, `--name` chỉ là tên model (quy ước
+ở `benchmark/README.md`). Lệnh dưới chạy bộ **block**, fold **f1**; đổi `block`
+hoặc `f1` ở cả ba chỗ là ra lượt khác.
 
 ```bash
-# 1. huấn luyện (khói: thêm --epochs 1 --fraction 0.05; YOLO không có --limit)
+# 1. huấn luyện (khói: thêm --epochs 1 --fraction 0.05)
 python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo11s.yaml --data data/export/block/f1 --runs benchmark/yolo/runs --name yolo11s --workers 8
 
-# 2. chấm bằng trọng số tốt nhất (weights/best.pt: chọn theo mask AP thuần,
-#    không phải best.pt của ultralytics vốn cộng cả chỉ số hộp)
+# 2. chấm bằng trọng số tốt nhất
 RUN=$(ls -td benchmark/yolo/runs/train/*_yolo11s_block-f1_* | head -1)
 python benchmark/yolo/evaluate.py --config benchmark/yolo/configs/eval/yolo11s.yaml --weights "$RUN/weights/best.pt" --data data/export/block/f1 --split test --runs benchmark/yolo/runs --name yolo11s
 
@@ -98,224 +56,95 @@ cp "$EV/per_region.csv" benchmark/yolo/results/yolo11s_block_f1_per_region.csv
 cd benchmark/yolo && python -m pytest tests
 ```
 
-### Lệnh đầy đủ
+- Mọi tham số đều là cờ, mặc định nằm trong config (`imgsz 1024`, `batch 16`,
+  `epochs 100`, `seed 0`). `--list-params` in danh sách (114 tham số của
+  ultralytics), `--print-config` in config đã gộp mà không chạy, `--probe` chỉ
+  dò VRAM. Bốn khoá bị khoá (`data`, `project`, `name`, `exist_ok`).
+- `weights/best.pt` chọn theo mask AP thuần; `ultralytics/weights/best.pt` chọn
+  theo fitness cộng cả chỉ số hộp nên không so được với ba model kia. Phép chấm
+  `--native` (gọi thẳng `model.val()`) giữ để đối chiếu với báo cáo YOLO khác.
+- `--degrees`, `--copy_paste`, `--patience` để 0 có chủ đích: ba model kia
+  không có hai phép tăng cường đó và chạy đủ số epoch.
+- `optimizer: auto` tự chọn AdamW và tự đặt `lr0`, nên `--lr0` tay không có tác
+  dụng. `--workers` trên Windows tự về 0.
+- Lúc chấm, `model.imgsz` phải bằng `--imgsz` lúc train. Bốn khoá `eval:`
+  (`iou_thr`, `band_ratio`, `dilation_ratio`, `nsd_tau`) là định nghĩa của phép
+  đo, đổi chúng thì số không còn so được với các model kia.
 
-Khối trên là lệnh thường dùng; khối này liệt kê **mọi tham số**. Giá trị ghi
-ra chính là mặc định, nên lệnh này cho kết quả y hệt lệnh ngắn.
+## Phiên bản và cỡ model (`--model`)
 
-`--data`, `--runs`, `--name` là của `train.py`; phần còn lại đi thẳng vào
-trainer, gõ sai tên thì trainer chặn và gợi ý tên gần đúng. `--list-params` in
-đủ danh sách, `--print-config` in config đã gộp mà không chạy gì, `--probe`
-chỉ dò VRAM rồi thoát.
-
-```bash
-python benchmark/yolo/train.py \
-  --config benchmark/yolo/configs/train/yolo11s.yaml \
-  --data data/export/field/f1 --runs benchmark/yolo/runs --name yolo11s \
-  --imgsz 1024 --batch 16 --epochs 100 --patience 0 \
-  --optimizer auto --cos_lr true --amp true \
-  --mask_ratio 4 --overlap_mask true \
-  --fliplr 0.5 --flipud 0.5 --degrees 0 --copy_paste 0 \
-  --mosaic 0 --close_mosaic 0 --scale 0.5 \
-  --workers 8 --seed 0 --deterministic true --val true --plots true
-```
-
-`--workers 8` là giá trị cho Linux; trên Windows trainer tự đặt 0 vì mỗi
-worker spawn một tiến trình mới và nạp lại torch, mà paging file mặc định
-không đủ cho việc đó.
-
-Trainer nhận **toàn bộ 114 tham số** của ultralytics, không chỉ những tham số
-ở trên; `--list-params` in hết. Bốn khoá bị khoá (`data`, `project`, `name`,
-`exist_ok`) vì trainer tự đặt để kết quả rơi đúng thư mục run.
-
-`optimizer: auto` nghĩa là ultralytics tự chọn AdamW và tự đặt `lr0` theo số
-lớp và số epoch, nên đặt `--lr0` tay **không** có tác dụng chừng nào optimizer
-còn là auto.
-
-`--degrees`, `--copy_paste` và `--patience` để 0 có chủ đích: ba model kia
-không có hai tăng cường đó, và chúng chạy đủ số epoch đã khai. Bật lên là cho
-model này lợi thế không đến từ kiến trúc.
-
-Lệnh chấm, đầy đủ tham số:
-
-```bash
-python benchmark/yolo/evaluate.py \
-  --config benchmark/yolo/configs/eval/yolo11s.yaml \
-  --data data/export/field/f1 --split test \
-  --runs benchmark/yolo/runs --name yolo11s \
-  --weights benchmark/yolo/runs/train/<...>/weights/best.pt \
-  --imgsz 1024 --conf 0.05 --iou 0.7 \
-  --max_det 100 --retina_masks true \
-  --iou-thr 0.5 --band-ratio 0.02 \
-  --dilation-ratio 0.02 --nsd-tau 2.0
-```
-
-Mọi tham số ở đây là **cờ thật**, không qua `--set`: `--weights` là trọng số
-của lần train; `--conf`/`--max_det` (và các khoá khác của lớp model) đi vào
-khối `model:`; `--iou-thr`/`--band-ratio`/`--dilation-ratio`/`--nsd-tau` đi
-vào khối `eval:`. Bốn khoá `eval:` là định nghĩa của phép đo, đổi chúng thì số
-không còn so được với các model kia: `iou_thr` ngưỡng ghép cặp, `band_ratio`
-bề rộng vành biên theo cỡ tán, `dilation_ratio` bề rộng vành của Boundary AP
-(2% đường chéo ảnh, đúng bài báo), `nsd_tau` dung sai của NSD.
-
-`model.imgsz` lúc chấm phải bằng `--imgsz` lúc train; khác nhau thì model học
-ở một độ phân giải rồi bị chấm ở độ phân giải khác.
-
-`weights/best.pt` là bản chọn theo mask AP thuần. `ultralytics/weights/best.pt`
-vẫn còn, nhưng nó chọn theo fitness cộng cả chỉ số hộp nên không so được với
-ba model kia.
-
-Còn một đường chấm thứ hai, `--native`, gọi thẳng `model.val()` của
-ultralytics (đúng thứ `yolo val` chạy), giữ để đối chiếu với các báo cáo YOLO
-khác:
-
-```bash
-python benchmark/yolo/evaluate.py --native \
-  --weights benchmark/yolo/runs/train/<...>/weights/best.pt \
-  --data data/export/field/f1 --split test --imgsz 1024 --batch 4 --max-det 100
-```
-
-### Đổi phiên bản và cỡ model
-
-Model này **không đổi backbone được**, khác ba model kia: backbone của YOLO
-gắn liền với kiến trúc, không có chỗ cắm ResNet vào. Thứ đổi được là **phiên
-bản** và **cỡ** model, cả hai qua `--model`; `--list-models` in danh sách rồi
-thoát:
-
-```bash
-python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo11s.yaml --list-models
-```
+Model này **không đổi backbone được**; thứ đổi được là phiên bản và cỡ. `--list-models`
+in danh sách. Tên trần mở rộng thành `weights/<tên>.pt` và ultralytics tự tải
+nếu thiếu.
 
 | họ | cỡ có trọng số COCO |
 |---|---|
-| `yolov8` | n s m l x |
-| `yolo11` | n s m l x |
-| `yolo26` | n s m l x |
+| `yolov8`, `yolo11`, `yolo26` | n s m l x |
 | `yolov9` | c e |
 
-17 checkpoint, đọc từ `GITHUB_ASSETS_NAMES` của ultralytics 8.4.143.
-`yolo12-seg` có file kiến trúc trong gói nhưng **không có trọng số COCO**;
-chọn nó là train từ đầu, không so được với ba model kia.
-
 ```bash
-python benchmark/yolo/train.py \
-  --config benchmark/yolo/configs/train/yolo11s.yaml \
-  --data data/export/field/f1 --runs benchmark/yolo/runs \
-  --model yolo11m-seg --workers 8
+python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo11s.yaml --data data/export/field/f1 --runs benchmark/yolo/runs --model yolo11m-seg --workers 8
 ```
 
-Tên trần được mở rộng thành `weights/yolo11m-seg.pt`; thiếu file thì
-ultralytics tự tải bản phát hành về đúng đường dẫn đó. Không cần `--name`:
-thiếu nó thì tên thư mục run lấy theo model (`yolo11m-seg`).
+`yolo12-seg` không có trọng số COCO nên không so được. Cỡ `s` được chọn vì giới hạn
+của bộ này là độ phân giải (lưới mặt nạ `imgsz/4`), không phải dung lượng
+model; từ cỡ `m` trở lên chạy `--probe` lại vì `batch 16 @ imgsz 1024` chỉ đo
+cho cỡ `s`.
 
-`--model` là **cờ**, không phải siêu tham số. `model` nằm trong 114 tham số
-của ultralytics, nên nếu đi qua đường siêu tham số nó sẽ rơi vào khối
-`train:`, mà `YOLO.train()` nạp trọng số từ đối tượng đã dựng chứ không từ
-tham số đó: model cũ vẫn được train, chỉ có `args.yaml` ghi tên model mới. Vì
-vậy khoá này bị chặn ở `locked_params()`.
+## Biến thể hàm loss (`--loss`)
 
-Cỡ `s` được chọn cho bảng vì trên bộ này nút thắt là **độ phân giải** chứ
-không phải dung lượng model: lưới mặt nạ của YOLO là `imgsz/4`, nên đổi cỡ `l`
-lấy imgsz thấp hơn là đánh đổi bất lợi. Từ cỡ `m` trở lên phải `--probe` lại:
-`batch 16 @ imgsz 1024` đo cho cỡ `s` (10,1 M tham số / 35,8 GFLOPs), còn
-`yolo11x` là 62,1 M / 320,2 GFLOPs.
-
-Ba phiên bản có config sẵn: `configs/train/yolov8s.yaml`,
-`configs/train/yolo11s.yaml`, `configs/train/yolo26s.yaml`. Chúng khác nhau ở
-phần phát hiện (v8/v11 dùng NMS, 26 đầu-cuối), nên mỗi phiên bản một file; còn
-**cỡ** thì không cần file riêng, đã có `--model`.
-
-### Biến thể hàm loss (`--loss`)
-
-Không có `--loss` thì train bằng **loss gốc của ultralytics**, không thay đổi
-gì; bảng benchmark luôn chạy như vậy. Biến thể chỉ bật bằng cờ; khối `loss:`
-trong config hay `--set loss.use=...` đều bị chặn, để lệnh train tự cho thấy
-nó có dùng loss khác gốc hay không.
+Không có `--loss` thì train bằng loss gốc của ultralytics; bảng benchmark luôn
+chạy như vậy. Biến thể chỉ bật bằng cờ (khối `loss:` trong config hay
+`--set loss.use=...` bị chặn), mỗi lượt một biến thể.
 
 ```bash
 python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --list-losses
-python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --data data/export/field/f1 --loss dice
 python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --data data/export/field/f1 --loss dice --set loss.dice.weight=2
-python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s.yaml --data data/export/field/f1 --loss mask_iou --set loss.mask_iou.mix=0.5
 ```
 
 | biến thể | làm gì | tham số (mặc định) |
 |---|---|---|
-| `mask_iou` (L1) | điểm phân loại học **IoU mặt nạ** (cắt bằng hộp dự đoán) thay cho CIoU của hộp | `mix` 1.0, `warmup_epochs` 5, `heads` both \| o2o |
-| `dice` (L2) | cộng **Dice** vào BCE của mặt nạ từng tán, cùng vùng giám sát (trong box GT) | `weight` 1.0 (Dice nặng ngang BCE; 0 = y hệt gốc) |
+| `mask_iou` | điểm phân loại học **IoU mặt nạ** (cắt bằng hộp dự đoán) thay cho CIoU của hộp | `mix` 1.0, `warmup_epochs` 5, `heads` both \| o2o |
+| `dice` | cộng **Dice** vào BCE của mặt nạ từng tán | `weight` 1.0 (0 = y hệt gốc) |
 
-- Mỗi lượt một biến thể: `--loss mask_iou,dice` bị chặn. mask_iou tự tính BCE
-  mặt nạ trong bản chép riêng, không đi qua chỗ dice cài đè, nên nếu ghép thì
-  Dice không chạy mà tên run vẫn ghi là có.
-- Tên thư mục run mang hậu tố: `..._yolo26s-seg-dice_field-f1_i1024b16e100`;
-  tham số khác mặc định cũng vào tên (`-dice-w2`, `-mask-iou-mix0.5`). `--name`
-  gõ tay thì được giữ nguyên văn. Lượt chấm tự mang cùng hậu tố.
-- `config.yaml` và `summary.json` của lượt train ghi khối `loss`; `run.log` luôn
-  có một dòng `Loss: ...`, kể cả khi là loss gốc.
-- `loss_<tên>.csv` cạnh `summary.json`, mỗi epoch một dòng, với từng đầu
-  (YOLO26: `one2one_`, `one2many_`; model một đầu: `one_`):
-  - `loss_mask_iou.csv`: số anchor dương, IoU mặt nạ trung bình, điểm trung
-    bình và tương quan điểm–IoU (`_r`).
-  - `loss_dice.csv`: số anchor dương, BCE và 1 − Dice trung bình, IoU cứng của
-    mặt nạ trong box GT (`_iou`).
-- Checkpoint vẫn là YOLO-seg chuẩn, chấm bằng đúng lệnh chấm cũ.
-- Viết cho ultralytics 8.4.143; phiên bản khác thì `--loss` dừng ngay.
+Tên thư mục run mang hậu tố (`..._yolo26s-seg-dice_field-f1_...`, tham số khác
+mặc định cũng vào tên); `summary.json` ghi khối `loss`, `loss_<tên>.csv` cạnh
+nó ghi từng epoch. Checkpoint vẫn là YOLO-Seg chuẩn, chấm bằng đúng lệnh chấm
+cũ. Viết cho ultralytics 8.4.143; phiên bản khác thì `--loss` dừng ngay.
 
-### Đầu mặt nạ A1 (`configs/train/yolo26s-dyn.yaml`)
+## Đầu mặt nạ A1 (`configs/train/yolo26s-dyn.yaml`)
 
-Đầu gốc dựng mặt nạ mỗi tán bằng tổ hợp tuyến tính 32 prototype dùng chung cả
-ảnh rồi cắt sát bằng box dự đoán. A1 giữ 32 prototype đó (cả trọng số COCO)
-làm đặc trưng, nhưng mỗi anchor sinh 361 tham số của một mạng 1x1 nhỏ kiểu
-CondInst, chạy trên [prototype, toạ độ tương đối so với anchor]:
-`(32+2) -> 8 -> 8 -> 1`. Mặt nạ được giữ trong cửa sổ box x 1.5 thay vì cắt
-sát box. Thêm khoảng 0,07 M tham số; mọi thứ khác lấy nguyên từ `yolo26s.yaml`.
-
-A1 bật bằng file config riêng, không bằng cờ:
+Đầu gốc dựng mặt nạ mỗi tán bằng tổ hợp tuyến tính 32 prototype rồi cắt sát bằng
+box. A1 giữ 32 prototype đó (cả trọng số COCO) làm đặc trưng, nhưng mỗi anchor
+sinh 361 tham số của một mạng 1×1 nhỏ kiểu CondInst chạy trên [prototype, toạ
+độ tương đối so với anchor], và mặt nạ được giữ trong cửa sổ box × 1.5 thay vì
+cắt sát box. Thêm khoảng 0,07 M tham số. Chỉ dùng với YOLO26-seg; bật bằng file
+config riêng, không dùng chung với `--loss`:
 
 ```bash
 python benchmark/yolo/train.py --config benchmark/yolo/configs/train/yolo26s-dyn.yaml --data data/export/field/f1
 python benchmark/yolo/evaluate.py --config benchmark/yolo/configs/eval/yolo26s.yaml --weights runs/train/<...>_yolo26s-seg-dyn_field-f1_i1024b16e100/weights/best.pt --data data/export/field/f1 --split test
 ```
 
-| khoá `mask_head` | mặc định | nghĩa |
-|---|---|---|
-| `dims` | `[8, 8]` | kênh các lớp ẩn; `[]` = một lớp tuyến tính như đầu gốc |
-| `coords` | `true` | thêm toạ độ tương đối (chia stride x 8 như RTMDet-Ins) |
-| `window` | `1.5` | mặt nạ giữ trong box x window; `1.0` = cắt sát box như gốc |
-| `max_pos` | `64` | số anchor dương tối đa mỗi ảnh được tính loss mặt nạ |
+Khoá `mask_head`: `dims` (`[8, 8]`; `[]` = một lớp tuyến tính như gốc), `coords`
+(`true`), `window` (`1.5`; `1.0` = cắt sát như gốc), `max_pos` (`64`). Lượt chấm
+tự nhận ra checkpoint A1 và mang hậu tố `-dyn`. Checkpoint chứa lớp của
+`cofseg/training/dyn_head.py` nên phải nạp từ thư mục này; chưa hỗ trợ export
+ONNX/TensorRT.
 
-- Loss mặt nạ cùng loại với gốc (BCE từng pixel), chỉ đổi vùng: cửa sổ box GT
-  x window thay cho box GT. Không dùng chung với `--loss`.
-- Lượt chấm tự nhận ra checkpoint A1, dùng predictor A1 và mang hậu tố `-dyn`
-  (tham số khác mặc định cũng vào tên, vd `-dyn-d0-nocoord`); `run.log` của
-  lượt chấm có dòng `Đầu mặt nạ lúc train: ...`.
-- `mask_head_dyn.csv` cạnh `summary.json`: mỗi epoch, với từng đầu, số tán đã
-  tính loss, BCE trung bình và IoU cứng của mặt nạ trong cửa sổ.
-- Checkpoint A1 chứa lớp của `cofseg/training/dyn_head.py`, nên phải nạp từ
-  thư mục này (evaluate.py lo việc đó). Chưa hỗ trợ export ONNX/TensorRT.
-- Chỉ dùng được với YOLO26-seg (đầu `Segment26`). Phần train ở
-  `cofseg/training/dyn_train.py`.
+## Kết quả (runs)
 
-## Trong thư mục này
-
-| | |
-|---|---|
-| `cofseg/` | bản sao lõi của riêng thư mục: đọc dữ liệu, chỉ số, vòng chấm, trainer + model của model này |
-| `configs/train/`, `configs/eval/` | cấu hình huấn luyện và chấm (`yolov8s`, `yolo11s`, `yolo26s`) |
-| `train.py`, `evaluate.py` | bản riêng, nạp `cofseg/` của thư mục này |
-| `tests/` | test của thư mục |
-| `runs/` | kết quả train/eval (không vào git) |
-| `results/` | file kết quả nhỏ, được commit |
-| `notes/experiments.md` | nhật ký thí nghiệm |
-
-Phần chấm điểm (`cofseg/metrics/`, `cofseg/evaluation/`, `cofseg/datasets/`)
-phải giống hệt ba thư mục model kia; sửa ở đây mà không sửa ở đó thì số không
-còn so được.
+Kết quả train và chấm của YOLO (`runs/`) lưu trên Drive:
+**[YOLO](https://drive.google.com/drive/folders/19e6Cv8VQQ0PWtqSl616A7x_e-RhaCgA0?usp=sharing)**.
+Kết quả các hướng cải tiến YOLO (biến thể loss, đầu mặt nạ A1…) ở một thư mục
+riêng: **[cải tiến YOLO](https://drive.google.com/drive/folders/19Gz3wBCKW1spDIwD_WQC2H04JbMcaQan?usp=drive_link)**.
+Bố cục thư mục run và cách gộp bảng xem mục *Kết quả (runs)* ở
+`benchmark/README.md`; file nhỏ cần commit chép vào `results/`.
 
 ## Ghi chú
 
-- Chạy được trên Windows mà không cần thêm bước nào; trainer tự đặt
-  `workers 0`.
-- `mask_ratio 4` (mặc định) cho lưới mặt nạ `imgsz/4` = 256 ô ở imgsz 1024,
-  tức ~10 px ảnh gốc mỗi ô; xem `benchmark/README.md` mục *Hai trần độ phân
-  giải*.
+- Chạy được trên Windows mà không cần thêm bước nào; trainer tự đặt `workers 0`.
+- `mask_ratio 4` (mặc định) cho lưới mặt nạ `imgsz/4` = 256 ô ở imgsz 1024, tức
+  ~10 px ảnh gốc mỗi ô.
+- Phần chấm điểm (`cofseg/metrics/`, `cofseg/evaluation/`, `cofseg/datasets/`)
+  phải giống hệt ba thư mục model kia.

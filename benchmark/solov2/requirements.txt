@@ -2,19 +2,18 @@
 #
 # CÀI torch TRƯỚC — file này cố ý KHÔNG ghim torch, xem benchmark/README.md.
 #
-#     pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 \
-#       --index-url https://download.pytorch.org/whl/cu128
+#     pip install torch==2.11.0+cu130 torchvision==0.26.0+cu130 \
+#       --index-url https://download.pytorch.org/whl/cu130
 #
-# CUDA 12.8 là bản đầu tiên có sm_120 (Blackwell) và vẫn giữ các đời cũ.
-# Máy phải có nvcc 12.x: lệch major giữa nvcc và torch.version.cuda là
-# detectron2/mmcv gãy lúc build_ext. Xem Bước 0 trong benchmark/README.md.
+# CUDA 13.0 chạy được cả sm_89 lẫn sm_120 (Blackwell) nhưng bỏ sm_50–sm_70;
+# driver phải >= 580.65.06. Toolkit 13.0 cài bằng pip vào venv (bước 3 trong
+# benchmark/README.md): lệch major giữa toolkit và torch.version.cuda là
+# detectron2/mmcv gãy lúc build_ext.
 #     pip install -r benchmark/solov2/requirements.txt
-#     # rồi mmcv — xem benchmark/README.md mục "Cài mmcv"
+#     # rồi mmcv — xem benchmark/solov2/README.md mục Cài đặt
 #
-# ĐỌC KỸ: model này kén phiên bản nhất trong bốn. mmcv chỉ có wheel dựng sẵn
-# cho torch 2.4/cu121, mà tổ hợp đó ra đời TRƯỚC Blackwell nên SOLOv2 không
-# chạy được trên RTX 50xx / RTX PRO 6000 / B200 nếu không build lại mmcv.
-# benchmark/README.md mục "Build mmcv" nói đủ.
+# ĐỌC KỸ: model này kén phiên bản nhất trong bốn. mmcv không có wheel dựng sẵn
+# cho CUDA 13 nên phải build từ nguồn (mục Cài đặt trong benchmark/solov2/README.md).
 
 mmdet==3.3.0
 
@@ -35,14 +34,9 @@ tqdm==4.68.3
 
 # ---- mmcv KHÔNG nằm ở đây
 #
-# Cùng lý do detectron2 không nằm trong file của Mask R-CNN: cách cài phụ
-# thuộc MÁY, không phụ thuộc phiên bản, mà một dòng requirements không rẽ
-# nhánh theo GPU được.
-#
-#     torch 2.4/cu121  -> wheel dựng sẵn, vài giây
-#     CUDA 12.8 / 13.x -> build từ nguồn, 20-120 phút
-#
-# Cả hai đường đều ở benchmark/README.md mục "Cài mmcv".
+# Cùng lý do detectron2 không nằm trong file của Mask R-CNN: nó build từ nguồn
+# (CUDA 13 không có wheel dựng sẵn), mà một dòng requirements không điều khiển
+# được bước build. Cách build ở benchmark/solov2/README.md mục Cài đặt.
 #
 # ---- mmengine: với torch >= 2.6 phải lấy từ git, không dùng dòng ghim trên
 #

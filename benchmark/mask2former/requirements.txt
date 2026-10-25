@@ -4,14 +4,15 @@
 # CÀI torch TRƯỚC — file này cố ý KHÔNG ghim torch, xem benchmark/README.md.
 #
 #     git submodule update --init benchmark/mask2former/upstream
-#     pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 \
-#       --index-url https://download.pytorch.org/whl/cu128
+#     pip install torch==2.11.0+cu130 torchvision==0.26.0+cu130 \
+#       --index-url https://download.pytorch.org/whl/cu130
 #
-# CUDA 12.8 là bản đầu tiên có sm_120 (Blackwell) và vẫn giữ các đời cũ.
-# Máy phải có nvcc 12.x: lệch major giữa nvcc và torch.version.cuda là
-# detectron2/mmcv gãy lúc build_ext. Xem Bước 0 trong benchmark/README.md.
+# CUDA 13.0 chạy được cả sm_89 lẫn sm_120 (Blackwell) nhưng bỏ sm_50–sm_70;
+# driver phải >= 580.65.06. Toolkit 13.0 cài bằng pip vào venv (bước 3 trong
+# benchmark/README.md): lệch major giữa toolkit và torch.version.cuda là
+# detectron2/mmcv gãy lúc build_ext.
 #     pip install -r benchmark/mask2former/requirements.txt
-#     # rồi detectron2 + MSDeformAttn — xem benchmark/README.md
+#     # rồi detectron2 (benchmark/README.md bước 4) + MSDeformAttn (benchmark/mask2former/README.md)
 #
 # detectron2 không nằm ở đây — xem ../maskrcnn/requirements.txt để biết vì sao.
 
@@ -41,4 +42,4 @@ tqdm==4.68.3
 #     imgsz 1024, batch  4  ->  0.98 GiB mỗi lớp  ->  5.9 GiB  (6 lớp encoder)
 #     imgsz 1024, batch 16  ->  3.94 GiB mỗi lớp  -> 23.6 GiB  -> OOM trên 24 GB
 #
-# Cách lấy lại kernel: benchmark/README.md mục "Biên dịch op CUDA".
+# Cách lấy lại kernel: benchmark/mask2former/README.md mục Cài đặt.

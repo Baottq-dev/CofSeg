@@ -2,14 +2,15 @@
 #
 # CÀI torch TRƯỚC — file này cố ý KHÔNG ghim torch, xem benchmark/README.md.
 #
-#     pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 \
-#       --index-url https://download.pytorch.org/whl/cu128
+#     pip install torch==2.11.0+cu130 torchvision==0.26.0+cu130 \
+#       --index-url https://download.pytorch.org/whl/cu130
 #
-# CUDA 12.8 là bản đầu tiên có sm_120 (Blackwell) và vẫn giữ các đời cũ.
-# Máy phải có nvcc 12.x: lệch major giữa nvcc và torch.version.cuda là
-# detectron2/mmcv gãy lúc build_ext. Xem Bước 0 trong benchmark/README.md.
+# CUDA 13.0 chạy được cả sm_89 lẫn sm_120 (Blackwell) nhưng bỏ sm_50–sm_70;
+# driver phải >= 580.65.06. Toolkit 13.0 cài bằng pip vào venv (bước 3 trong
+# benchmark/README.md): lệch major giữa toolkit và torch.version.cuda là
+# detectron2/mmcv gãy lúc build_ext.
 #     pip install -r benchmark/maskrcnn/requirements.txt
-#     # rồi detectron2 — xem benchmark/README.md
+#     # rồi detectron2 — xem benchmark/README.md bước 4
 
 # ---- setuptools: KHÔNG được bỏ ghim
 #
