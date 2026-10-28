@@ -1,0 +1,11 @@
+# YOLO26n-seg qua đường chấm chung. Trọng số: --weights <best.pt>
+base: _base.yaml
+name: yolo26n-seg
+model:
+  name: yolo_seg
+  weights: runs/train/CHANGE_ME/weights/best.pt
+  imgsz: 1024
+  conf: 0.05
+  iou: 0.7
+  max_det: 100
+  retina_masks: true
