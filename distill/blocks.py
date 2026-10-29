@@ -1,4 +1,5 @@
-"""Hai khối config của distill/: `student:` (trò nhẹ) và `outside_box:` (giám sát mặt nạ ngoài hộp).
+"""Ba khối config của distill/: `student:` (trò nhẹ), `outside_box:` (giám sát mặt nạ ngoài hộp) và `kd:`
+(chắt lọc từ ba thầy).
 
 Mỗi biến thể bật bằng FILE CONFIG RIÊNG (configs/train/*.yaml), như khối `mask_head:` của benchmark/yolo:
 đổi kiến trúc hay đổi vùng giám sát là đổi model, và tên model nằm trong config. Tham số khác mặc định đi
@@ -26,6 +27,16 @@ STUDENT_DEFAULTS: dict = {
 OUTSIDE_BOX_DEFAULTS: dict = {
     "train_expand": 1.25,  # loss mặt nạ tính trong hộp nhãn giãn ngần này lần quanh tâm (gốc 1,0)
     "infer_expand": 1.1,   # lúc chấm, cắt mặt nạ bằng hộp dự đoán giãn ngần này lần (crop_expand của bộ chấm)
+}
+
+#: Chắt lọc (kd_loss.py, kd_data.py). Siêu tham số chốt trước khi chạy đợt 2, không chỉnh theo ruộng thử.
+KD_DEFAULTS: dict = {
+    "targets": None,       # thư mục đích thầy (teacher_masks.py --out), có thư mục con theo fold; None = không chắt lọc mặt nạ
+    "mask_alpha": 0.5,     # đích mặt nạ = (1 − α)·nhãn + α·thầy, với tán có thầy ghép được
+    "mask_expand": 1.0,    # vùng tính loss mặt nạ: hộp nhãn giãn ngần này lần (1 = như gốc)
+    "teacher_runs": None,  # thư mục runs có YOLO26s seed 0 của fold; None = không chắt lọc đặc trưng
+    "feat_weight": 6.0,    # hệ số của loss PKD (bản gốc của PKD dùng 6)
+    "feat_bg": 0.5,        # trọng số phần ngoài hộp nhãn so với trong hộp
 }
 
 INITS = ("select", "scratch")
@@ -80,6 +91,67 @@ def check_outside_box(block) -> dict | None:
             raise SystemExit(f"outside_box.{k} phải là số >= 1, nhận được {out[k]!r}")
         out[k] = float(out[k])
     return out
+
+
+def check_kd(block) -> dict | None:
+    """Khối `kd` đã kiểm; None nếu config không có."""
+    if block is None:
+        return None
+    if not isinstance(block, dict):
+        raise SystemExit(f"`kd` phải là khối lồng nhau, nhận được {block!r}")
+    _keys("kd", block, KD_DEFAULTS)
+    out = {**KD_DEFAULTS, **block}
+    for k in ("targets", "teacher_runs"):
+        if out[k] is not None and (not isinstance(out[k], str) or not out[k].strip()):
+            raise SystemExit(f"kd.{k} phải là đường dẫn hoặc null, nhận được {out[k]!r}")
+    if out["targets"] is None and out["teacher_runs"] is None:
+        raise SystemExit("`kd` cần ít nhất một trong targets (chắt lọc mặt nạ) và teacher_runs (chắt lọc đặc trưng)")
+    a = out["mask_alpha"]
+    if not _num(a) or not 0.0 <= float(a) <= 1.0:
+        raise SystemExit(f"kd.mask_alpha phải là số trong [0, 1], nhận được {a!r}")
+    if not _num(out["mask_expand"]) or float(out["mask_expand"]) < 1.0:
+        raise SystemExit(f"kd.mask_expand phải là số >= 1, nhận được {out['mask_expand']!r}")
+    for k in ("feat_weight", "feat_bg"):
+        if not _num(out[k]) or float(out[k]) < 0.0:
+            raise SystemExit(f"kd.{k} phải là số >= 0, nhận được {out[k]!r}")
+    for k in ("mask_alpha", "mask_expand", "feat_weight", "feat_bg"):
+        out[k] = float(out[k])
+    return out
+
+
+def kd_tag(block: dict | None) -> str:
+    """Hậu tố cho tên run: phần nào tắt và hệ số nào khác mặc định. Tên `kd` nằm sẵn trong config."""
+    if not block:
+        return ""
+    d = KD_DEFAULTS
+    parts = []
+    if block["targets"] is None:
+        parts.append("nomask")
+    elif block["mask_alpha"] != d["mask_alpha"]:
+        parts.append(f"a{block['mask_alpha']:g}")
+    if block["targets"] is not None and block["mask_expand"] != d["mask_expand"]:
+        parts.append(f"mx{block['mask_expand']:g}")
+    if block["teacher_runs"] is None:
+        parts.append("nofeat")
+    else:
+        if block["feat_weight"] != d["feat_weight"]:
+            parts.append(f"fw{block['feat_weight']:g}")
+        if block["feat_bg"] != d["feat_bg"]:
+            parts.append(f"bg{block['feat_bg']:g}")
+    return "-".join(parts)
+
+
+def describe_kd(block: dict | None) -> str:
+    if not block:
+        return "Chắt lọc: không"
+    parts = []
+    if block["targets"] is not None:
+        parts.append(f"mặt nạ, đích (1 − {block['mask_alpha']:g})·nhãn + {block['mask_alpha']:g}·thầy "
+                     f"từ {block['targets']}, vùng hộp nhãn ×{block['mask_expand']:g}")
+    if block["teacher_runs"] is not None:
+        parts.append(f"đặc trưng PKD từ YOLO26s cùng fold trong {block['teacher_runs']} "
+                     f"(hệ số {block['feat_weight']:g}, ngoài hộp ×{block['feat_bg']:g})")
+    return "Chắt lọc: " + "; ".join(parts)
 
 
 def student_tag(block: dict | None) -> str:

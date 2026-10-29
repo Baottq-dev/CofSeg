@@ -1,0 +1,21 @@
+# Đợt 2: trò 0,25 + chắt lọc mặt nạ và đặc trưng. Kiến trúc, khởi tạo và công thức train y như tro-025.yaml
+# (trò được chọn ở đợt 1), chỉ thêm khối kd:
+#
+# - mặt nạ: đích (1 − α)·nhãn + α·trung bình mặt nạ của ba thầy seed 0 cùng fold (mô hình gốc YOLO26s, SOLOv2,
+#   Mask2Former), ghép qua tán nhãn. Đích dựng trước bằng distill/teacher_infer.py rồi distill/teacher_masks.py
+#   vào <targets>/<fold>/ (kd_data.py, kd_loss.py);
+# - đặc trưng: PKD trên P4, P5 và feat_fuse của Proto, thầy là YOLO26s seed 0 cùng fold trong teacher_runs.
+#
+#     python distill/train.py --config distill/configs/train/tro-025-kd.yaml --data data/export/field/f1 --runs distill_seed0 --seed 0
+#
+# Tên run: tro-seg-kd-w0.25. Cổng đợt 2: hơn trò 0,25 không chắt lọc (64,17) ≥ +1 ở ≥ 4/6 ruộng.
+base: tro-025.yaml
+name: tro-seg-kd
+
+kd:
+  targets: runs/distill_teachers/targets/mean3
+  mask_alpha: 0.5
+  mask_expand: 1.0
+  teacher_runs: runs/train_2
+  feat_weight: 6.0
+  feat_bg: 0.5
