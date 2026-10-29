@@ -1,0 +1,4 @@
+# Chấm trò bằng đúng đường chấm của YOLO26s-seg (ngưỡng, imgsz, max_det, retina_masks). Chỉ đổi tên.
+#     python distill/evaluate.py --config distill/configs/eval/tro.yaml --weights <run>/weights/best.pt --data data/export/field/f1 --split test --runs distill_seed0
+base: ../../../benchmark/yolo/configs/eval/yolo26s.yaml
+name: tro-seg

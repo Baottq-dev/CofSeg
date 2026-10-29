@@ -1,0 +1,8 @@
+# Chấm YOLO26s-seg có giám sát ngoài hộp: như yolo26s.yaml, cắt mặt nạ bằng hộp dự đoán giãn ×1,1
+# (crop_expand của bộ chấm). Bộ chấm vốn lấy hộp từ mặt nạ, nên "đặt lại hộp bằng hộp bao của mặt nạ"
+# đã có sẵn. distill/evaluate.py dừng nếu hệ số này khác infer_expand của lượt train.
+#     python distill/evaluate.py --config distill/configs/eval/yolo26s-ka.yaml --weights <run>/weights/best.pt --data data/export/field/f1 --split test --runs distill_seed0
+base: ../../../benchmark/yolo/configs/eval/yolo26s.yaml
+name: yolo26s-seg-ka
+model:
+  crop_expand: 1.1

@@ -1,0 +1,24 @@
+# Trò nhẹ độ rộng 0,25: cùng ba thay đổi ở đầu với trò 0,375 (Proto 3×3 ở stride 8, bỏ nhánh phát hiện P3,
+# 16 prototype), khởi tạo từ YOLO26n-seg COCO — cùng độ rộng, nên gần như mọi tensor chép nguyên, chỉ các
+# lớp theo số prototype (32 -> 16) phải chọn. 2,57 triệu tham số, 9,95 GFLOPs ở 1024×576 (đã fuse), −79,9%
+# so với YOLO26s-seg.
+#
+# Chạy song song với trò 0,375 ở đợt 1 (quyết định 29/10): trò 0,375 không có checkpoint COCO cùng độ rộng,
+# phải lấy trọng số chọn từ YOLO26s-seg, nên luật độ rộng của đợt 0 (so YOLO26n-seg với YOLO26s-seg, cả hai
+# có COCO thật) không tính tới phần khởi tạo. Chọn độ rộng bằng số của chính hai trò.
+#
+#     python distill/train.py --config distill/configs/train/tro-025.yaml --data data/export/field/f1 --runs distill_seed0 --seed 0
+#
+# Tên run: tro-seg-w0.25 (hậu tố của khoá width khác mặc định). Thiếu weights/yolo26n-seg.pt thì ultralytics
+# tự tải bản phát hành về đó.
+base: ../../../benchmark/yolo/configs/train/yolo26s.yaml
+trainer: distill_yolo
+name: tro-seg
+model: weights/yolo26n-seg.pt
+
+student:
+  width: 0.25
+  nm: 16
+  proto_s8: true
+  drop_p3: true
+  init: select

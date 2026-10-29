@@ -1,0 +1,4 @@
+# Chấm trò 0,25 bằng đúng đường chấm của YOLO26s-seg. Chỉ đổi tên, khớp tên run tro-seg-w0.25.
+#     python distill/evaluate.py --config distill/configs/eval/tro-025.yaml --weights <run>/weights/best.pt --data data/export/field/f1 --split test --runs distill_seed0
+base: ../../../benchmark/yolo/configs/eval/yolo26s.yaml
+name: tro-seg-w0.25

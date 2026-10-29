@@ -1,0 +1,25 @@
+# Trò nhẹ: YOLO26-seg độ rộng 0,375, Proto chạy lớp 3×3 ở stride 8, bỏ nhánh phát hiện P3, 16 prototype.
+# 5,76 triệu tham số, 22,04 GFLOPs ở 1024×576 (đã fuse), −55,5% so với YOLO26s-seg. Chạy song song với trò
+# 0,25 (tro-025.yaml) ở đợt 1; độ rộng chọn sau đợt 1 (quyết định 29/10). Thiết kế: distill/student.py.
+#
+#     python distill/train.py --config distill/configs/train/tro.yaml --data data/export/field/f1 --runs distill_seed0 --seed 0
+#
+# Công thức train giữ nguyên của mô hình gốc (imgsz 1024, batch 16, 100 epoch, 4 phép lật, mosaic tắt):
+# kế thừa yolo26s.yaml của benchmark. `model:` kế thừa từ đó là weights/yolo26s-seg.pt — nguồn của phép
+# chọn trọng số (student.init: select), không phải model được train.
+#
+# Ablation đổi từng khoá bằng --set, vd đầu gốc ở cùng độ rộng:
+#     --set student.nm=32 --set student.proto_s8=false --set student.drop_p3=false
+# Tên run mang hậu tố của mọi khoá khác mặc định (tro-seg-nm32-ps4-p3).
+base: ../../../benchmark/yolo/configs/train/yolo26s.yaml
+trainer: distill_yolo
+name: tro-seg
+
+student:
+  width: 0.375
+  nm: 16
+  proto_s8: true
+  drop_p3: true
+  # select: chọn trọng số đều từ YOLO26s-seg COCO (không có checkpoint COCO cho độ rộng 0,375);
+  # scratch: khởi tạo ngẫu nhiên.
+  init: select

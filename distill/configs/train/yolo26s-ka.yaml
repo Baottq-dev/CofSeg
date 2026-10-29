@@ -1,0 +1,16 @@
+# YOLO26s-seg với giám sát mặt nạ ngoài hộp (K-A): loss mặt nạ tính trong hộp nhãn giãn ×1,25, vẫn chia
+# diện tích hộp nhãn gốc, nên phần trong hộp y như mô hình gốc và chỉ thêm vành ngoài (tán bên cạnh và đất
+# là nhãn âm). Lúc chấm cắt mặt nạ bằng hộp dự đoán giãn ×1,1 (configs/eval/yolo26s-ka.yaml).
+# Thiết kế: distill/outside_box.py.
+#
+#     python distill/train.py --config distill/configs/train/yolo26s-ka.yaml --data data/export/field/f1 --runs distill_seed0 --seed 0
+#
+# Mọi thứ khác lấy nguyên từ yolo26s.yaml của benchmark (công thức chuẩn, trọng số COCO), nên lượt seed 0 so
+# thẳng được với mô hình gốc seed 0. Cổng đợt 1: TB ≥ 67,32, hơn ở ≥ 4/6 ruộng, mAP@50 không giảm.
+base: ../../../benchmark/yolo/configs/train/yolo26s.yaml
+trainer: distill_yolo
+name: yolo26s-seg-ka
+
+outside_box:
+  train_expand: 1.25
+  infer_expand: 1.1
