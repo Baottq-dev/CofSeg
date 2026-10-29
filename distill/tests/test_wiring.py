@@ -38,6 +38,9 @@ def test_apply_loss_kiem_va_dat_hau_to():
     assert dtr.DistillYoloTrainer.run_name(cfg) == "yolo26s-seg-ka"
     cfg = _cfg()
     assert dtr.DistillYoloTrainer.apply_loss(cfg, None) == "" and "student" not in cfg
+    cfg = _cfg(name="tro-seg-kd", student={"width": 0.25}, kd={"targets": "t", "mask_alpha": 0.3})
+    assert dtr.DistillYoloTrainer.apply_loss(cfg, None) == "w0.25-a0.3-nofeat"
+    assert cfg["kd"]["feat_weight"] == 6.0 and cfg["kd"]["teacher_runs"] is None
 
 
 @pytest.mark.parametrize("cfg,spec,match", [
@@ -45,6 +48,9 @@ def test_apply_loss_kiem_va_dat_hau_to():
     (_cfg(student={}), "dice", "trò"),
     (_cfg(student={}, mask_head={"type": "coord"}), None, "mask_head"),
     (_cfg(student={"nm": 64}), None, r"\[1, 32\]"),
+    (_cfg(kd={"targets": "t"}), "dice", "--loss"),
+    (_cfg(name="yolo26s-seg-ka", outside_box={}, kd={"targets": "t"}), None, "chưa ghép"),
+    (_cfg(student={}, kd={"targets": "t"}, mask_head={"type": "coord"}), None, "mask_head"),
 ])
 def test_to_hop_khong_hop_bi_chan(cfg, spec, match):
     with pytest.raises(SystemExit, match=match):
@@ -55,6 +61,7 @@ def test_to_hop_khong_hop_bi_chan(cfg, spec, match):
     ("distill/configs/train/tro.yaml", ["Tham số cuối cùng", "imgsz              1024", "epochs             100"]),
     ("distill/configs/train/tro-025.yaml", ["Tham số cuối cùng", "imgsz              1024"]),
     ("distill/configs/train/yolo26s-ka.yaml", ["Tham số cuối cùng", "mosaic             0.0"]),
+    ("distill/configs/train/tro-025-kd.yaml", ["Tham số cuối cùng", "imgsz              1024"]),
 ])
 def test_print_config_cua_file_config_rieng(config, want):
     r = subprocess.run([sys.executable, "distill/train.py", "--config", config, "--print-config"],
@@ -69,12 +76,13 @@ CAP = {
     "tro.yaml": ("student", "weights/yolo26s-seg.pt", "tro.yaml"),
     "tro-025.yaml": ("student", "weights/yolo26n-seg.pt", "tro-025.yaml"),
     "yolo26s-ka.yaml": ("outside_box", "weights/yolo26s-seg.pt", "yolo26s-ka.yaml"),
+    "tro-025-kd.yaml": (("student", "kd"), "weights/yolo26n-seg.pt", "tro-025-kd.yaml"),
 }
 
 
 @pytest.mark.parametrize("f", sorted(CAP))
 def test_config_ke_thua_cong_thuc_chuan_va_khop_config_cham(f):
-    """Ba lượt đợt 1 train đúng công thức của mô hình gốc, chỉ thêm khối của distill (và đổi checkpoint
+    """Các lượt đợt 1, 2 train đúng công thức của mô hình gốc, chỉ thêm khối của distill (và đổi checkpoint
     nguồn ở trò 0,25); tên run khớp tên config chấm cùng cặp."""
     from cofseg import config as cfgmod
 
@@ -82,7 +90,7 @@ def test_config_ke_thua_cong_thuc_chuan_va_khop_config_cham(f):
     goc = cfgmod.load(REPO / "benchmark/yolo/configs/train/yolo26s.yaml")
     c = cfgmod.load(REPO / "distill/configs/train" / f)
     assert c["train"] == goc["train"] and c["trainer"] == "distill_yolo" and c["model"] == src
-    assert set(c) - set(goc) == {key}
+    assert set(c) - set(goc) == ({key} if isinstance(key, str) else set(key))
     dtr.DistillYoloTrainer.apply_loss(c, None)
     assert dtr.DistillYoloTrainer.run_name(c) == cfgmod.load(REPO / "distill/configs/eval" / ev)["name"]
 
@@ -95,7 +103,10 @@ def test_ghep_voi_lop_trainer_cua_aug(tmp_path):
             return "aug"
 
     cls = dtr.make_seg_trainer({"init": "scratch"}, None, tmp_path, base=AugLike)
-    assert issubclass(cls, AugLike) and cls.build_dataset(None) == "aug"
+    assert issubclass(cls, AugLike) and cls.__new__(cls).build_dataset("img") == "aug"
+    # có kd nhưng chỉ chắt lọc đặc trưng: dataset train vẫn là của lớp --aug
+    cls = dtr.make_seg_trainer(None, None, tmp_path, base=AugLike, kd={"targets": None, "teacher_runs": "r"})
+    assert cls.__new__(cls).build_dataset("img") == "aug"
     assert dtr.make_seg_trainer(None, {}, tmp_path).__mro__[1] is SegmentationTrainer
 
 
