@@ -8,7 +8,8 @@ chọn best.pt theo mask AP, cùng summary.json, cùng --aug. Phần thêm:
 - `outside_box:` thay loss mặt nạ bằng loss tính trong hộp nhãn giãn (outside_box.py).
 - `kd:` chắt lọc từ ba thầy: dataset train mang đích mặt nạ của thầy (kd_data.py), loss mặt nạ học đích trộn
   và loss PKD trên đặc trưng của YOLO26s thầy (kd_loss.py). Lớp 1×1 khớp kênh gắn vào model lúc train và được
-  gỡ khỏi các file trong <run>/weights sau khi train xong.
+  gỡ khỏi các file trong <run>/weights sau khi train xong. Đi được với `--aug ag1`: dataset train khi đó là
+  lớp ghép của kd_data.py và AugDataset của benchmark.
 
 YoloTrainer.fit() gọi `YOLO(...).train(**args)` và chỉ truyền lớp trainer riêng của ultralytics khi có
 `mask_head:` hay `--aug`. Để không phải chép fit(), lượt train của distill thay tạm `Model.train` bằng một
@@ -94,11 +95,17 @@ def make_seg_trainer(student: dict | None, outside_box: dict | None, run_dir, ba
 
             from .kd_data import make_dataset
 
+            aug = getattr(self, "AUG", None)  # khối --aug, có khi `base` là lớp của aug_train.make_trainer
             # build_yolo_dataset đọc tên YOLODataset từ module của nó lúc gọi (như aug_train.py của benchmark).
             old = build.YOLODataset
-            build.YOLODataset = make_dataset(self.KD["targets"], self.FOLD_ROOT)
+            build.YOLODataset = make_dataset(self.KD["targets"], self.FOLD_ROOT, aug, run_dir / "aug" if aug else None)
             try:
-                ds = super().build_dataset(img_path, mode, batch)
+                # Lớp của --aug cũng đặt YOLODataset trong build_dataset của nó, sẽ đè lớp vừa đặt. Lớp ở trên đã
+                # gồm phần của --aug, nên khi đó gọi thẳng build_dataset của SegmentationTrainer.
+                if aug:
+                    ds = SegmentationTrainer.build_dataset(self, img_path, mode, batch)
+                else:
+                    ds = super().build_dataset(img_path, mode, batch)
             finally:
                 build.YOLODataset = old
             print(f"Chắt lọc mặt nạ: {ds.kd.describe()}", flush=True)
@@ -219,6 +226,13 @@ class DistillYoloTrainer(YoloTrainer):
         return "-".join(p for p in (tag, blocks.student_tag(st), blocks.outside_box_tag(ob), blocks.kd_tag(kd)) if p)
 
     @classmethod
+    def apply_aug(cls, cfg: dict, spec: str | None) -> str:
+        """--aug như benchmark; train.py gọi sau apply_loss, nên khối `kd` đã kiểm xong ở đây."""
+        tag = super().apply_aug(cfg, spec)
+        blocks.check_kd_aug(cfg.get("kd"), cfg.get("aug"))
+        return tag
+
+    @classmethod
     def run_name(cls, cfg: dict) -> str:
         """Tên gốc của lượt train (tên config + hậu tố của distill), chưa kèm hậu tố --loss/--aug. Lượt chấm
         của distill/evaluate.py đối chiếu tên này với tên config chấm."""
@@ -233,9 +247,8 @@ class DistillYoloTrainer(YoloTrainer):
         if (st or ob or kd) and ultralytics.__version__ != ULTRALYTICS_VERSION:
             raise SystemExit(f"distill viết cho ultralytics {ULTRALYTICS_VERSION}, môi trường đang có "
                              f"{ultralytics.__version__}: phải đối chiếu lại đoạn chép trước khi chạy.")
-        if kd and self.cfg.get("aug"):
-            # AugDataset của --aug đặt dataset riêng và phép chuyển vị không mang ảnh đích thầy theo.
-            raise SystemExit("`kd` chưa ghép được với --aug (đợt 4 sẽ thêm): chạy chắt lọc với công thức chuẩn.")
+        aug = self.cfg.get("aug")
+        blocks.check_kd_aug(kd, aug)
         print(blocks.describe_student(st), flush=True)
         print(blocks.describe_outside_box(ob), flush=True)
         print(blocks.describe_kd(kd), flush=True)
@@ -249,8 +262,10 @@ class DistillYoloTrainer(YoloTrainer):
             for p in sorted((self.run_dir / "weights").glob("*.pt")):
                 if strip_adapter(p):
                     print(f"distill: gỡ kd_adapter khỏi {p}", flush=True)
-        # evaluate.py của distill đọc khối này: tên gốc để đối chiếu config chấm, hệ số giãn lúc chấm.
-        out["distill"] = {"name": self.run_name(self.cfg), "student": st, "outside_box": ob, "kd": kd}
+        # evaluate.py của distill đọc khối này: tên gốc và hậu tố --aug để đối chiếu config chấm, hệ số giãn
+        # lúc chấm.
+        out["distill"] = {"name": self.run_name(self.cfg), "aug": (aug or {}).get("tag") or None, "student": st,
+                          "outside_box": ob, "kd": kd}
         return out
 
 

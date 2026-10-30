@@ -202,7 +202,7 @@ def _gt_teacher(fold, tmp_path, imgsz):
     return tmp_path / "gt"
 
 
-def _dataset(fold, targets, imgsz, **hyp):
+def _dataset(fold, targets, imgsz, aug=None, aug_log=None, **hyp):
     pytest.importorskip("ultralytics")
     from ultralytics.cfg import get_cfg
 
@@ -210,7 +210,7 @@ def _dataset(fold, targets, imgsz, **hyp):
 
     h = get_cfg(overrides={"flipud": 0.5, "fliplr": 0.5, "scale": 0.5, "translate": 0.1, "mosaic": 0.0,
                            "mask_ratio": 4, "overlap_mask": True, "imgsz": imgsz, **hyp})
-    ds_cls = make_dataset(targets, fold)
+    ds_cls = make_dataset(targets, fold, aug, aug_log)
     return ds_cls(img_path=str(fold / "images" / "train"), imgsz=imgsz, augment=True, hyp=h, batch_size=2,
                   data={"names": {0: "canopy"}, "nc": 1, "channels": 3}, task="segment")
 
@@ -245,6 +245,82 @@ def test_dich_di_cung_tan_qua_lat_co_gian_dich(fold, tmp_path):
     b = ds.collate_fn([ds[0], ds[1], ds[2]])
     assert b["kd_map"].shape == (3, 4, 48, 48) and b["kd_map"].dtype == torch.uint8
     assert len(b["kd_ids"]) == len(b["kd_has"]) == len(b["cls"]) == len(b["batch_idx"])
+
+
+def _ious(ds, rounds):
+    """IoU giữa đích thầy (> 0,5) và mặt nạ nhãn của từng tán đủ lớn, qua nhiều lượt rút mẫu."""
+    ious = []
+    for _ in range(rounds):
+        for i in range(len(ds)):
+            s = ds[i]
+            m, ids, masks = s["kd_map"], s["kd_ids"], s["masks"][0]
+            for k in range(len(ids)):
+                g = masks == k + 1
+                if g.sum() >= 20:
+                    b = ((m[1].float() / 255) * (m[0] == ids[k]) + (m[3].float() / 255) * (m[2] == ids[k])) > 0.5
+                    ious.append(float((b & g).sum() / (b | g).sum()))
+    return ious
+
+
+def test_chuyen_vi_ag1_mang_anh_dich_theo():
+    pytest.importorskip("torch")
+    from cofseg.training.aug_train import Transpose
+    from ultralytics.utils.instance import Instances
+
+    from distill.kd_data import KDTranspose
+
+    def labels():
+        seg = np.array([[[0.5, 1.0], [2.5, 1.0], [2.5, 4.0]]], np.float32)
+        return {"img": np.arange(72, dtype=np.uint8).reshape(6, 4, 3),
+                "semantic_mask": np.arange(96, dtype=np.uint8).reshape(6, 4, 4),
+                "instances": Instances(np.array([[0.5, 1.0, 2.5, 4.0]], np.float32), seg, None, bbox_format="xyxy",
+                                       normalized=False)}
+
+    a = labels()
+    out = KDTranspose(Transpose(1.0, seed=0))(dict(a))
+    assert (out["img"] == np.swapaxes(a["img"], 0, 1)).all()
+    assert (out["semantic_mask"] == np.swapaxes(a["semantic_mask"], 0, 1)).all()
+    assert out["semantic_mask"].flags["C_CONTIGUOUS"]
+    b = labels()
+    m = b["semantic_mask"]
+    out = KDTranspose(Transpose(0.0, seed=0))(b)
+    assert out["semantic_mask"] is m and out["img"].shape == (6, 4, 3)
+
+
+def test_dich_di_cung_tan_qua_chuyen_vi_ag1(fold, tmp_path):
+    torch = pytest.importorskip("torch")
+    import random
+
+    from cofseg.training.aug_train import AugDataset
+
+    from distill.kd_data import KDDataset, KDTranspose
+
+    targets = _gt_teacher(fold, tmp_path, 192)
+    aug = {"use": ["ag1"], "ag1": {"p": 1.0}, "tag": "ag1-p1"}
+    ds = _dataset(fold, targets, 192, aug=aug, aug_log=tmp_path / "aug")
+    assert isinstance(ds, KDDataset) and isinstance(ds, AugDataset)
+    t = ds.transforms.transforms
+    assert sum(isinstance(x, KDTranspose) for x in t) == 1 and type(t[-1]).__name__ == "KDFormat"
+    assert isinstance(t[-2], KDTranspose)                       # ngay trước Format, như ag1 của benchmark
+    random.seed(0)
+    np.random.seed(0)
+    ious = _ious(ds, 6)
+    assert len(ious) > 10 and np.mean(ious) > 0.85 and min(ious) > 0.6
+    b = ds.collate_fn([ds[0], ds[1], ds[2]])
+    assert b["kd_map"].shape == (3, 4, 48, 48) and b["kd_map"].dtype == torch.uint8
+    assert len(b["kd_ids"]) == len(b["kd_has"]) == len(b["cls"])
+    # Bỏ lớp bọc thì ảnh chuyển vị mà ảnh đích không, đích lệch khỏi tán: phép kiểm trên mới có nghĩa.
+    ds.transforms.transforms = [x.inner if isinstance(x, KDTranspose) else x for x in t]
+    random.seed(0)
+    np.random.seed(0)
+    assert np.mean(_ious(ds, 6)) < 0.5
+
+
+def test_kd_voi_phep_dan_bi_chan(fold, tmp_path):
+    from distill.kd_data import make_dataset
+
+    with pytest.raises(SystemExit, match="pa1"):
+        make_dataset(tmp_path, fold, {"use": ["ag1", "pa1"], "ag1": {"p": 0.5}, "pa1": {}})
 
 
 def test_tan_khong_co_thay_va_anh_nen(fold, evals, tmp_path):

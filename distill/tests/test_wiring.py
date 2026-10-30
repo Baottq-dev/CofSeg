@@ -110,6 +110,61 @@ def test_ghep_voi_lop_trainer_cua_aug(tmp_path):
     assert dtr.make_seg_trainer(None, {}, tmp_path).__mro__[1] is SegmentationTrainer
 
 
+def test_kd_voi_aug_ag1_dung_dataset_ghep(tmp_path, monkeypatch):
+    """Lớp của --aug cũng thay dataset trong build_dataset của nó; có chắt lọc mặt nạ thì dataset phải là lớp
+    ghép (đích thầy + phép của --aug), và lớp của --aug không được đè lên."""
+    import types
+
+    import ultralytics.data.build as build
+    from cofseg.training.aug_train import AugDataset
+    from ultralytics.models.yolo.segment import SegmentationTrainer
+
+    from distill.kd_data import KDDataset
+
+    seen = []
+
+    def fake(self, img_path, mode="train", batch=None):
+        seen.append(build.YOLODataset)
+        return types.SimpleNamespace(kd=types.SimpleNamespace(describe=lambda: "đích"))
+
+    owner = next(c for c in SegmentationTrainer.__mro__ if "build_dataset" in vars(c))
+    monkeypatch.setattr(owner, "build_dataset", fake)
+    goc = build.YOLODataset
+
+    class AugLike(SegmentationTrainer):
+        AUG = {"use": ["ag1"], "ag1": {"p": 0.5}, "tag": "ag1"}
+
+        def build_dataset(self, *a, **k):
+            return "aug"
+
+    kd = {"targets": "t", "teacher_runs": None}
+    cls = dtr.make_seg_trainer(None, None, tmp_path, base=AugLike, kd=kd, fold_root=tmp_path)
+    assert cls.__new__(cls).build_dataset("img") != "aug"
+    assert issubclass(seen[-1], KDDataset) and issubclass(seen[-1], AugDataset)
+    assert seen[-1].AUG == AugLike.AUG and seen[-1].LOG_DIR == str(tmp_path / "aug")
+    cls = dtr.make_seg_trainer(None, None, tmp_path, kd=kd, fold_root=tmp_path)
+    cls.__new__(cls).build_dataset("img")
+    assert issubclass(seen[-1], KDDataset) and not issubclass(seen[-1], AugDataset)
+    assert build.YOLODataset is goc
+
+
+def test_kd_chi_ghep_voi_chuyen_vi():
+    from distill import blocks
+
+    mask = blocks.check_kd({"targets": "t"})
+    blocks.check_kd_aug(mask, {"use": ["ag1"]})
+    blocks.check_kd_aug(blocks.check_kd({"teacher_runs": "r"}), {"use": ["pa1"]})  # chỉ đặc trưng: không cần ảnh đích
+    with pytest.raises(SystemExit, match="ag4"):
+        blocks.check_kd_aug(mask, {"use": ["ag1", "ag4"]})
+    cfg = _cfg(name="tro-seg-kd", student={"width": 0.25}, kd={"targets": "t", "teacher_runs": "r"})
+    dtr.DistillYoloTrainer.apply_loss(cfg, None)
+    assert dtr.DistillYoloTrainer.apply_aug(cfg, "ag1") == "ag1" and cfg["aug"]["use"] == ["ag1"]
+    cfg = _cfg(name="tro-seg-kd", student={"width": 0.25}, kd={"targets": "t"})
+    dtr.DistillYoloTrainer.apply_loss(cfg, None)
+    with pytest.raises(SystemExit, match="pa1"):
+        dtr.DistillYoloTrainer.apply_aug(cfg, "pa1")
+
+
 def test_thay_tam_model_train_roi_tra_lai():
     from ultralytics.engine.model import Model
 

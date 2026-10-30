@@ -41,6 +41,9 @@ KD_DEFAULTS: dict = {
 
 INITS = ("select", "scratch")
 
+#: Phép của --aug ghép được với chắt lọc mặt nạ: ag1 (chuyển vị) có kd_data.KDTranspose mang ảnh đích theo.
+KD_AUGS = ("ag1",)
+
 
 def _num(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
@@ -117,6 +120,20 @@ def check_kd(block) -> dict | None:
     for k in ("mask_alpha", "mask_expand", "feat_weight", "feat_bg"):
         out[k] = float(out[k])
     return out
+
+
+def check_kd_aug(kd: dict | None, aug: dict | None) -> None:
+    """Dừng nếu chắt lọc mặt nạ đi cùng một phép --aug mà ảnh đích thầy chưa theo được.
+
+    Phép dán (pa1, ag4) đặt tán mới đè lên tán có sẵn; ảnh đích vẫn giữ mặt nạ thầy của tán bị đè, nên đích
+    lệch khỏi ảnh. Chỉ chắt lọc đặc trưng thì không cần ảnh đích, phép nào cũng được.
+    """
+    if not (kd and kd.get("targets") and aug):
+        return
+    bad = [n for n in aug.get("use", ()) if n not in KD_AUGS]
+    if bad:
+        raise SystemExit(f"Chắt lọc mặt nạ chưa ghép được với --aug {'+'.join(bad)}: chỉ "
+                         f"{', '.join(KD_AUGS)} mang ảnh đích thầy theo; phép dán đè tán mà ảnh đích không biết.")
 
 
 def kd_tag(block: dict | None) -> str:

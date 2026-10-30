@@ -16,6 +16,11 @@ lại tán theo diện tích:
 
 Batch có thêm ba khoá: `kd_map` (B, 4, H/r, W/r) uint8, `kd_ids` (mã tán của từng tán trong batch, cùng thứ
 tự với `cls`/`masks`), `kd_has` (tán đó có đích thầy không). Dataset val giữ nguyên của ultralytics.
+
+Với `--aug ag1`, make_dataset() ghép lớp này với AugDataset của benchmark (aug_train.py) thành một lớp. Phép
+chuyển vị của ag1 không nằm trong ultralytics nên không biết `semantic_mask`; KDTranspose bọc nó để ảnh đích
+đổi trục cùng lúc với ảnh. Mã tán không phải sửa: chuyển vị giữ nguyên thứ tự và số tán. Phép dán (pa1, ag4)
+chưa ghép được, vì tán dán đè lên tán có sẵn mà ảnh đích không biết (blocks.check_kd_aug).
 """
 
 from __future__ import annotations
@@ -187,5 +192,49 @@ class KDDataset(YOLODataset):
         return out
 
 
-def make_dataset(targets: str | Path, fold_root: str | Path) -> type:
-    return type("KDDataset", (KDDataset,), {"KD_TARGETS": str(targets), "KD_FOLD": str(fold_root)})
+class KDTranspose:
+    """Bọc phép chuyển vị của --aug ag1: ảnh bị chuyển vị thì ảnh đích thầy cũng vậy.
+
+    Phép gốc rút số từ bộ số riêng của nó và chỉ thay `labels["img"]` khi chuyển vị, nên so đối tượng ảnh trước
+    và sau là biết phép có chạy không, mà không phải rút thêm số.
+    """
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    def __call__(self, labels: dict) -> dict:
+        img = labels["img"]
+        labels = self.inner(labels)
+        m = labels.get("semantic_mask")
+        if labels["img"] is not img and m is not None:
+            labels["semantic_mask"] = np.ascontiguousarray(np.swapaxes(m, 0, 1))
+        return labels
+
+
+class _KDAug:
+    """Phần ghép với AugDataset: bọc phép chuyển vị trong chuỗi biến đổi mà AugDataset vừa dựng."""
+
+    def build_transforms(self, hyp=None):
+        from cofseg.training.aug_train import Transpose
+
+        t = super().build_transforms(hyp)
+        t.transforms = [KDTranspose(x) if isinstance(x, Transpose) else x for x in t.transforms]
+        return t
+
+
+def make_dataset(targets: str | Path, fold_root: str | Path, aug: dict | None = None,
+                 aug_log_dir: str | Path | None = None) -> type:
+    """Lớp dataset train có đích thầy; có `aug` (khối của --aug) thì ghép thêm AugDataset của benchmark."""
+    attrs = {"KD_TARGETS": str(targets), "KD_FOLD": str(fold_root)}
+    if not aug:
+        return type("KDDataset", (KDDataset,), attrs)
+    from cofseg.training.aug_train import AugDataset
+
+    from .blocks import check_kd_aug
+
+    check_kd_aug({"targets": targets}, aug)
+    log_dir = str(aug_log_dir) if aug_log_dir else None
+    aug_cls = type("AugDataset", (AugDataset,), {"AUG": dict(aug), "LOG_DIR": log_dir})
+    # Thứ tự lớp: KDDataset trước AugDataset, nên update_labels_info, get_image_and_label, format_class và
+    # collate_fn là của KDDataset; build_transforms đi qua _KDAug rồi tới AugDataset (chèn phép của --aug).
+    return type("KDAugDataset", (_KDAug, KDDataset, aug_cls), attrs)
