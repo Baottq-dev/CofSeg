@@ -9,8 +9,9 @@ và chỉ script này đặt gốc repo vào sys.path trước khi nạp trọng
 
 Trước khi chấm, script đối chiếu lượt train (khối `distill` trong summary.json cạnh trọng số) với config chấm:
 
-- tên config chấm phải trùng tên gốc của lượt train (vd tro-seg, yolo26s-seg-ka), để không chấm trò bằng
-  config của YOLO26s hay ngược lại; gõ --name thì bỏ qua bước này;
+- tên config chấm phải trùng tên gốc của lượt train (vd tro-seg, yolo26s-seg-ka), cộng hậu tố --aug nếu lượt
+  train có (vd tro-seg-kd-w0.25-ag1), để không chấm trò bằng config của YOLO26s hay ngược lại, và để lượt có
+  --aug không lẫn tên với lượt không có; gõ --name thì bỏ qua bước này;
 - lượt train có `outside_box` thì phép cắt lúc chấm (crop_expand) phải đúng hệ số đã chốt (infer_expand).
 """
 
@@ -53,9 +54,11 @@ def check(argv: list[str]) -> str:
         return f"distill: không thấy khối `distill` trong summary.json cạnh {weights}; không đối chiếu."
     cfg = cfgmod.load(conf)
     name = _flag(argv, "--name")
-    if name is None and cfg.get("name") != block["name"]:
+    # Lượt train trước khi có khoá "aug" trong khối này đều không có --aug.
+    want = "-".join(p for p in (block["name"], block.get("aug")) if p)
+    if name is None and cfg.get("name") != want:
         raise SystemExit(
-            f"Config chấm {conf} mang tên {cfg.get('name')!r}, còn lượt train là {block['name']!r}. "
+            f"Config chấm {conf} mang tên {cfg.get('name')!r}, còn lượt train là {want!r}. "
             "Dùng config chấm cùng tên, hoặc gõ --name nếu đó đúng là ý bạn."
         )
     ob = block.get("outside_box")
@@ -66,7 +69,7 @@ def check(argv: list[str]) -> str:
             f"Lượt train có giám sát ngoài hộp, chốt cắt mặt nạ ×{ob['infer_expand']:g} lúc chấm; lệnh này "
             f"cắt ×{used:g}. Dùng configs/eval của distill, hoặc gõ --crop_expand {ob['infer_expand']:g}."
         )
-    return f"distill: lượt train {block['name']!r}, crop_expand {used:g}, khớp config chấm."
+    return f"distill: lượt train {want!r}, crop_expand {used:g}, khớp config chấm."
 
 
 if __name__ == "__main__":

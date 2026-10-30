@@ -35,15 +35,16 @@ Sau này thêm SOLOv2 + 8 phép và đo Jetson.
 | `teachers.py` | Bảng ba thầy (thư mục benchmark, config chấm, tên run, file trọng số); tìm trọng số và lượt chấm của thầy theo fold |
 | `teacher_infer.py` | Pha 0: ba thầy suy luận trên ảnh train của một fold bằng `evaluate.py --split train` của benchmark |
 | `teacher_masks.py` | Ghép dự đoán của thầy với tán nhãn, ghi đích mặt nạ (ảnh 4 kênh) và `meta.json` |
-| `kd_data.py` | Dataset train mang đích thầy qua các phép biến đổi của ultralytics |
+| `kd_data.py` | Dataset train mang đích thầy qua các phép biến đổi của ultralytics; với `--aug ag1`, ghép với `AugDataset` của benchmark và mang đích theo phép chuyển vị |
 | `kd_loss.py` | Loss mặt nạ với đích trộn, PKD trên đặc trưng, lớp 1×1 khớp kênh, nhật ký epoch `loss_kd.csv` |
-| `trainer.py` | Trainer `distill_yolo`; lớp SegmentationTrainer dựng trò, gắn loss, dataset và thầy của chắt lọc; ghép được với lớp của `--aug` (trừ khi có `kd`) |
+| `trainer.py` | Trainer `distill_yolo`; lớp SegmentationTrainer dựng trò, gắn loss, dataset và thầy của chắt lọc; ghép được với lớp của `--aug`; chắt lọc mặt nạ chỉ ghép với `ag1` |
 | `train.py`, `evaluate.py` | Lệnh train và chấm (chạy từ gốc repo) |
 | `configs/train/tro.yaml`, `configs/eval/tro.yaml` | Trò 0,375, lấy trọng số từ YOLO26s-seg COCO, tên run `tro-seg` |
 | `configs/train/tro-025.yaml`, `configs/eval/tro-025.yaml` | Trò 0,25, lấy trọng số từ YOLO26n-seg COCO, tên run `tro-seg-w0.25` |
 | `configs/train/yolo26s-ka.yaml`, `configs/eval/yolo26s-ka.yaml` | YOLO26s-seg + giám sát ngoài hộp, tên run `yolo26s-seg-ka`; lúc chấm cắt ×1,1 |
 | `configs/train/tro-025-kd.yaml`, `configs/eval/tro-025-kd.yaml` | Trò 0,25 + chắt lọc (đợt 2), tên run `tro-seg-kd-w0.25` |
-| `tests/` | 94 test, dựng model, ảnh, nhãn và dự đoán của thầy tại chỗ, không cần `data/` hay `weights/` |
+| `configs/eval/tro-025-kd-ag1.yaml` | Chấm trò 0,25 + chắt lọc train với `--aug ag1`, tên run `tro-seg-kd-w0.25-ag1`; train dùng `configs/train/tro-025-kd.yaml` kèm `--aug ag1` |
+| `tests/` | 100 test, dựng model, ảnh, nhãn và dự đoán của thầy tại chỗ, không cần `data/` hay `weights/` |
 
 ## Trò (`student:`)
 
@@ -115,6 +116,7 @@ Ba bước, theo thứ tự, cho từng fold:
      - Lớp 1×1 (`kd_adapter`) đưa trò về số kênh của thầy.
      - Loss PKD: chuẩn hoá từng kênh rồi MSE / 2, tức 1 − tương quan Pearson. Trong hộp nhãn và ngoài hộp lấy trung bình riêng, ngoài hộp nhân `feat_bg`.
    - Sau khi train, `kd_adapter` được gỡ khỏi các file trong `<run>/weights`, nên `best.pt` chỉ còn đúng kiến trúc của trò.
+   - Với `--aug ag1`, dataset train là lớp ghép của `KDDataset` và `AugDataset` của benchmark. Phép chuyển vị của ag1 không nằm trong ultralytics, nên `KDTranspose` bọc nó: ảnh bị chuyển vị thì ảnh đích cũng vậy. Phép bọc không rút thêm số ngẫu nhiên. Tên run có thêm hậu tố `-ag1`; lúc chấm dùng `configs/eval/tro-025-kd-ag1.yaml`.
 
 | Khoá | Mặc định | Nghĩa |
 |---|---|---|
@@ -133,7 +135,7 @@ Ba bước, theo thứ tự, cho từng fold:
 
 **Chưa ghép:** trainer dừng nếu gặp một trong hai tổ hợp sau:
 - `kd` với `outside_box`: cả hai cùng thay loss mặt nạ;
-- `kd` với `--aug`: dataset riêng, và phép chuyển vị không mang ảnh đích theo.
+- chắt lọc mặt nạ với phép dán `--aug pa1` hay `ag4`: tán dán đè lên tán có sẵn mà ảnh đích không biết. Chỉ chắt lọc đặc trưng thì phép nào cũng được.
 
 ## Chạy
 
@@ -154,6 +156,10 @@ python distill/teacher_infer.py --data data/export/field/f1 --weights-from runs/
 python distill/teacher_masks.py --data data/export/field/f1 --evals runs/distill_teachers/eval --out runs/distill_teachers/targets/mean3
 python distill/train.py --config distill/configs/train/tro-025-kd.yaml --data data/export/field/f1 --runs distill_seed0 --seed 0
 python distill/evaluate.py --config distill/configs/eval/tro-025-kd.yaml --weights distill_seed0/train/<run>/weights/best.pt --data data/export/field/f1 --split test --runs distill_seed0
+
+# chắt lọc + 8 phép xoay/lật (--aug ag1), tên run tro-seg-kd-w0.25-ag1
+python distill/train.py --config distill/configs/train/tro-025-kd.yaml --data data/export/field/f1 --runs distill_seed0 --seed 0 --aug ag1
+python distill/evaluate.py --config distill/configs/eval/tro-025-kd-ag1.yaml --weights distill_seed0/train/<run>/weights/best.pt --data data/export/field/f1 --split test --runs distill_seed0
 ```
 
 **Kiểm trước khi chạy:** `--print-config` in tham số cuối cùng mà không train.

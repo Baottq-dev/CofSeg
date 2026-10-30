@@ -165,6 +165,16 @@ def test_kd_chi_ghep_voi_chuyen_vi():
         dtr.DistillYoloTrainer.apply_aug(cfg, "pa1")
 
 
+def test_config_cham_ag1_khop_ten_luot_train():
+    from cofseg import config as cfgmod
+
+    c = cfgmod.load(REPO / "distill/configs/train/tro-025-kd.yaml")
+    dtr.DistillYoloTrainer.apply_loss(c, None)
+    tag = dtr.DistillYoloTrainer.apply_aug(c, "ag1")
+    want = cfgmod.load(REPO / "distill/configs/eval/tro-025-kd-ag1.yaml")["name"]
+    assert f"{dtr.DistillYoloTrainer.run_name(c)}-{tag}" == want == "tro-seg-kd-w0.25-ag1"
+
+
 def test_thay_tam_model_train_roi_tra_lai():
     from ultralytics.engine.model import Model
 
@@ -209,3 +219,10 @@ def test_evaluate_doi_chieu_ten_va_he_so_cat(tmp_path):
     tro = {"name": "tro-seg", "student": {"nm": 16}, "outside_box": None}
     assert "khớp" in ev.check(["--config", str(REPO / "distill/configs/eval/tro.yaml"),
                                 "--weights", _run(tmp_path / "t", tro)])
+    # Lượt có --aug: config chấm phải mang cả hậu tố, để không lẫn tên với lượt không có --aug.
+    ag = {"name": "tro-seg-kd-w0.25", "aug": "ag1", "student": {"width": 0.25}, "outside_box": None}
+    w = _run(tmp_path / "ag", ag)
+    assert "'tro-seg-kd-w0.25-ag1'" in ev.check(["--config", str(REPO / "distill/configs/eval/tro-025-kd-ag1.yaml"),
+                                                  "--weights", w])
+    with pytest.raises(SystemExit, match="tro-seg-kd-w0.25-ag1"):
+        ev.check(["--config", str(REPO / "distill/configs/eval/tro-025-kd.yaml"), "--weights", w])

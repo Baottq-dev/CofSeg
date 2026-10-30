@@ -1,0 +1,5 @@
+# Chấm trò 0,25 + chắt lọc train với --aug ag1 (đủ 8 phép xoay/lật) bằng đúng đường chấm của YOLO26s-seg (không
+# giãn hộp cắt). Chỉ đổi tên, khớp tên run tro-seg-kd-w0.25-ag1.
+#     python distill/evaluate.py --config distill/configs/eval/tro-025-kd-ag1.yaml --weights <run>/weights/best.pt --data data/export/field/f1 --split test --runs distill_seed0
+base: ../../../benchmark/yolo/configs/eval/yolo26s.yaml
+name: tro-seg-kd-w0.25-ag1
