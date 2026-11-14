@@ -18,8 +18,12 @@ nhìn thấy thứ dự án này quan tâm, nên ở đây chấm cả hai nhóm
 
 from __future__ import annotations
 
+import csv
+import datetime as _dt
+import json
 import statistics
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -170,9 +174,95 @@ def _num(rows: list[dict], key: str) -> list[float]:
     return [float(r[key]) for r in rows if r.get(key) not in ("", None)]
 
 
+def _smooth(y: np.ndarray, f: float) -> np.ndarray:
+    """Lọc hộp, chép nguyên `ultralytics.utils.metrics.smooth` (8.4.143)."""
+    nf = round(len(y) * f * 2) // 2 + 1
+    p = np.ones(nf // 2)
+    yp = np.concatenate((p * y[0], y, p * y[-1]), 0)
+    return np.convolve(yp, np.ones(nf) / nf, mode="valid")
+
+
+def pr_best_f1(rows: list[dict]) -> dict:
+    """P, R, F1 tại ngưỡng điểm cho F1 lớn nhất, đúng cách của ultralytics.
+
+    `precision` và `recall` của `summarize` tính trên MỌI dự đoán qua ngưỡng chấm
+    (0.05): ngưỡng đó để giữ đủ dự đoán cho đường PR của mAP, nên hai số này
+    không phải điểm vận hành. Ultralytics tách hai việc: mAP chấm ở ngưỡng rất
+    thấp, còn P, R báo tại ngưỡng cho F1 lớn nhất. Hàm này làm y hệt
+    `ap_per_class` (8.4.143) cho một lớp: sắp dự đoán theo điểm giảm dần, cộng
+    dồn TP/FP, nội suy P và R lên lưới 1000 ngưỡng từ 0 tới 1, làm mượt đường F1
+    bằng lọc hộp 10% rồi lấy điểm cao nhất. TP là cặp ghép của bộ chấm này (IoU
+    mặt nạ >= iou_thr, ghép theo điểm giảm dần), nên P, R cùng một luật ghép với
+    các số khác. `conf` là ngưỡng điểm ứng với điểm đã chọn trên lưới.
+
+    Nhận cả hàng vừa chấm (số) lẫn hàng đọc lại từ per_region.csv (chuỗi).
+    """
+    matched = [int(float(r["matched"])) for r in rows]
+    n_l = sum(1 for m in matched if m in (0, 1))
+    pred = [(1.0 if m == 1 else 0.0, float(r["score"])) for m, r in zip(matched, rows) if m in (1, -1)]
+    if not pred or not n_l:
+        return {"conf": None, "precision": 0.0, "recall": 0.0, "f1": 0.0}
+    eps = 1e-16
+    tp = np.array([t for t, _ in pred])
+    conf = np.array([s for _, s in pred])
+    i = np.argsort(-conf)
+    tp, conf = tp[i], conf[i]
+    tpc, fpc = tp.cumsum(0), (1 - tp).cumsum(0)
+    x = np.linspace(0, 1, 1000)
+    r_curve = np.interp(-x, -conf, tpc / (n_l + eps), left=0)
+    p_curve = np.interp(-x, -conf, tpc / (tpc + fpc), left=1)
+    f1 = 2 * p_curve * r_curve / (p_curve + r_curve + eps)
+    k = int(_smooth(f1, 0.1).argmax())
+    return {
+        "conf": round(float(x[k]), 4),
+        "precision": round(float(p_curve[k]), 4),
+        "recall": round(float(r_curve[k]), 4),
+        "f1": round(float(f1[k]), 4),
+    }
+
+
+def resummarize(run_dir: str | Path) -> dict:
+    """Thêm `summary.pr_best_f1` vào metrics.json của một lượt chấm đã có.
+
+    Không chạy model: đọc lại per_region.csv của chính lượt đó (mỗi dự đoán
+    đúng hay sai, điểm bao nhiêu) và gọi đúng `pr_best_f1` mà lượt chấm mới
+    dùng, nên số ra giống hệt khi chấm lại. Trước khi ghi, đếm lại số tán thật,
+    TP và FP từ per_region.csv; lệch với summary đã ghi thì dừng, không ghi.
+    Không đổi khoá nào khác của metrics.json. Trả về khối vừa thêm.
+    """
+    run_dir = Path(run_dir)
+    mpath, cpath = run_dir / "metrics.json", run_dir / "per_region.csv"
+    if not mpath.is_file() or not cpath.is_file():
+        raise FileNotFoundError(f"{run_dir}: thiếu metrics.json hoặc per_region.csv")
+    metrics = json.loads(mpath.read_text(encoding="utf-8"))
+    summary = metrics.get("summary")
+    if not isinstance(summary, dict):
+        raise ValueError(f"{run_dir}: metrics.json không có khối summary (lượt chấm native?)")
+    with cpath.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    matched = [int(float(r["matched"])) for r in rows]
+    dem = {"n_gt": sum(m in (0, 1) for m in matched),
+           "true_positive": sum(m == 1 for m in matched),
+           "false_positive": sum(m == -1 for m in matched)}
+    lech = {k: (summary.get(k), v) for k, v in dem.items() if summary.get(k) != v}
+    if lech:
+        raise ValueError(f"{run_dir}: per_region.csv không khớp summary đã ghi: {lech}")
+    summary["pr_best_f1"] = pr_best_f1(rows)
+    metrics["resummarized"] = {
+        "keys": ["summary.pr_best_f1"],
+        "source": "per_region.csv",
+        "time": _dt.datetime.now().isoformat(timespec="seconds"),
+    }
+    mpath.write_text(json.dumps(metrics, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+    return summary["pr_best_f1"]
+
+
 def summarize(rows: list[dict], per_image: list[dict]) -> dict:
     """Gộp các hàng thành vài con số. Chất lượng chỉ tính trên cặp đã ghép;
-    recall tính trên mọi vùng thật, kể cả vùng bỏ sót không có mặt nạ."""
+    recall tính trên mọi vùng thật, kể cả vùng bỏ sót không có mặt nạ.
+
+    `precision`, `recall` ở đây tính trên mọi dự đoán qua ngưỡng chấm (thường
+    0.05); P, R, F1 ở điểm vận hành nằm trong `pr_best_f1` (xem hàm cùng tên)."""
     gt = [r for r in rows if r["matched"] in (0, 1)]
     tp = [r for r in gt if r["matched"] == 1]
     fp = [r for r in rows if r["matched"] == -1]
@@ -185,6 +275,7 @@ def summarize(rows: list[dict], per_image: list[dict]) -> dict:
         "false_positive": n_fp,
         "precision": round(n_tp / (n_tp + n_fp), 4) if n_tp + n_fp else 0.0,
         "recall": round(n_tp / n_gt, 4) if n_gt else 0.0,
+        "pr_best_f1": pr_best_f1(rows),
         "count_error_mean": round(statistics.fmean(p["count_error"] for p in per_image), 3)
         if per_image else 0.0,
         "ms_per_image": round(statistics.fmean(p["ms"] for p in per_image), 1)

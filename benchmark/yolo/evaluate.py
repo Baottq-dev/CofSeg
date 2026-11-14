@@ -51,7 +51,7 @@ from cofseg import config as cfgmod  # noqa: E402
 from cofseg import console  # noqa: E402
 from cofseg import runlog  # noqa: E402
 from cofseg.datasets import CocoDataset  # noqa: E402
-from cofseg.evaluation import coco_eval, evaluate_split, summarize, validate  # noqa: E402
+from cofseg.evaluation import coco_eval, evaluate_split, resummarize, summarize, validate  # noqa: E402
 from cofseg.evaluation.report import write_coco_results, write_csv, write_predictions  # noqa: E402
 from cofseg.models import build_model, model_param_names  # noqa: E402
 from cofseg.registry import available  # noqa: E402
@@ -183,7 +183,7 @@ def run_config(a, extra: list[str]) -> int:
 
             print()
             print(txt.read_text(encoding="utf-8"))
-            keys = ("precision", "recall", "mean_boundary_iou", "median_boundary_iou",
+            keys = ("precision", "recall", "pr_best_f1", "mean_boundary_iou", "median_boundary_iou",
                     "median_signed_median", "median_area_error_pct", "ms_per_image")
             print("Từng vùng (cặp đã ghép ở IoU >= %.2f):" % ev["iou_thr"])
             for k in keys:
@@ -255,6 +255,23 @@ def run_native(a, extra: list[str]) -> int:
     return 0
 
 
+# ------------------------------------------------------- tính lại từ per_region.csv
+def run_resummarize(dirs: list[str]) -> int:
+    """Thêm `summary.pr_best_f1` cho các lượt chấm đã có (xem cofseg.evaluation.resummarize).
+
+    Dùng khi bộ chấm có thêm chỉ số chỉ cần per_region.csv: số ra giống hệt chấm lại mà
+    không chạy model. Lượt nào thiếu file hay đếm không khớp thì bỏ qua và báo ra."""
+    loi = 0
+    for d in dirs:
+        try:
+            out = resummarize(d)
+            print(f"{d}: P {out['precision']}  R {out['recall']}  F1 {out['f1']}  ngưỡng {out['conf']}")
+        except (FileNotFoundError, ValueError) as e:
+            print(f"BỎ QUA {e}")
+            loi += 1
+    return 1 if loi else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -299,8 +316,12 @@ def main() -> int:
                     help="vành Boundary AP, theo đường chéo ảnh")
     ap.add_argument("--runs", default="runs")
     ap.add_argument("--name", default=None)
+    ap.add_argument("--resummarize", nargs="+", default=None, metavar="THƯ_MỤC_CHẤM",
+                    help="không chạy model: thêm summary.pr_best_f1 (P, R, F1 tại ngưỡng cho F1 lớn nhất) vào metrics.json của các lượt chấm đã có, tính từ per_region.csv của chính lượt đó")
     a, extra = ap.parse_known_args()
 
+    if a.resummarize:
+        return run_resummarize(a.resummarize)
     if a.native:
         return run_native(a, extra)
     if not a.config:
